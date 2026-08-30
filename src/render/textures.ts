@@ -26,6 +26,20 @@ export interface Textures {
    * ramp per tile for free — which is what `route.ts` spends.
    */
   tile: Texture;
+  /**
+   * A soft radial falloff: opaque at the centre, transparent at the rim.
+   *
+   * One shape serving four jobs — the board's lit wash, the cold haze at the
+   * spawn end, and the halos under the pulsar and the spawn — because all four
+   * are the same gradient at different sizes, positions and tints. Stretched
+   * and tinted per use, which is why there is one texture rather than four.
+   *
+   * A `Sprite` rather than a `Graphics`, and that is the whole trick: sprites
+   * sitting next to the tile field in z collapse into the tile field's batch,
+   * where four Graphics would each cost their own draw call and split the tile
+   * batch in two.
+   */
+  falloff: Texture;
   blocked: Texture;
   /**
    * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
@@ -56,17 +70,59 @@ export const PROJECTILE_RADIUS = 0.11;
 /** Radius the creep *core* is baked at, in tiles. Sprites scale from this. */
 export const CREEP_BAKE_RADIUS = 0.5;
 
-function bake(renderer: Renderer, draw: (g: Graphics) => void): Texture {
+/**
+ * `resolution` defaults to the canvas so tiles stay crisp on retina — but a
+ * soft gradient stretched over hundreds of pixels gains nothing from DPR, and
+ * doubling it costs a megabyte of VRAM for an image nobody can tell apart. Pass
+ * 1 for those.
+ */
+function bake(renderer: Renderer, draw: (g: Graphics) => void, resolution?: number): Texture {
   const g = new Graphics();
   draw(g);
   const texture = renderer.generateTexture({
     target: g,
-    // Match the canvas so tiles stay crisp on retina.
-    resolution: renderer.resolution,
+    resolution: resolution ?? renderer.resolution,
     antialias: true,
   });
   g.destroy();
   return texture;
+}
+
+/** Baked once and stretched, so its own pixel size only sets the smoothness. */
+const FALLOFF_PX = 256;
+
+/**
+ * Enough steps that the largest jump lands below 8-bit quantisation, so the
+ * gradient does not band. Fewer would show rings; more would cost bake time for
+ * a difference nothing can display.
+ */
+const FALLOFF_RINGS = 48;
+
+/**
+ * Concentric discs, largest first — **with the alphas solved, not divided.**
+ *
+ * Discs composite `over`, not additively, so painting n of them at `T/n` does
+ * not accumulate to `T`; each one covers what is already there. Given a target
+ * coverage `T` at each radius, the alpha the ring must be drawn at is
+ * `(Tᵢ − Tᵢ₋₁) / (1 − Tᵢ₋₁)`.
+ *
+ * This is deliberately not a `FillGradient`. That exists and does radial with
+ * alpha stops, but it rasterises a Canvas2D surface and uploads it as an image,
+ * which puts low-alpha ramps on the wrong side of Pixi's premultiply handling —
+ * for no benefit over the bake-and-tint idiom the rest of this file already uses.
+ */
+function drawFalloff(g: Graphics): void {
+  const c = FALLOFF_PX / 2;
+  let covered = 0;
+
+  for (let i = 1; i <= FALLOFF_RINGS; i++) {
+    const u = 1 - i / FALLOFF_RINGS; // 1 at the rim, approaching 0 at the core
+    const target = (1 - u) ** 2; // bright core, quick shoulder, long tail
+    const alpha = (target - covered) / (1 - covered);
+    covered = target;
+
+    if (alpha > 0) g.circle(c, c, c * u).fill({ color: BAKE_NEUTRAL, alpha });
+  }
 }
 
 /**
@@ -329,6 +385,8 @@ export function createTextures(renderer: Renderer, board: SectorField): Textures
     tile: bake(renderer, (g) => {
       g.rect(0, 0, TILE_PX, TILE_PX).fill(BAKE_NEUTRAL);
     }),
+
+    falloff: bake(renderer, drawFalloff, 1),
 
     // The base sits at `groundAlpha` like open ground rather than staying
     // opaque. An opaque base would punch a starless rectangle out of the sky,

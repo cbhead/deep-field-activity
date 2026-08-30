@@ -54,6 +54,36 @@ export interface SectorField {
   readonly pathEdge: number | null;
   readonly spawn: number;
   readonly goal: number;
+
+  /**
+   * The board lit from the pulsar, and the cold haze at the spawn end.
+   *
+   * 390 identical tiles under a uniform grid read as graph paper: nothing says
+   * where the board's centre of gravity is, so every corner looks equally
+   * important including the ones no route passes through. Two washes give the
+   * board a direction — warm-lit at the thing you are defending, cold at the
+   * thing it arrives from — without adding a single per-frame instruction.
+   */
+  readonly lit: number;
+  readonly litAlpha: number;
+  readonly haze: number;
+  readonly hazeAlpha: number;
+
+  /**
+   * The bloom under the pulsar, drawn *below* the tile field.
+   *
+   * Below, because a halo over the board would dim tiles the player has to
+   * build on — and the objective quietly eating placement legibility is a worse
+   * trade than a fainter glow. Open ground transmits `1 - groundAlpha`, so this
+   * is set high to survive that; the route is opaque and hides it entirely,
+   * which is correct. The rings and the core sit above and carry the weight.
+   *
+   * Named `bloom` rather than `halo` because `shape.haloAlpha` already means
+   * the ring baked around a projectile. Two `haloAlpha`s in one theme is a
+   * mistake waiting for whoever reads the second one first.
+   */
+  readonly bloomAlpha: number;
+
   /** Starfield. Most stars are `star`; a scattered few are `starBright`. */
   readonly star: number;
   readonly starBright: number;
@@ -238,6 +268,15 @@ const SWITCHBACK: SectorField = {
   pathEdge: null,
   spawn: 0xf9a8d4,
   goal: 0xb5abfc,
+  lit: 0xb5abfc,
+  // The design authored 0.17 with the light source at 84%/72% — inside its own
+  // mock. Anchoring to the *real* pulsar puts it at the board's right edge on
+  // Switchback, so half the gradient falls off-board and the on-board half does
+  // less work. Raised to compensate, not to make the board brighter.
+  litAlpha: 0.22,
+  haze: 0x4f4678,
+  hazeAlpha: 0.32,
+  bloomAlpha: 0.45,
   star: 0x6f7699,
   starBright: 0xd7dcf0,
   groundAlpha: 0.72,

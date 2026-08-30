@@ -421,6 +421,16 @@ async function startGame(
   });
 
   attachInput(app, world, ui, togglePause);
+
+  // Any gesture voids the 10Hz throttle: a hotkey arming a station or a click
+  // opening the inspector shows on the next frame, not up to 100ms later. The
+  // HUD's own buttons update synchronously in hud.ts; this covers the rest.
+  const wake = (): void => {
+    hudDue = 0;
+  };
+  window.addEventListener('keydown', wake);
+  window.addEventListener('pointerdown', wake);
+
   loop.start();
 
   console.info(

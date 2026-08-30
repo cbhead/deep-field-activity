@@ -21,12 +21,111 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
   // Beneath the tiles, which are baked translucent so it shows through.
   layer.addChild(buildStarfield(map.cols * TILE_PX, map.rows * TILE_PX, field));
 
+  // Below the tiles, so a bloom can never dim ground the player has to build on.
+  layer.addChild(halo(tex, map.goal.x, map.goal.y, PULSAR_REACH, field.goal, field.bloomAlpha));
+  layer.addChild(
+    halo(tex, map.spawn.x, map.spawn.y, PULSAR_REACH, field.spawn, field.bloomAlpha * SPAWN_SHARE),
+  );
+
   layer.addChild(buildTileField(map, tex, field));
+
+  // Above the tiles, because ground is translucent: a wash underneath would
+  // arrive at `1 - groundAlpha` and be most of a layer you paid for and cannot
+  // see. Above, it lands at the value it was authored at.
+  layer.addChild(wash(tex, map, map.goal, WASH_REACH, field.lit, field.litAlpha));
+  layer.addChild(wash(tex, map, map.spawn, HAZE_REACH, field.haze, field.hazeAlpha));
+
   layer.addChild(buildLattice(map, field));
   layer.addChild(buildEndMarkers(map, field));
 
   return layer;
 }
+
+/**
+ * How far the pulsar's bloom reaches, in tiles.
+ *
+ * The objective used to be drawn inside one 40px tile — smaller than a station,
+ * for the thing whose loss ends the run. When a leak happens the eye has to
+ * already have been somewhere, and a detail in the corner is not somewhere.
+ */
+const PULSAR_REACH = 2.5;
+
+/** Arrival is quiet, the core is loud. The spawn gets the same shape, dimmer. */
+const SPAWN_SHARE = 0.25;
+
+/** Wash extents as a fraction of the board, from the design's gradient stops. */
+const WASH_REACH = { x: 0.64, y: 0.52 };
+const HAZE_REACH = { x: 0.51, y: 0.45 };
+
+/**
+ * The shared falloff, stretched and tinted.
+ *
+ * A `Sprite` rather than a `Graphics` on purpose: these sit next to the tile
+ * field in z, so they join its batch. Four Graphics here would cost four extra
+ * draw calls *and* split the tile batch in two.
+ */
+function falloffSprite(
+  tex: Textures,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  tint: number,
+  alpha: number,
+): Sprite {
+  const s = new Sprite(tex.falloff);
+  s.anchor.set(0.5);
+  s.setSize(rx * 2, ry * 2);
+  s.position.set(cx, cy);
+  s.tint = tint;
+  s.alpha = alpha;
+  return s;
+}
+
+/** A bloom centred on a tile, measured in tiles. */
+const halo = (
+  tex: Textures,
+  tileX: number,
+  tileY: number,
+  reach: number,
+  tint: number,
+  alpha: number,
+): Sprite =>
+  falloffSprite(
+    tex,
+    tileX * TILE_PX,
+    tileY * TILE_PX,
+    reach * TILE_PX,
+    reach * TILE_PX,
+    tint,
+    alpha,
+  );
+
+/**
+ * A board-wide wash, centred on something that matters.
+ *
+ * Anchored to the real `goal` and `spawn` rather than to the fixed 84%/72% the
+ * design's mock used, because the mock was drawn over Switchback and the other
+ * two boards put their ends elsewhere. "Lit from the pulsar" is the intent; the
+ * percentage was only ever one board's arithmetic for it.
+ */
+const wash = (
+  tex: Textures,
+  map: MapDef,
+  at: { readonly x: number; readonly y: number },
+  reach: { readonly x: number; readonly y: number },
+  tint: number,
+  alpha: number,
+): Sprite =>
+  falloffSprite(
+    tex,
+    at.x * TILE_PX,
+    at.y * TILE_PX,
+    map.cols * TILE_PX * reach.x,
+    map.rows * TILE_PX * reach.y,
+    tint,
+    alpha,
+  );
 
 /**
  * Every tile, from one texture.
@@ -191,18 +290,26 @@ function buildStarfield(width: number, height: number, field: SectorField): Grap
 }
 
 /**
- * The pulsar at the goal: radius as a fraction of the tile, stroke width, alpha.
+ * The pulsar at the goal: radius **in tiles**, stroke width, alpha.
  *
  * Several rings at falling alpha rather than one at a constant one. That
  * falloff is the whole difference — a single even ring reads as a targeting
  * reticle borrowed from the HUD, while a stack that fades outward reads as
  * something emitting, which is what the thing the creeps are walking towards
  * ought to look like.
+ *
+ * These used to be fractions of a single tile, which made the game's entire
+ * loss condition a 40px detail at the board's edge — smaller than any station,
+ * and nowhere the eye would already be when a leak happened. Now they reach
+ * `PULSAR_REACH`, and the outermost two are faint enough to read as bloom
+ * rather than as more rings.
  */
 const PULSAR_RINGS: readonly (readonly [number, number, number])[] = [
-  [0.46, 1, 0.12],
-  [0.36, 1.4, 0.22],
-  [0.26, 2, 0.4],
+  [2.5, 1, 0.05],
+  [1.85, 1, 0.08],
+  [1.3, 1.2, 0.13],
+  [0.85, 1.5, 0.2],
+  [0.46, 2, 0.34],
 ];
 
 /** Spawn chevron and goal pulsar. Two markers, so plain Graphics is fine here. */
@@ -229,17 +336,19 @@ function buildEndMarkers(map: MapDef, field: SectorField): Graphics {
   const gy = map.goal.y * TILE_PX;
   const goal = field.goal;
 
-  // The halo is a flat low-alpha disc, not a blur. A filter would buy a render
-  // target and a second pass for a marker that is drawn once and never changes,
-  // and at this radius the difference is not visible anyway.
-  g.circle(gx, gy, TILE_PX * 0.46).fill({ color: goal, alpha: 0.05 });
+  // The bloom is the `falloff` sprite under the tile field, not a disc here —
+  // see the halos added in `buildMapLayer`. What is left in this Graphics is
+  // only what has to sit *above* the board: the rings and the core.
   for (const [radius, width, alpha] of PULSAR_RINGS) {
     g.circle(gx, gy, TILE_PX * radius).stroke({ width, color: goal, alpha });
   }
   // Core: a soft shoulder under a hard centre, so the middle blooms instead of
-  // sitting there as a flat dot the rings happen to be centred on.
-  g.circle(gx, gy, TILE_PX * 0.15).fill({ color: goal, alpha: 0.28 });
-  g.circle(gx, gy, TILE_PX * 0.08).fill({ color: goal, alpha: 0.95 });
+  // sitting there as a flat dot the rings happen to be centred on. It grew with
+  // the rings — a 0.08-tile dot inside a 2.5-tile ring stack would read as a
+  // target the rings were aimed at rather than as the thing emitting them.
+  g.circle(gx, gy, TILE_PX * 0.34).fill({ color: goal, alpha: 0.16 });
+  g.circle(gx, gy, TILE_PX * 0.2).fill({ color: goal, alpha: 0.34 });
+  g.circle(gx, gy, TILE_PX * 0.11).fill({ color: goal, alpha: 0.95 });
 
   return g;
 }

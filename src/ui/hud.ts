@@ -38,14 +38,19 @@ import { pathDial, stationIcon, tierPips } from './icons.ts';
  * **Rendering strategy.** The HUD updates at 10Hz, and at this size guarding
  * every individual text node by hand stops being maintainable. Instead each
  * region computes a short *key* describing everything it displays; when the key
- * is unchanged the region is skipped entirely, and when it changes the region's
- * markup is rebuilt in one write. That keeps the original property — a tick
- * where nothing visible changed touches no DOM at all — while letting the
- * markup be as large as the design needs.
+ * is unchanged the region is skipped entirely, and when it changes the new
+ * markup is *morphed* onto the live DOM — only the nodes that actually differ
+ * are touched, and everything else keeps its identity. That last part is a
+ * playability requirement, not an optimisation: the deck's key changes on
+ * every kill and every timer second, and a wholesale `innerHTML` rebuild that
+ * lands between a player's mouse-down and mouse-up destroys the button they
+ * are pressing — the browser then fires no click at all, and the control feels
+ * dead until they mash it. Morphing keeps the pressed element alive through
+ * the update, along with its `:hover`/`:active` states.
  *
- * Because regions are rebuilt wholesale, nothing binds listeners to their
+ * Because regions render from strings, nothing binds listeners to their
  * contents. One delegated click handler on the root reads `data-act`, so
- * controls survive a rebuild without any re-binding.
+ * controls need no re-binding no matter how the DOM is patched.
  */
 export interface HudPorts {
   world: World;
@@ -123,6 +128,9 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
     const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]');
     if (el === null) return;
     act(el.dataset['act']!, el.dataset);
+    // Reflect the press now, not at the next 10Hz tick: a button whose state
+    // change shows up 100ms later reads as a button that didn't take.
+    update();
   });
 
   function act(action: string, data: DOMStringMap): void {
@@ -187,6 +195,27 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
     }
   }
 
+  function update(): void {
+    const inspected = ui.inspecting === null ? undefined : towerById(w, ui.inspecting);
+    if (inspected === undefined && ui.inspecting !== null) ui.inspecting = null;
+
+    const now = performance.now();
+    const toastLive = clearToast !== null && now < clearToastUntil;
+    const breachLive = now < breachUntil;
+
+    top(topKey(w, ports.speed.get(), ui.paused), () => renderTop(w, ports.speed.get(), ui.paused));
+
+    deck(deckKey(w, ui, inspected), () => renderDeck(w, ui, inspected));
+
+    overlay(
+      `${w.phase}|${ui.paused ? 'p' : ''}|${toastLive ? clearToast!.wave : ''}|${
+        breachLive ? `b${breachLives}` : ''
+      }`,
+      () =>
+        renderOverlay(w, ui, toastLive ? clearToast : null, breachLive ? breachLives : null, ports.campaign),
+    );
+  }
+
   return {
     onEvent(ev) {
       if (ev.type === 'waveCleared') {
@@ -204,37 +233,65 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       if (ev.type === 'towerSold' && ui.inspecting === ev.id) ui.inspecting = null;
     },
 
-    update() {
-      const inspected = ui.inspecting === null ? undefined : towerById(w, ui.inspecting);
-      if (inspected === undefined && ui.inspecting !== null) ui.inspecting = null;
-
-      const now = performance.now();
-      const toastLive = clearToast !== null && now < clearToastUntil;
-      const breachLive = now < breachUntil;
-
-      top(topKey(w, ports.speed.get(), ui.paused), () => renderTop(w, ports.speed.get(), ui.paused));
-
-      deck(deckKey(w, ui, inspected), () => renderDeck(w, ui, inspected));
-
-      overlay(
-        `${w.phase}|${ui.paused ? 'p' : ''}|${toastLive ? clearToast!.wave : ''}|${
-          breachLive ? `b${breachLives}` : ''
-        }`,
-        () =>
-          renderOverlay(w, ui, toastLive ? clearToast : null, breachLive ? breachLives : null, ports.campaign),
-      );
-    },
+    update,
   };
 }
 
-/** A region that rebuilds only when its key changes. */
+/** A region that re-renders only when its key changes. */
 function region(el: HTMLElement): (key: string, html: () => string) => void {
   let last: string | null = null;
+  const tpl = document.createElement('template');
   return (key, html) => {
     if (key === last) return;
     last = key;
-    el.innerHTML = html();
+    tpl.innerHTML = html();
+    morphChildren(el, tpl.content);
   };
+}
+
+/**
+ * Make `el`'s children match `want`'s in place. Nodes are matched by position
+ * and tag: a match is patched (attributes, text, then its own children), a
+ * mismatch is replaced, and the tail is appended or trimmed. Positional
+ * matching is deliberate — every region renders a fixed structure per key, so
+ * an insertion cascade costs a few extra attribute writes, never correctness.
+ */
+function morphChildren(el: Node, want: Node): void {
+  const have = el.childNodes;
+  const wish = want.childNodes;
+  for (let i = 0; i < wish.length; i++) {
+    const w = wish[i]!;
+    const h = have[i];
+    if (h === undefined) {
+      el.appendChild(w.cloneNode(true));
+      continue;
+    }
+    const sameKind =
+      h.nodeType === w.nodeType &&
+      (h.nodeType !== Node.ELEMENT_NODE ||
+        (h as Element).tagName === (w as Element).tagName);
+    if (!sameKind) {
+      el.replaceChild(w.cloneNode(true), h);
+      continue;
+    }
+    if (w.nodeType === Node.ELEMENT_NODE) {
+      morphAttrs(h as Element, w as Element);
+      morphChildren(h, w);
+    } else if (h.nodeValue !== w.nodeValue) {
+      h.nodeValue = w.nodeValue;
+    }
+  }
+  while (have.length > wish.length) el.removeChild(el.lastChild!);
+}
+
+function morphAttrs(h: Element, w: Element): void {
+  for (const name of h.getAttributeNames()) {
+    if (!w.hasAttribute(name)) h.removeAttribute(name);
+  }
+  for (const name of w.getAttributeNames()) {
+    const v = w.getAttribute(name)!;
+    if (h.getAttribute(name) !== v) h.setAttribute(name, v);
+  }
 }
 
 // ---------------------------------------------------------------- top bar
