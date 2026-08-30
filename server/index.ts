@@ -17,6 +17,7 @@
  * hello with resume=<playerId>.
  */
 import http from 'node:http';
+import os from 'node:os';
 import process from 'node:process';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -126,10 +127,31 @@ const MIME: Record<string, string> = {
   '.map': 'application/json', '.woff2': 'font/woff2', '.json': 'application/json',
 };
 
+/**
+ * The machine's Tailscale IPv4 (CGNAT range 100.64.0.0/10), if any. The lobby
+ * asks via /info so invite links carry the address the *friend* can reach,
+ * even when the host opened the page as localhost.
+ */
+function tailscaleIp(): string | null {
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family !== 'IPv4') continue;
+      const [first, second] = a.address.split('.').map(Number);
+      if (first === 100 && second !== undefined && second >= 64 && second <= 127) return a.address;
+    }
+  }
+  return null;
+}
+
 const httpServer = http.createServer((req, res) => {
   void (async () => {
     // Strip the query and any traversal; everything must resolve inside dist/.
     const rawPath = (req.url ?? '/').split('?')[0] ?? '/';
+    if (rawPath === '/info') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ tailscaleIp: tailscaleIp(), port }));
+      return;
+    }
     let path = normalize(decodeURIComponent(rawPath)).replace(/^(\.\.[/\\])+|^[/\\]+/, '');
     if (path === '' || path === '.') path = 'index.html';
     try {

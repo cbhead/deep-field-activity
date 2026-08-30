@@ -146,6 +146,82 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   let lastMyId = '';
   let lastRoom = '';
 
+  // The invite link must carry an address the FRIEND can reach. The server
+  // knows its own Tailscale IP better than this page does (the host may have
+  // opened localhost), so ask it. In dev, Vite answers 404 and the page's own
+  // origin stands. Re-render the waiting screen if the answer arrives late.
+  let inviteBase = location.origin;
+  void fetch('/info')
+    .then((r) => (r.ok ? (r.json() as Promise<{ tailscaleIp: string | null; port: number }>) : null))
+    .then((info) => {
+      if (info?.tailscaleIp) {
+        inviteBase = `http://${info.tailscaleIp}:${info.port}`;
+        if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId);
+      }
+    })
+    .catch(() => undefined);
+
+  const inviteLink = (room: string): string => `${inviteBase}/?race=${room}`;
+
+  /**
+   * "Send to Discord" posts the invite to a channel webhook the user pastes
+   * in once (kept in localStorage, this browser only). A webhook is the one
+   * Discord door a plain-http page can use: no OAuth, no SDK, and the POST is
+   * https so there's no mixed-content problem. Discord's own embed crawler
+   * can never preview a tailnet URL, so the message IS the preview.
+   */
+  function sendToDiscord(room: string): void {
+    const btn = el.querySelector('#race-discord') as HTMLButtonElement | null;
+    const hook = localStorage.getItem('discord-webhook');
+    if (!hook) {
+      (el.querySelector('#race-discord-cfg') as HTMLElement).style.display = 'flex';
+      el.querySelector<HTMLInputElement>('#race-webhook')?.focus();
+      return;
+    }
+    if (btn) btn.textContent = 'Sending…';
+    void fetch(hook, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: `Race me in ${opts.facts.sector} — room **${room}**\n${inviteLink(room)}\n(Needs Tailscale up; the link only works on our tailnet.)`,
+      }),
+    }).then(
+      (r) => {
+        if (btn) btn.textContent = r.ok ? 'Sent to Discord ✓' : 'Discord refused it — check the webhook';
+      },
+      () => {
+        if (btn) btn.textContent = "Couldn't reach Discord — check the webhook";
+      },
+    );
+  }
+
+  function wireDiscord(room: string): void {
+    el.querySelector('#race-discord')?.addEventListener('click', () => sendToDiscord(room));
+    el.querySelector('#race-webhook-save')?.addEventListener('click', () => {
+      const input = el.querySelector('#race-webhook') as HTMLInputElement;
+      const url = input.value.trim();
+      if (!url.startsWith('https://discord.com/api/webhooks/')) {
+        input.style.boxShadow = 'inset 0 0 0 1px rgba(224,109,109,.6)';
+        return;
+      }
+      localStorage.setItem('discord-webhook', url);
+      (el.querySelector('#race-discord-cfg') as HTMLElement).style.display = 'none';
+      sendToDiscord(room);
+    });
+  }
+
+  const discordRow = (): string =>
+    `<div style="display:flex;align-items:center;gap:14px">` +
+    `<button id="race-discord" class="lb-btn dim" style="height:40px;font-size:13px">Send to Discord</button>` +
+    `<button class="lb-leave" onclick="const c=document.getElementById('race-discord-cfg');c.style.display=c.style.display==='none'?'flex':'none'">webhook…</button></div>` +
+    `<div id="race-discord-cfg" style="display:none;flex-direction:column;gap:8px">` +
+    `<input id="race-webhook" class="lb-field" style="height:40px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace" ` +
+    `placeholder="https://discord.com/api/webhooks/…" value="${localStorage.getItem('discord-webhook') ?? ''}">` +
+    `<div style="display:flex;align-items:center;gap:12px">` +
+    `<button id="race-webhook-save" class="lb-btn dim" style="height:36px;font-size:12px">Save & send</button>` +
+    `<span class="lb-fine">Discord: channel → Edit → Integrations → Webhooks → New Webhook → Copy URL. Stays in this browser.</span>` +
+    `</div></div>`;
+
   const bar = (sub: string, conn: string, bad = false): string =>
     `<div class="lb-bar"><span class="lb-brand">${opts.facts.sector}</span><span class="lb-sep"></span>` +
     `<span class="lb-sub">${sub}</span>` +
@@ -244,7 +320,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
         `<input class="lb-bigcode" readonly value="${room}" onclick="this.select()">` +
         `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">or send the link</span>` +
-        `<input class="lb-field lb-link" readonly value="${location.origin}/?race=${room}" onclick="this.select()"></div>` +
+        `<input class="lb-field lb-link" readonly value="${inviteLink(room)}" onclick="this.select()"></div>` +
+        discordRow() +
         `<span class="lb-fine" style="max-width:440px">Both fields select on click — the relay runs over plain http on your tailnet, where the browser refuses clipboard access.</span>` +
         `</div><div class="lb-how" style="gap:16px;padding-top:8px">` +
         `<span class="lb-label" style="letter-spacing:.18em">Pilots</span>` +
@@ -288,6 +365,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     el.querySelector('#race-leave')?.addEventListener('click', () => {
       location.href = '?race';
     });
+    if (players.length < 2) wireDiscord(room);
   }
 
   if (opts.autoJoin !== undefined) {
