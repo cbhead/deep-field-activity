@@ -14,10 +14,24 @@ export const BALANCE = {
 
   /** Seconds of build time before wave 1. */
   firstWaveDelay: 12,
-  /** Seconds between a wave clearing and the next one starting. */
+  /**
+   * Seconds between one wave finishing *spawning* and the next starting — not
+   * between one wave clearing and the next. Waves overlap: stragglers from the
+   * previous wave are still walking when the next arrives, which is both the
+   * genre norm and what makes sending early a real decision.
+   */
   intermission: 8,
-  /** Paid on clearing a wave, on top of per-kill bounty. */
+  /** Paid when every creep of a wave is off the board, on top of per-kill bounty. */
   waveClearReward: 20,
+
+  /**
+   * Cash per second of intermission forfeited by sending a wave early.
+   *
+   * This is the risk/reward lever: rushing buys tempo and money but stacks the
+   * next wave on top of one you have not finished killing. In Race mode it is
+   * the main way to pull ahead, since ranking is waves cleared first.
+   */
+  rushBonusPerSecond: 4,
 
   /**
    * Per-wave multipliers, compounding: wave N enemies have
@@ -25,8 +39,8 @@ export const BALANCE = {
    * content is TypeScript and not JSON — this is the dial difficulty is
    * actually tuned with, and it isn't expressible in a data file.
    */
-  hpGrowth: 1.22,
-  bountyGrowth: 1.08,
+  hpGrowth: 1.28,
+  bountyGrowth: 1.14,
 
   /**
    * Spawn timing is jittered by ±this fraction of the group interval, drawn

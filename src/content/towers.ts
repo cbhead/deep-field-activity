@@ -3,21 +3,25 @@ import type { TowerDef } from './types.ts';
 /**
  * The three v1 towers.
  *
- * They differ on the axes that make a placement decision interesting — reach,
- * damage per shot, and rate — before any special behaviour exists. Cannon's
- * splash and frost's slow arrive in M7; until then these are already three
- * genuinely different answers to "what do I put on this tile", which is what
- * M5 needs in order to tell us whether the loop is fun.
+ * Costs are set against range, not against raw damage. Range buys time on
+ * target, so a short-reach tower needs more damage per dollar just to break
+ * even: arrow yields 0.16 dps/$ at 2.8 tiles, cannon 0.21 at 2.5. Tuned by
+ * sweep (see the balance probe in tools/check.ts), not by feel — the first
+ * guess had arrow at 0.20 dps/$ *and* the longest reach, which made it
+ * strictly correct and the other two decorative.
  *
- * Numbers are a first guess. M9's headless harness is what tunes them.
+ * Known gap: frost cannot yet carry a game on its own. With one enemy type and
+ * no status effects there is nothing for a low-damage, high-rate, long-reach
+ * tower to be good *at* — its whole point is the slow that arrives in M7. It is
+ * priced as cheap early coverage until then.
  */
 export const TOWERS = {
   arrow: {
     id: 'arrow',
     name: 'Arrow',
-    blurb: 'Cheap, fast, long reach. The backbone.',
-    cost: 60,
-    range: 3.0,
+    blurb: 'Steady all-rounder. Good reach, no surprises.',
+    cost: 75,
+    range: 2.8,
     damage: 6,
     fireInterval: 0.5,
     projectileSpeed: 14,
@@ -26,10 +30,10 @@ export const TOWERS = {
   cannon: {
     id: 'cannon',
     name: 'Cannon',
-    blurb: 'Slow, heavy, short reach. Wants a corner.',
-    cost: 110,
-    range: 2.4,
-    damage: 20,
+    blurb: 'Heavy hits, slow reload, short reach. Wants a corner.',
+    cost: 105,
+    range: 2.5,
+    damage: 22,
     fireInterval: 1.4,
     projectileSpeed: 9,
     hotkey: '2',
@@ -37,11 +41,11 @@ export const TOWERS = {
   frost: {
     id: 'frost',
     name: 'Frost',
-    blurb: 'Low damage, near-instant shots.',
-    cost: 85,
-    range: 2.8,
-    damage: 3,
-    fireInterval: 0.75,
+    blurb: 'Longest reach, rapid fire, tiny hits.',
+    cost: 65,
+    range: 3.3,
+    damage: 2,
+    fireInterval: 0.28,
     // Fast enough to land the same tick it is fired, in practice. Hitscan
     // without a second damage path and a second set of bugs.
     projectileSpeed: 40,

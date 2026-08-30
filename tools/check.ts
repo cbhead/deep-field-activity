@@ -13,7 +13,7 @@ import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, waveCount } from '../src/sim/wavePlan.ts';
-import { TOWERS } from '../src/content/towers.ts';
+import { TOWERS, type TowerId } from '../src/content/towers.ts';
 import { placementError } from '../src/sim/build.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
@@ -274,8 +274,15 @@ section('waves — content is a pure function of (seed, wave)');
   );
   check(w9.every((s) => s.at >= 0), 'jitter never pulls a spawn before its group starts');
 
+  // Checked against the configured growth rate rather than a hardcoded range,
+  // so tuning the curve cannot silently invalidate the gate.
   const scale = planWave(77, 9)[0]!.hp / planWave(77, 0)[0]!.hp;
-  check(scale > 4 && scale < 8, 'hp compounds across the arc', `wave 10 is ${scale.toFixed(1)}x wave 1`);
+  const expected = Math.pow(BALANCE.hpGrowth, waveCount() - 1);
+  check(
+    Math.abs(scale - expected) / expected < 0.02,
+    'hp compounds at the configured growth rate',
+    `wave 10 is ${scale.toFixed(1)}x wave 1 (${BALANCE.hpGrowth}^9 = ${expected.toFixed(1)})`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +333,123 @@ section('waves — full match');
       `${started} starts, ${w.time.toFixed(0)}s vs ${won.w.time.toFixed(0)}s idle`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sending early is the mechanic the wave machine was restructured around, and
+// the thing that was silently broken before: startWave only acted during the
+// intermission, which is a minority of the runtime.
+section('waves — sending early');
+
+{
+  // Overlap: with no defence, wave 0's creeps are still walking when wave 1 is
+  // sent. Two waves on the board at once is the whole point.
+  const w = createWorld(map, 4242);
+  w.lives = 1_000_000;
+  w.commands.push({ type: 'startWave' });
+  while (w.wave.phase === 'spawning' || w.wave.dispatchedThrough < 0) stepWorld(w, DT);
+  w.events.length = 0;
+
+  w.commands.push({ type: 'startWave' });
+  stepWorld(w, DT);
+  for (let i = 0; i < 60 * 3; i++) stepWorld(w, DT);
+
+  const livingWaves = new Set(w.creeps.map((c) => c.wave));
+  check(livingWaves.size >= 2, 'two waves can be on the board at once', `waves alive: ${[...livingWaves].join(', ')}`);
+  check(w.wave.clearedThrough === -1, 'neither counts as cleared while creeps live');
+}
+
+{
+  // The bonus must be payment for time actually forfeited, and nothing else.
+  const w = createWorld(map, 4242);
+  const beforeMoney = w.money;
+  const secondsLeft = w.wave.timer;
+  w.commands.push({ type: 'startWave' });
+  stepWorld(w, DT);
+
+  const rushed = w.events.find((e) => e.type === 'waveRushed');
+  const expected = Math.round(secondsLeft * BALANCE.rushBonusPerSecond);
+  check(rushed !== undefined, 'rushing emits an event');
+  check(
+    w.money === beforeMoney + expected,
+    'the bonus matches the time forfeited',
+    `${secondsLeft.toFixed(1)}s → +$${w.money - beforeMoney}`,
+  );
+}
+
+{
+  // Letting the timer run out must pay nothing, or the "bonus" is just income.
+  const w = createWorld(map, 4242);
+  const beforeMoney = w.money;
+  let rushEvents = 0;
+  while (w.wave.phase === 'intermission') {
+    stepWorld(w, DT);
+    for (const ev of w.events) if (ev.type === 'waveRushed') rushEvents++;
+    w.events.length = 0;
+  }
+  check(rushEvents === 0 && w.money === beforeMoney, 'waiting it out earns no bonus', `$${w.money - beforeMoney}`);
+}
+
+{
+  // Refusals must be audible. Silence here is exactly the bug that was reported.
+  const w = createWorld(map, 4242);
+  w.lives = 1_000_000;
+  w.commands.push({ type: 'startWave' });
+  stepWorld(w, DT);
+  w.events.length = 0;
+
+  w.commands.push({ type: 'startWave' });
+  stepWorld(w, DT);
+  const midSpawn = w.events.find((e) => e.type === 'waveRejected');
+  check(
+    midSpawn !== undefined && midSpawn.reason === 'spawning',
+    'a wave sent mid-spawn is refused out loud',
+    `phase=${w.wave.phase}`,
+  );
+
+  // Drive every wave out, then ask for one more.
+  for (let i = 0; i < 400_000 && w.wave.phase !== 'done'; i++) {
+    w.commands.push({ type: 'startWave' });
+    stepWorld(w, DT);
+    w.events.length = 0;
+  }
+  w.commands.push({ type: 'startWave' });
+  stepWorld(w, DT);
+  const exhausted = w.events.find((e) => e.type === 'waveRejected');
+  check(
+    exhausted !== undefined && exhausted.reason === 'done',
+    'and so is one sent after the last wave',
+  );
+}
+
+{
+  // Victory is about the board being clear, not about the spawner being
+  // finished. Under the old model those were the same thing; now they are not.
+  const w = createWorld(map, 4242);
+  w.lives = 1_000_000;
+  for (let i = 0; i < 400_000 && w.wave.phase !== 'done'; i++) {
+    w.commands.push({ type: 'startWave' });
+    stepWorld(w, DT);
+    w.events.length = 0;
+  }
+  check(w.creeps.length > 0, 'the last wave is dispatched with creeps still walking', `${w.creeps.length} alive`);
+  check(w.phase === 'playing', 'and the match is NOT yet won');
+
+  // Settling several stacked waves at once must pay for each exactly once.
+  const clearedBefore = w.wave.clearedThrough;
+  for (const c of w.creeps) c.dead = true;
+  let cleared = 0;
+  for (let i = 0; i < 60 && w.phase === 'playing'; i++) {
+    stepWorld(w, DT);
+    for (const ev of w.events) if (ev.type === 'waveCleared') cleared++;
+    w.events.length = 0;
+  }
+  check(w.phase === 'won', 'clearing the board wins it');
+  check(
+    cleared === waveCount() - 1 - clearedBefore,
+    'each stacked wave settles exactly once',
+    `${cleared} waves settled together`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -559,33 +683,47 @@ section('balance probe (informational)');
    * measures tower damage but says nothing about whether bounty income can
    * fund a defence, which is the actual question at M5.
    */
-  const probe = (towerId: 'arrow' | 'cannon' | 'frost'): string => {
-    const spots = rankedSpots(TOWERS[towerId].range);
-    const w = createWorld(map, 4242);
+  const SEEDS = [4242, 7, 999, 31337, 12345];
+
+  const play = (build: TowerId[], rush: boolean, seed: number): { won: boolean; lives: number } => {
+    // Rank by the widest range in the build so every strategy shares one notion
+    // of "good tile" and none is flattered by its own ordering.
+    const spots = rankedSpots(Math.max(...build.map((b) => TOWERS[b].range)));
+    const w = createWorld(map, seed);
     const acc: Accumulator = { debt: 0 };
     let next = 0;
-    let leaked = 0;
 
     for (let i = 0; i < 400_000 && w.phase === 'playing'; i++) {
-      if (next < spots.length && w.money >= TOWERS[towerId].cost) {
-        w.commands.push({ type: 'placeTower', defId: towerId, col: spots[next]![0], row: spots[next]![1] });
+      const want = build[next % build.length]!;
+      if (next < spots.length && w.money >= TOWERS[want].cost) {
+        w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
         next++;
       }
+      if (rush) w.commands.push({ type: 'startWave' });
       advance(w, acc, 1000 / TICK_HZ, 1);
-      for (const ev of w.events) if (ev.type === 'creepLeaked') leaked++;
       w.events.length = 0;
     }
-
-    const reached = w.phase === 'won' ? waveCount() : w.wave.index + 1;
-    return (
-      `${towerId.padEnd(6)} → ${w.phase === 'won' ? 'WON ' : 'lost'} on wave ${String(reached).padStart(2)}/${waveCount()}` +
-      ` · ${String(w.towers.length).padStart(2)} towers built · ${String(w.lives).padStart(2)} lives · ${leaked} leaked`
-    );
+    return { won: w.phase === 'won', lives: w.lives };
   };
 
-  console.log('  \x1b[2mgreedy auto-builder, real starting money, best-coverage tiles\x1b[0m');
-  for (const id of ['arrow', 'cannon', 'frost'] as const) {
-    console.log(`  \x1b[2m${probe(id)}\x1b[0m`);
+  const row = (label: string, build: TowerId[], rush: boolean): string => {
+    const rs = SEEDS.map((s) => play(build, rush, s));
+    const wins = rs.filter((r) => r.won).length;
+    const lives = rs.reduce((a, r) => a + r.lives, 0) / rs.length;
+    return `${rush ? 'rush' : 'wait'} ${label.padEnd(9)} won ${wins}/${SEEDS.length}  avg lives ${lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}`;
+  };
+
+  const builds: [string, TowerId[]][] = [
+    ['arrow', ['arrow']],
+    ['cannon', ['cannon']],
+    ['frost', ['frost']],
+    ['cannon+2arrow', ['cannon', 'arrow', 'arrow']],
+  ];
+
+  console.log(`  \x1b[2mgreedy auto-builder · real starting money · ${SEEDS.length} seeds\x1b[0m`);
+  console.log('  \x1b[2m"wait" lets each intermission run out; "rush" sends every wave early\x1b[0m');
+  for (const rush of [false, true]) {
+    for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
 }
 

@@ -12,7 +12,7 @@ export const ENEMIES = {
     name: 'Grunt',
     hp: 20,
     speed: 1.8,
-    bounty: 4,
+    bounty: 6,
     radius: 0.3,
   },
 } as const satisfies Record<string, EnemyDef>;

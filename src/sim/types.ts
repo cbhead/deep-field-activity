@@ -77,6 +77,13 @@ export interface Creep {
   /** Money paid on kill. Baked in at spawn, since it scales per wave. */
   bounty: number;
 
+  /**
+   * Which wave this creep belongs to. Because waves overlap, "wave 3 is
+   * cleared" cannot be inferred from an empty board — creeps from wave 4 may
+   * already be walking. This tag is what keeps clear-rewards and victory exact.
+   */
+  readonly wave: number;
+
   /** Set during the tick; the cleanup phase removes it from the array. */
   dead: boolean;
 }
@@ -164,6 +171,9 @@ export type SimEvent =
   | { type: 'creepLeaked'; x: number; y: number }
   | { type: 'waveStarted'; wave: number; count: number }
   | { type: 'creepKilled'; x: number; y: number; bounty: number }
+  | { type: 'waveRushed'; wave: number; bonus: number; secondsSaved: number }
+  /** A startWave that could not be honoured. Silence would read as a bug. */
+  | { type: 'waveRejected'; reason: 'spawning' | 'done' }
   | { type: 'waveCleared'; wave: number }
   | { type: 'towerPlaced'; id: EntityId; col: number; row: number }
   | { type: 'buildRejected'; reason: PlacementError }
@@ -172,12 +182,19 @@ export type SimEvent =
 /** Whole-match state. The sim stops stepping once this leaves 'playing'. */
 export type MatchPhase = 'playing' | 'lost' | 'won';
 
+/**
+ * Wave *dispatch* state — where the spawner is, not what is on the board.
+ *
+ * There is deliberately no 'clearing' phase. Dispatch and board-clearing are
+ * separate concerns now that waves overlap: the next intermission begins the
+ * moment a wave finishes spawning, while its creeps are still walking. Whether
+ * a given wave has been cleared is answered by `clearedThrough`, computed from
+ * the creeps actually alive.
+ */
 export type WavePhase =
-  /** Build time. Counting down to the next wave. */
+  /** Counting down to the next wave. Sending early skips the remainder. */
   | 'intermission'
   /** Working through the spawn plan. */
   | 'spawning'
-  /** Everything is spawned; waiting for the board to empty. */
-  | 'clearing'
-  /** No waves left. */
+  /** Every wave has been dispatched. */
   | 'done';

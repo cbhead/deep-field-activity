@@ -146,3 +146,15 @@ html, body {
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* Rush prompt: only present while sending early is actually possible, so its
+   absence is itself the signal that the option has gone. */
+.hud-rush {
+  align-self: center;
+  min-width: 168px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-rush.is-live { color: var(--accent); }

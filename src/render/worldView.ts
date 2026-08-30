@@ -89,6 +89,16 @@ export class WorldView {
         case 'waveCleared':
           console.info(`[td] wave ${ev.wave + 1} cleared — $${w.money}`);
           break;
+        case 'waveRushed':
+          console.info(`[td] rushed wave ${ev.wave + 1} — +$${ev.bonus} for ${ev.secondsSaved.toFixed(1)}s saved`);
+          break;
+        case 'waveRejected':
+          console.info(
+            ev.reason === 'spawning'
+              ? '[td] wave already spawning — wait for it to finish'
+              : '[td] no waves left to send',
+          );
+          break;
         case 'towerPlaced':
           console.info(`[td] built at ${ev.col},${ev.row} — $${w.money} left`);
           break;

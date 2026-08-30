@@ -14,7 +14,7 @@ import type {
 } from './types.ts';
 
 export interface WaveState {
-  /** 0-based index into WAVES. */
+  /** 0-based index into WAVES: the wave spawning now, or the next one due. */
   index: number;
   phase: WavePhase;
   /**
@@ -25,6 +25,17 @@ export interface WaveState {
   plan: PlannedSpawn[];
   /** How far through `plan` the spawner has got. */
   spawned: number;
+
+  /** Highest wave index fully spawned. -1 before the first wave. */
+  dispatchedThrough: number;
+  /**
+   * Highest wave index with no creeps left alive. -1 before the first clear.
+   *
+   * Separate from `dispatchedThrough` because waves overlap — wave 4 can be
+   * walking while wave 3's last straggler is still alive, so an empty board is
+   * not what "cleared" means any more.
+   */
+  clearedThrough: number;
 }
 
 /**
@@ -78,6 +89,8 @@ export function createWorld(map: MapDef, seed: number): World {
       timer: BALANCE.firstWaveDelay,
       plan: [],
       spawned: 0,
+      dispatchedThrough: -1,
+      clearedThrough: -1,
     },
     creeps: [],
     towers: [],
@@ -88,7 +101,13 @@ export function createWorld(map: MapDef, seed: number): World {
   };
 }
 
-export function spawnCreep(w: World, defId: EnemyId, hp?: number, bounty?: number): Creep {
+export function spawnCreep(
+  w: World,
+  defId: EnemyId,
+  hp?: number,
+  bounty?: number,
+  wave = w.wave.index,
+): Creep {
   const def = ENEMIES[defId];
   const start = w.map.spawn;
   const health = hp ?? def.hp;
@@ -106,6 +125,7 @@ export function spawnCreep(w: World, defId: EnemyId, hp?: number, bounty?: numbe
     hp: health,
     maxHp: health,
     bounty: bounty ?? def.bounty,
+    wave,
     dead: false,
   };
   w.creeps.push(creep);

@@ -1,3 +1,4 @@
+import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { css, THEME } from '../render/theme.ts';
 import { waveCount } from '../sim/wavePlan.ts';
@@ -54,8 +55,11 @@ export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
   }
 
   const hint = el('div', 'hud-hint');
-  hint.textContent = 'Click a tower or press 1-3 · Esc or right-click to cancel · Space sends the next wave';
+  hint.textContent = 'Click a tower or press 1-3 · Esc or right-click to cancel';
   bar.appendChild(hint);
+
+  const rushHint = el('div', 'hud-rush');
+  stats.appendChild(rushHint);
 
   root.append(stats, bar);
 
@@ -63,6 +67,7 @@ export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
   let lastMoney = NaN;
   let lastLives = NaN;
   let lastWave = '';
+  let lastRush = '';
   let lastSelected: TowerId | null | undefined;
 
   return {
@@ -82,13 +87,23 @@ export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
         lives.classList.toggle('is-critical', w.lives <= 5);
       }
 
-      const waveText =
-        w.wave.phase === 'done'
-          ? 'done'
-          : `${w.wave.index + 1}/${waveCount()}${w.wave.phase === 'intermission' ? ` · ${Math.ceil(w.wave.timer)}s` : ''}`;
+      const waveText = describeWave(w);
       if (waveText !== lastWave) {
         lastWave = waveText;
         wave.textContent = waveText;
+      }
+
+      // The rush bonus is worthless if the player cannot see it. Showing the
+      // amount decaying in real time is what turns "press Space" into a
+      // decision rather than a hidden mechanic.
+      const rush =
+        w.wave.phase === 'intermission' && w.wave.timer > 0
+          ? `Space → send now  +$${Math.round(w.wave.timer * BALANCE.rushBonusPerSecond)}`
+          : '';
+      if (rush !== lastRush) {
+        lastRush = rush;
+        rushHint.textContent = rush;
+        rushHint.classList.toggle('is-live', rush !== '');
       }
 
       if (selected !== lastSelected) {
@@ -97,6 +112,21 @@ export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
       }
     },
   };
+}
+
+/**
+ * Waves overlap, so "wave 4" alone is ambiguous — creeps from wave 3 may still
+ * be alive. Report what has actually been *cleared* against the total, and what
+ * is inbound alongside it.
+ */
+function describeWave(w: World): string {
+  const s = w.wave;
+  const total = waveCount();
+  const cleared = s.clearedThrough + 1;
+
+  if (s.phase === 'done') return cleared >= total ? 'all clear' : `${cleared}/${total} · last wave out`;
+  if (s.phase === 'spawning') return `${cleared}/${total} · ${s.index + 1} incoming`;
+  return `${cleared}/${total} · ${s.index + 1} in ${Math.ceil(s.timer)}s`;
 }
 
 function el(tag: string, className: string): HTMLElement {
