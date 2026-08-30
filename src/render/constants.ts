@@ -34,6 +34,55 @@ export const TOP_PX = 46;
 /** Colours live in `theme.ts`, so that a reskin is one file rather than five. */
 
 /**
+ * How far the grid survives toward the board's edges.
+ *
+ * A uniform grid from corner to corner reads as graph paper: every tile looks
+ * equally important, including the ones no route passes through. Fading it
+ * outward gives the board a centre of gravity without deleting the one thing
+ * the grid is *for*, which is making placement legible.
+ *
+ * `rx`/`ry` scale the **full** board dimensions, matching how a CSS radial
+ * gradient's extent is written; `inner` is the normalised radius the fade
+ * starts at and `outer` where it reaches zero.
+ *
+ * **The design's own numbers were a near-no-op and are deliberately not used.**
+ * `radial-gradient(125% 120% …, #000 40%, transparent 92%)` works out, on a
+ * 26x15 board, to a mask of 1.0 along the mid-edges and 0.659 in the corners —
+ * a fade nobody would see. These land at ~0.82 mid-edge and ~0.42 corner, which
+ * is a recession you can actually read. The spec says the checklist wins where
+ * it and a mock disagree; this is that rule being used.
+ */
+export const GRID_MASK = { rx: 0.9, ry: 0.95, inner: 0.42, outer: 1.02 } as const;
+
+/**
+ * The floor the mask may never go below **on a tile a player can build on**.
+ *
+ * "The grid may fade at the far edges; it may not fade anywhere a player
+ * builds" is the constraint, and a comment is not a constraint. All three maps
+ * have buildable corners, so this is asserted in `tools/check.ts` across every
+ * buildable tile of every map — which means a fourth map with a different
+ * aspect ratio fails at check time rather than shipping a corner nobody can
+ * aim at.
+ */
+export const GRID_MASK_FLOOR = 0.34;
+
+/**
+ * Grid strength at a point, 1 at the centre falling to 0 past `outer`.
+ *
+ * Pure and pixi-free so the gate can call it headlessly — the invariant above
+ * is only worth stating if something checks it.
+ */
+export function gridMaskAt(x: number, y: number, boardW: number, boardH: number): number {
+  const nx = (x - boardW / 2) / (GRID_MASK.rx * boardW);
+  const ny = (y - boardH / 2) / (GRID_MASK.ry * boardH);
+  const rho = Math.sqrt(nx * nx + ny * ny);
+
+  if (rho <= GRID_MASK.inner) return 1;
+  if (rho >= GRID_MASK.outer) return 0;
+  return 1 - (rho - GRID_MASK.inner) / (GRID_MASK.outer - GRID_MASK.inner);
+}
+
+/**
  * Where each upgrade path sits on the collar drawn around an upgraded station.
  *
  * **Position is the encoding, not colour.** Three paths need three channels and

@@ -34,6 +34,15 @@ export interface SectorField {
   readonly ground: number;
   readonly groundAlt: number;
   readonly gridLine: number;
+  /**
+   * Grid stroke strength before `gridMaskAt` fades it toward the edges.
+   *
+   * Higher than the 0.6 the stroke was baked at, because it used to be drawn
+   * *per tile*: two neighbouring tiles each stroked their own inset border, so
+   * a shared edge carried two adjacent 1px lines. The lattice draws one line
+   * per edge, and this is what buys back the weight that lost.
+   */
+  readonly gridAlpha: number;
   readonly blocked: number;
   readonly blockedEdge: number;
   readonly path: number;
@@ -220,6 +229,7 @@ const SWITCHBACK: SectorField = {
   ground: 0x0f1222,
   groundAlt: 0x0b0d19,
   gridLine: 0x1a1d33,
+  gridAlpha: 0.85,
   blocked: 0x232532,
   blockedEdge: 0x2f3245,
   // The route reads *lighter* than the field it crosses, so the path is

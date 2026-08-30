@@ -10,6 +10,9 @@
  * determinism gate (same seed → byte-identical wave log).
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
+import { LEVEL02 } from '../src/content/maps/level02.ts';
+import { LEVEL03 } from '../src/content/maps/level03.ts';
+import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1564,6 +1567,64 @@ section('balance probe (informational)');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// THE GRID MAY FADE AT THE EDGES; IT MAY NOT FADE WHERE A PLAYER BUILDS.
+//
+// The one line of the design's acceptance checklist that is pure geometry, so
+// it can be a gate instead of a checkbox. `gridMaskAt` is deliberately
+// pixi-free for exactly this reason — the invariant is only worth stating if
+// something checks it.
+//
+// Every map, every buildable tile, all four of its edges. A fourth map with a
+// different aspect ratio now fails here rather than shipping a corner the
+// player cannot aim at.
+// ---------------------------------------------------------------------------
+section('board · grid legibility');
+{
+  const EDGE_OFFSETS: readonly (readonly [number, number])[] = [
+    [0.5, 0],
+    [0.5, 1],
+    [0, 0.5],
+    [1, 0.5],
+  ];
+
+  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+    const m = parseMap(src);
+    const w = m.cols * TILE_PX;
+    const h = m.rows * TILE_PX;
+
+    let worst = Infinity;
+    let worstAt = '';
+    for (let row = 0; row < m.rows; row++) {
+      for (let col = 0; col < m.cols; col++) {
+        if (!isBuildableTile(m, col, row)) continue;
+        for (const [dx, dy] of EDGE_OFFSETS) {
+          const mask = gridMaskAt((col + dx) * TILE_PX, (row + dy) * TILE_PX, w, h);
+          if (mask < worst) {
+            worst = mask;
+            worstAt = `${col},${row}`;
+          }
+        }
+      }
+    }
+
+    check(
+      worst >= GRID_MASK_FLOOR,
+      `${m.name}: grid survives on every buildable tile`,
+      `dimmest ${worst.toFixed(3)} at ${worstAt}, floor ${GRID_MASK_FLOOR}`,
+    );
+  }
+
+  // The fade has to actually fade, or the mask is a no-op dressed as a feature
+  // — which is precisely what the design's own numbers turned out to be.
+  const m = parseMap(LEVEL01);
+  const w = m.cols * TILE_PX;
+  const h = m.rows * TILE_PX;
+  const centre = gridMaskAt(w / 2, h / 2, w, h);
+  const corner = gridMaskAt(0, 0, w, h);
+  check(centre === 1 && corner < 0.6, 'the fade is visible', `centre ${centre.toFixed(2)} · corner ${corner.toFixed(2)}`);
 }
 
 // ---------------------------------------------------------------------------

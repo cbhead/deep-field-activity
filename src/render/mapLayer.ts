@@ -1,7 +1,7 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
-import { TILE_PX } from './constants.ts';
+import { TILE_PX, gridMaskAt } from './constants.ts';
 import type { SectorField } from './theme.ts';
 import type { Textures } from './textures.ts';
 
@@ -21,30 +21,119 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
   // Beneath the tiles, which are baked translucent so it shows through.
   layer.addChild(buildStarfield(map.cols * TILE_PX, map.rows * TILE_PX, field));
 
+  layer.addChild(buildTileField(map, tex, field));
+  layer.addChild(buildLattice(map, field));
+  layer.addChild(buildEndMarkers(map, field));
+
+  return layer;
+}
+
+/**
+ * Every tile, from one texture.
+ *
+ * The colour is `tint` and the translucency is `alpha`, both of which Pixi 8
+ * packs into the vertex stream — so 390 tiles in four different colours are
+ * still a single batched draw call, exactly as 390 identical ones were.
+ *
+ * The alpha is what lets the starfield through. Open ground sits short of
+ * opaque so the sky reads as being *behind* the board rather than as one more
+ * shade of tile; the route stays at 1 and occludes it, which is what makes the
+ * road read as a structure laid over the void. That is a legibility win as much
+ * as a visual one — a route you can trace without the field competing under it
+ * is a route you can plan against.
+ */
+function buildTileField(map: MapDef, tex: Textures, field: SectorField): Container {
   const tileField = new Container();
+
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
       const kind = map.tiles[row * map.cols + col]!;
-      const texture =
-        kind === 'path'
-          ? tex.path
-          : kind === 'blocked'
-            ? tex.blocked
-            : // Checker the buildable ground so the grid is readable without a
-              // hard line grid over the whole board.
-              (col + row) % 2 === 0
-              ? tex.ground
-              : tex.groundAlt;
 
-      const sprite = new Sprite(texture);
+      // Blocked keeps its own texture until the nebula moves into board space;
+      // everything else is the shared square wearing a colour.
+      const sprite = new Sprite(kind === 'blocked' ? tex.blocked : tex.tile);
+
+      if (kind === 'path') {
+        sprite.tint = field.path;
+      } else if (kind !== 'blocked') {
+        // Checker the buildable ground, so a tile is countable without a hard
+        // grid line having to do the whole job.
+        sprite.tint = (col + row) % 2 === 0 ? field.ground : field.groundAlt;
+        sprite.alpha = field.groundAlpha;
+      }
+
       sprite.position.set(col * TILE_PX, row * TILE_PX);
       tileField.addChild(sprite);
     }
   }
-  layer.addChild(tileField);
-  layer.addChild(buildEndMarkers(map, field));
 
-  return layer;
+  return tileField;
+}
+
+/**
+ * The grid, as one board-space object above the tiles.
+ *
+ * It used to be baked into each tile's own texture, which cost no extra nodes
+ * but made the fade in `gridMaskAt` impossible: you cannot mask a texture that
+ * is repeated across 390 sprites. Lifting it out buys the fade, and it also
+ * collapsed three tile textures into one, because the stroke was the only thing
+ * that distinguished them.
+ *
+ * Two consequences worth knowing:
+ *
+ *  - **It draws above the tiles, not below.** Open ground is translucent, so a
+ *    lattice underneath would come through at `1 - groundAlpha` and lose most
+ *    of its weight. Above, it lands at full strength, which is where placement
+ *    legibility lives.
+ *  - **One line per edge, where there used to be two.** Neighbouring tiles each
+ *    stroked their own inset border, so a shared edge carried two adjacent 1px
+ *    lines. `field.gridAlpha` is raised to compensate.
+ */
+function buildLattice(map: MapDef, field: SectorField): Graphics {
+  const g = new Graphics();
+  const boardW = map.cols * TILE_PX;
+  const boardH = map.rows * TILE_PX;
+
+  // Off-board reads as ground, so the board keeps its outer border.
+  const kindAt = (col: number, row: number): string =>
+    col < 0 || row < 0 || col >= map.cols || row >= map.rows
+      ? 'ground'
+      : map.tiles[row * map.cols + col]!;
+
+  /**
+   * An edge is drawn unless both sides are the same thing you would not want
+   * subdivided: the route reads as one continuous road, and a nebula is gas
+   * rather than a set of squares. Everything else — including the boundary
+   * *between* road and ground — is a line the player uses.
+   */
+  const skip = (a: string, b: string): boolean =>
+    (a === 'path' && b === 'path') || (a === 'blocked' && b === 'blocked');
+
+  const stroke = (x0: number, y0: number, x1: number, y1: number): void => {
+    const alpha = field.gridAlpha * gridMaskAt((x0 + x1) / 2, (y0 + y1) / 2, boardW, boardH);
+    if (alpha <= 0) return;
+    g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 1, color: field.gridLine, alpha });
+  };
+
+  // Half-pixel offsets so a 1px stroke lands *on* a pixel rather than across
+  // two — the same convention the baked tile border used.
+  for (let col = 0; col <= map.cols; col++) {
+    for (let row = 0; row < map.rows; row++) {
+      if (skip(kindAt(col - 1, row), kindAt(col, row))) continue;
+      const x = col * TILE_PX + 0.5;
+      stroke(x, row * TILE_PX, x, (row + 1) * TILE_PX);
+    }
+  }
+
+  for (let row = 0; row <= map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      if (skip(kindAt(col, row - 1), kindAt(col, row))) continue;
+      const y = row * TILE_PX + 0.5;
+      stroke(col * TILE_PX, y, (col + 1) * TILE_PX, y);
+    }
+  }
+
+  return g;
 }
 
 /**

@@ -14,9 +14,18 @@ import { BAKE_NEUTRAL, THEME, type SectorField } from './theme.ts';
  * only changes what this file returns.
  */
 export interface Textures {
-  ground: Texture;
-  groundAlt: Texture;
-  path: Texture;
+  /**
+   * Every board tile, from one neutral square.
+   *
+   * There used to be three of these — `ground`, `groundAlt` and `path` — which
+   * differed only in fill colour and alpha. Once the grid moved out of the bake
+   * and into the lattice, nothing was left to distinguish them, so the checker
+   * and the route are now `Sprite.tint` and `Sprite.alpha` over a shared
+   * texture. Tint and alpha are packed into the vertex stream in Pixi 8, so 390
+   * differently-coloured tiles are still one draw call, and the route can now
+   * ramp per tile for free — which is what `route.ts` spends.
+   */
+  tile: Texture;
   blocked: Texture;
   /**
    * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
@@ -59,31 +68,6 @@ function bake(renderer: Renderer, draw: (g: Graphics) => void): Texture {
   g.destroy();
   return texture;
 }
-
-/**
- * The grid line is baked into the tile itself rather than drawn as an overlay
- * mesh — the border is what makes tower placement legible, and this way it
- * costs zero extra nodes. Path tiles deliberately get no grid so the route
- * reads as one continuous road.
- *
- * `alpha` is what lets the starfield through. Open ground is baked short of
- * opaque so the sky reads as being *behind* the board rather than as one more
- * tile colour; the route is the exception and stays at 1. Occluding the stars
- * is what makes the road read as a structure laid over the void, and it is a
- * legibility win as much as a visual one — a route you can trace without the
- * field competing under it is a route you can plan against. The edge stroke
- * keeps its own alpha: dimming the grid along with the fill would trade away
- * placement legibility to buy nothing.
- */
-const flatTile =
-  (fill: number, edge: number | null, alpha = 1) =>
-  (g: Graphics): void => {
-    g.rect(0, 0, TILE_PX, TILE_PX).fill({ color: fill, alpha });
-    if (edge !== null) {
-      // Inset by half a pixel so the 1px stroke lands on the pixel, not across two.
-      g.rect(0.5, 0.5, TILE_PX - 1, TILE_PX - 1).stroke({ width: 1, color: edge, alpha: 0.6 });
-    }
-  };
 
 /**
  * The nebula — what an unbuildable tile is in Deep Field.
@@ -342,9 +326,9 @@ export function createTextures(renderer: Renderer, board: SectorField): Textures
       g.circle(pr * 2, pr * 2, pr).fill(BAKE_NEUTRAL);
     }),
 
-    ground: bake(renderer, flatTile(board.ground, board.gridLine, board.groundAlpha)),
-    groundAlt: bake(renderer, flatTile(board.groundAlt, board.gridLine, board.groundAlpha)),
-    path: bake(renderer, flatTile(board.path, board.pathEdge)),
+    tile: bake(renderer, (g) => {
+      g.rect(0, 0, TILE_PX, TILE_PX).fill(BAKE_NEUTRAL);
+    }),
 
     // The base sits at `groundAlpha` like open ground rather than staying
     // opaque. An opaque base would punch a starless rectangle out of the sky,
