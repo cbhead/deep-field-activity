@@ -2,10 +2,19 @@ import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { ENEMIES } from '../content/enemies.ts';
 import type { UiState } from '../app/uiState.ts';
-import { describeGaps, coverage, formatClock, grade, nextGradeHint } from '../sim/analysis.ts';
+import {
+  describeGaps,
+  coverage,
+  formatClock,
+  grade,
+  nextGradeHint,
+  toughestArmour,
+  formatDamage,
+} from '../sim/analysis.ts';
 import { sellValue, upgradeCost, isUnlocked, damageAtTier } from '../sim/build.ts';
 import { planWave, waveCount } from '../sim/wavePlan.ts';
 import { TARGET_MODES, type Command, type SimEvent, type TargetMode, type Tower } from '../sim/types.ts';
+import { effectiveDamage } from '../sim/damage.ts';
 import { towerById, type World } from '../sim/world.ts';
 import { stationIcon, tierPips } from './icons.ts';
 
@@ -264,6 +273,9 @@ function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
     // Only the collapsed strip shows a live enemy count. Including it
     // unconditionally would rebuild the whole open deck on every kill.
     ui.deckOpen ? '' : aliveInWave(w, s.index),
+    // The inspector prices the armed station against this, and while the deck
+    // is open nothing else in this key changes when the last Bulwark dies.
+    inspected ? (toughestArmour(w)?.defId ?? '-') : '',
   ].join('|');
 }
 
@@ -367,14 +379,56 @@ function renderInspector(w: World, t: Tower): string {
     `<span class="blurb">tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} dmg dealt</span>` +
     tierPips(t.tier, BALANCE.upgrade.maxTier) +
     `</div>` +
-    `<div class="cells">${stat('Dmg', next === null ? String(t.damage) : `${t.damage}`, 'accent')}${stat(
-      'Rate',
-      (1 / t.fireInterval).toFixed(1),
-    )}${stat('Rng', t.range.toFixed(1))}${stat('Kills', String(t.kills))}</div>` +
+    `<div class="cells">${stat(
+      'Dmg',
+      next === null ? String(t.damage) : `${t.damage} → ${next}`,
+      'accent',
+    )}${stat('Rate', (1 / t.fireInterval).toFixed(1))}${stat(
+      'Rng',
+      t.range.toFixed(1),
+    )}${stat('Kills', String(t.kills))}</div>` +
+    renderArmourLine(w, t, next) +
     `<div class="actions"><div class="seg targeting">${modes}</div>` +
     `${upgrade}<button class="btn" data-act="sell">Sell +$${sellValue(t)}</button></div>`
   );
 }
+
+/**
+ * What this station actually lands on the toughest armour in play.
+ *
+ * Only rendered when something armoured is in play, because for the first six
+ * waves it would be noise — and the whole reason it exists is that the Dmg cell
+ * is *misleading* against armour, not merely incomplete. A Singularity Mk I
+ * reads "Dmg 3" and lands 0.45 on a Bulwark; a player upgrading it to fight
+ * Bulwarks is being misled by the panel.
+ *
+ * A `.line` beneath the cells rather than a fifth cell: `.cells` is a fixed
+ * four-column grid that already holds exactly four, so a fifth would wrap to a
+ * lone orphan on a second row.
+ */
+function renderArmourLine(w: World, t: Tower, next: number | null): string {
+  const ref = toughestArmour(w);
+  if (ref === null) return '';
+
+  const now = effectiveDamage(t.damage, ref.armor);
+  const after = next === null ? null : effectiveDamage(next, ref.armor);
+  const kept = now / t.damage;
+
+  // Flagged past half, so "this is the wrong tool for that" reads without the
+  // player doing the division.
+  const cls = kept <= 0.5 ? ' class="bad"' : '';
+  const name = ENEMIES[ref.defId].name;
+
+  return (
+    `<div class="line armour">` +
+    `${ref.inbound ? 'Inbound' : 'On the board'}: <b>${name}</b> · ` +
+    `<b${cls}>${formatDamage(now)}${after === null ? '' : ` → ${formatDamage(after)}`}</b> per hit · ` +
+    `armour eats ${Math.round((1 - kept) * 100)}%` +
+    `</div>`
+  );
+}
+
+
 
 /**
  * What is coming, drawn from `planWave` — the same pure function the spawner

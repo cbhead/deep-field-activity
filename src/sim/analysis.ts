@@ -1,6 +1,8 @@
 import { BALANCE } from '../content/balance.ts';
+import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import type { MapDef } from './types.ts';
 import { tileCentre } from './util/grid.ts';
+import { planWave } from './wavePlan.ts';
 import type { World } from './world.ts';
 
 /**
@@ -91,6 +93,46 @@ export function describeGaps(c: Coverage): string {
   return `${c.gaps.length} of ${c.total} route tiles had no station in reach${where}.`;
 }
 
+export interface ArmourReference {
+  defId: EnemyId;
+  armor: number;
+  /** True when nothing armoured is alive and this came from the inbound wave. */
+  inbound: boolean;
+}
+
+/**
+ * The toughest-armoured contact the player is currently up against.
+ *
+ * Exists so the inspector can price a station against something real rather
+ * than against a fixed reference that is meaningless for the first six waves.
+ *
+ * The inbound fallback is the deliberate part. "Alive right now" alone goes
+ * blank for the whole intermission — which is precisely when stations get
+ * upgraded, so the readout would vanish exactly when it is needed. Falling back
+ * to the next wave's plan keeps the answer to "what am I about to face"
+ * available at the moment the money is spent.
+ */
+export function toughestArmour(w: World): ArmourReference | null {
+  let best: ArmourReference | null = null;
+
+  for (const c of w.creeps) {
+    if (c.dead) continue;
+    const armor = ENEMIES[c.defId].armor;
+    if (armor > 0 && (best === null || armor > best.armor)) {
+      best = { defId: c.defId, armor, inbound: false };
+    }
+  }
+  if (best !== null) return best;
+
+  for (const spawn of planWave(w.seed, w.wave.index)) {
+    const armor = ENEMIES[spawn.enemy].armor;
+    if (armor > 0 && (best === null || armor > best.armor)) {
+      best = { defId: spawn.enemy, armor, inbound: true };
+    }
+  }
+  return best;
+}
+
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
 /**
@@ -128,6 +170,18 @@ export function nextGradeHint(w: World): string | null {
       : `Let nothing through — you leaked ${w.stats.leaks} this run — and finish under ${clock}.`;
   return `${gap} Sending waves early does both at once.`;
 }
+
+/**
+ * A damage figure, for anywhere a player reads one.
+ *
+ * Rounding to whole numbers was fine until armour: a hit floored to 0.45 renders
+ * as `0`, which tells the player their station did *nothing* when in fact it did
+ * the least the floor allows. That is the same lie the inspector used to tell,
+ * and it must not be told twice — so the floating combat numbers and the
+ * inspector share this rather than each rounding their own way.
+ */
+export const formatDamage = (n: number): string =>
+  n < 10 ? n.toFixed(n < 1 ? 2 : 1) : String(Math.round(n));
 
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

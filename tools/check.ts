@@ -13,13 +13,13 @@ import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, waveCount } from '../src/sim/wavePlan.ts';
-import { TOWERS, type TowerId } from '../src/content/towers.ts';
+import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost } from '../src/sim/build.ts';
-import { coverage } from '../src/sim/analysis.ts';
+import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
 import type { TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
-import { damageCreep } from '../src/sim/damage.ts';
+import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
@@ -1073,6 +1073,171 @@ section('contacts — shields');
   const plain = kill('drifter');
   const shielded = kill('warden');
   check(shielded > plain, 'a shielded contact takes longer to kill', `${shielded} vs ${plain} ticks`);
+}
+
+// ---------------------------------------------------------------------------
+section('contacts — armour');
+
+{
+  const w = soloWorld();
+  const c = spawnCreep(w, 'bulwark');
+  const armor = ENEMIES.bulwark.armor;
+  const before = c.hp;
+
+  damageCreep(w, c, 20);
+  check(
+    c.hp === before - (20 - armor),
+    'armour comes off every hit',
+    `−${20 - armor} of 20 raw`,
+  );
+}
+
+{
+  // Never immunity. A station whose shots literally cannot scratch something
+  // reads as a bug, and it would make a bad build unrecoverable rather than
+  // merely bad — no chipping your way to the money for the station you need.
+  const w = soloWorld();
+  const c = spawnCreep(w, 'bulwark');
+  const before = c.hp;
+  const raw = 2; // Singularity's damage, far under the armour value.
+
+  damageCreep(w, c, raw);
+  const landed = before - c.hp;
+  check(landed > 0, 'a hit smaller than the armour still lands something', `${landed.toFixed(2)}`);
+  check(
+    Math.abs(landed - raw * BALANCE.armorFloor) < 1e-9,
+    'and lands exactly the floor, not the difference',
+    `${landed.toFixed(2)} = ${raw} × ${BALANCE.armorFloor}`,
+  );
+}
+
+{
+  // Everything unarmoured must be bit-identical to before armour existed.
+  const w = soloWorld();
+  const c = spawnCreep(w, 'drifter');
+  const before = c.hp;
+  damageCreep(w, c, 7);
+  check(c.hp === before - 7, 'an unarmoured contact takes the whole hit', '−7 of 7');
+}
+
+{
+  // The defining property, and the one that a "simplification" to percentage
+  // armour would silently destroy: the same damage total is worth more
+  // delivered as one heavy hit than as chip. That asymmetry is the entire
+  // reason this mechanic exists — it is the axis Nova is strong on and the
+  // Lance/Singularity pair is weak on.
+  const spend = 60;
+  const hullAfter = (hits: number): number => {
+    const w = soloWorld();
+    const c = spawnCreep(w, 'bulwark', { hp: 500 });
+    for (let i = 0; i < hits; i++) damageCreep(w, c, spend / hits);
+    return c.hp;
+  };
+
+  const heavy = hullAfter(1);
+  const chip = hullAfter(10);
+  check(heavy < chip, 'one heavy hit beats the same total as chip', `hull ${heavy.toFixed(1)} vs ${chip.toFixed(1)}`);
+}
+
+{
+  // Armour must not distort attribution or bounty: a kill still pays once, and
+  // a tower is credited what it actually landed rather than what it fired.
+  const w = soloWorld();
+  const c = spawnCreep(w, 'bulwark', { hp: 10, bounty: 9 });
+  const money = w.money;
+
+  damageCreep(w, c, 1e6);
+  check(c.dead && w.money === money + 9, 'an armoured kill pays its bounty once', `+$9`);
+}
+
+// ---------------------------------------------------------------------------
+// The inspector prints effective damage, and the sim applies it. They call the
+// same function so they cannot disagree — this is the analogue of the "ghost
+// cannot lie" sweep, for the same failure mode in a new place.
+section('inspector — armour readout');
+
+{
+  check(effectiveDamage(20, 0) === 20, 'no armour is identity');
+  check(effectiveDamage(20, 5) === 15, 'armour comes off the hit', `${effectiveDamage(20, 5)}`);
+  check(effectiveDamage(3, 5) > 0, 'armour is never immunity', `${effectiveDamage(3, 5)}`);
+  check(
+    Math.abs(effectiveDamage(3, 5) - 3 * BALANCE.armorFloor) < 1e-9,
+    'and floors at armorFloor rather than going negative',
+    `${effectiveDamage(3, 5).toFixed(2)} = 3 × ${BALANCE.armorFloor}`,
+  );
+
+  let floorHolds = true;
+  for (let amount = 0; amount <= 60; amount += 0.5) {
+    for (const armor of [0, 1, 5, 40]) {
+      const e = effectiveDamage(amount, armor);
+      if (e < 0 || e > amount || e < amount * BALANCE.armorFloor - 1e-9) floorHolds = false;
+    }
+  }
+  check(floorHolds, 'never negative, never above the raw hit, never under the floor');
+}
+
+{
+  // What the panel would print must equal what the sim actually removes, for
+  // every station at every tier. Drift here would mislead a player at the exact
+  // moment they are spending money on an upgrade.
+  const w = soloWorld();
+  let worst = 0;
+  for (const defId of TOWER_IDS) {
+    for (let tier = 1; tier <= BALANCE.upgrade.maxTier; tier++) {
+      const raw = damageAtTier(defId, tier);
+      const shown = effectiveDamage(raw, ENEMIES.bulwark.armor);
+
+      const c = spawnCreep(w, 'bulwark', { hp: 1e6 });
+      const before = c.hp;
+      damageCreep(w, c, raw);
+      const actual = before - c.hp;
+      c.dead = true;
+
+      worst = Math.max(worst, Math.abs(actual - shown));
+    }
+  }
+  check(worst < 1e-9, 'the panel figure equals what the sim removes', `worst delta ${worst}`);
+
+  // A floored hit is small, not absent. Rounding it to a whole number renders
+  // "0", which tells the player the station did nothing at all.
+  const floored = effectiveDamage(damageAtTier('singularity', 1), ENEMIES.bulwark.armor);
+  check(
+    Number(formatDamage(floored)) > 0,
+    'a floored hit never renders as zero',
+    `${floored.toFixed(3)} → "${formatDamage(floored)}"`,
+  );
+}
+
+{
+  const w = soloWorld();
+  check(toughestArmour(w) === null, 'no armour reference on an empty board');
+
+  spawnCreep(w, 'drifter');
+  check(toughestArmour(w) === null, 'and none when nothing alive is armoured');
+
+  spawnCreep(w, 'bulwark');
+  const ref = toughestArmour(w);
+  check(
+    ref !== null && ref.defId === 'bulwark' && !ref.inbound,
+    'a live armoured contact is picked, and not flagged inbound',
+    `${ref?.defId}`,
+  );
+}
+
+{
+  // The intermission fallback: upgrades get bought when the board is empty, and
+  // a readout that vanished exactly then would be useless.
+  const w = createWorld(map, 4242);
+  // Wave index 6 is the first that contains a bulwark.
+  w.wave.index = 6;
+  w.wave.phase = 'intermission';
+  check(w.creeps.length === 0, 'board is empty during the intermission');
+  const ref = toughestArmour(w);
+  check(
+    ref !== null && ref.defId === 'bulwark' && ref.inbound,
+    'the inbound wave supplies the reference, flagged as inbound',
+    `${ref?.defId} inbound=${ref?.inbound}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

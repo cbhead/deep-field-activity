@@ -69,6 +69,18 @@ export const BALANCE = {
   bountyGrowth: 1.14,
 
   /**
+   * Fraction of a raw hit that lands no matter how much armour is in the way.
+   *
+   * Armour must never be immunity. A station that literally cannot scratch a
+   * contact reads as a bug rather than as a counter, and it would make a build
+   * unrecoverable instead of merely wrong — the player could not chip their way
+   * out while saving for the station they actually need. At 0.15 a Singularity
+   * still contributes against a Bulwark, just badly enough that its slow is the
+   * reason to keep it there.
+   */
+  armorFloor: 0.15,
+
+  /**
    * Spawn timing is jittered by ±this fraction of the group interval, drawn
    * from the seeded WAVE stream. Metronomic spawns look mechanical; jitter that
    * is *seeded* keeps both players in a Race facing the same arrival pattern.

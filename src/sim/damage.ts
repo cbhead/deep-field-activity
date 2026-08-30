@@ -1,3 +1,4 @@
+import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import type { Creep, Tower } from './types.ts';
 import { waveStats, type World } from './world.ts';
@@ -16,18 +17,41 @@ import { waveStats, type World } from './world.ts';
  * no single owner, and because attribution must never be load-bearing: nothing
  * about the outcome changes when it is absent.
  */
+/**
+ * What one hit of `amount` actually lands against `armor`.
+ *
+ * Extracted rather than left inline because the inspector prints this figure,
+ * and a HUD computing its own copy would drift from what the simulation does —
+ * lying at exactly the moment the player is trusting it to spend money. Same
+ * discipline as `placementError` being shared by the placement ghost and the
+ * command handler, and gated the same way.
+ *
+ * Flat subtraction, floored so armour is never immunity. Applied per hit rather
+ * than to a total is the whole mechanic: it is what makes one heavy shot worth
+ * more than the same damage delivered as chip.
+ */
+export const effectiveDamage = (amount: number, armor: number): number =>
+  armor > 0 ? Math.max(amount * BALANCE.armorFloor, amount - armor) : amount;
+
 export function damageCreep(w: World, c: Creep, amount: number, source?: Tower): void {
   if (c.dead || c.hp <= 0) return;
+
+  const def = ENEMIES[c.defId];
 
   // Any hit restarts the regen countdown, whether or not a shield is up. That
   // is what makes sustained fire hold a Warden's shield at zero while a gap in
   // coverage hands it back.
-  c.shieldTimer = ENEMIES[c.defId].shieldRegenDelay;
+  c.shieldTimer = def.shieldRegenDelay;
 
-  // Shield absorbs first, and the overflow carries into the hull — so a single
+  // Armour comes off the individual hit, before anything else can absorb it.
+  // Splash arrives here too, which is deliberate — the falloff edge of a
+  // detonation is a small hit and armour treats it like one.
+  const effective = effectiveDamage(amount, def.armor);
+
+  // Shield absorbs next, and the overflow carries into the hull — so a single
   // heavy shot is not wasted on a thin shield the way it would be if the shield
   // simply ate the whole hit.
-  let toHull = amount;
+  let toHull = effective;
   if (c.shield > 0) {
     const absorbed = Math.min(c.shield, toHull);
     c.shield -= absorbed;
@@ -37,7 +61,7 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
 
   // Credit shield and hull alike, but never more than was actually there, so
   // overkill on a 2hp creep doesn't inflate a tower's damage figure.
-  const landed = Math.min(amount, amount - toHull + c.hp);
+  const landed = Math.min(effective, effective - toHull + c.hp);
   c.hp -= toHull;
 
   if (source !== undefined) source.damageDealt += landed;

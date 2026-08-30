@@ -226,6 +226,12 @@ export const DEEP_FIELD: Theme = {
     warden: 0xe879c9,
     /** Pushed toward red: the one whose death makes things worse. */
     cluster: 0xfb7185,
+    /**
+     * Desaturated toward steel — the only contact that reads as *plated* rather
+     * than as flesh, which is the one thing a player needs to spot early enough
+     * to stop pouring chip damage into it.
+     */
+    bulwark: 0xd8a0b4,
   },
 
   feedback: {

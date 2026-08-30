@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, type TextStyleOptions } from 'pixi.js';
 import type { UiPrefs } from '../app/uiState.ts';
+import { formatDamage } from '../sim/analysis.ts';
 import type { SimEvent } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { TILE_PX } from './constants.ts';
@@ -115,7 +116,7 @@ export class Effects {
         if (!prefs.damageNumbers) break;
         this.spawnedThisFrame++;
         const tint = ev.defId === null ? THEME.fx.damageText : THEME.towers[ev.defId];
-        this.addNumber(`−${Math.round(ev.amount)}`, ev.x, ev.y, tint);
+        this.addNumber(`−${formatDamage(ev.amount)}`, ev.x, ev.y, tint);
         break;
       }
       case 'creepKilled':

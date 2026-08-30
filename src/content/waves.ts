@@ -34,14 +34,20 @@ export const WAVES: readonly WaveDef[] = [
   wave(g(6, 0.9), g(14, 0.28, 4, 'mote')), //            first real swarm
   wave(g(8, 0.85), g(1, 1, 5, 'monolith')), //           one monolith to learn on
   wave(g(6, 0.8), g(2, 3, 4, 'monolith'), g(10, 0.3, 12, 'mote')),
-  wave(g(6, 0.9), g(3, 2.2, 3, 'warden')), //            shields, with room to fail
+  wave(g(6, 0.9), g(3, 2.2, 3, 'warden'), g(1, 1, 11, 'bulwark')), // one bulwark to learn on
   wave(g(10, 0.4), g(2, 2, 6, 'cluster')), //            splitters under a rush
-  wave(g(4, 1.0, 0, 'warden'), g(2, 3, 2, 'monolith'), g(4, 1.6, 8, 'cluster')),
   wave(
-    g(12, 0.5), //                                       finale: all five at once
+    g(4, 1.0, 0, 'warden'),
+    g(2, 3, 2, 'monolith'),
+    g(3, 2.0, 5, 'bulwark'), //                          armour in anger
+    g(4, 1.6, 8, 'cluster'),
+  ),
+  wave(
+    g(12, 0.5), //                                       finale: all six at once
     g(4, 1.4, 3, 'warden'),
     g(3, 2.4, 6, 'monolith'),
     g(5, 1.3, 9, 'cluster'),
+    g(4, 1.9, 12, 'bulwark'),
     g(16, 0.25, 16, 'mote'),
   ),
 ];

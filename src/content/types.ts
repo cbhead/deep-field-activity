@@ -21,6 +21,26 @@ export interface EnemyDef {
   readonly radius: number;
 
   /**
+   * Flat damage subtracted from every individual hit. 0 for everything unarmoured.
+   *
+   * Flat, not a percentage, and that is the entire design. A percentage cut
+   * scales every station equally and therefore counters none of them; a flat
+   * cut discriminates by damage *per hit*, so a station landing one heavy shot
+   * barely notices while one that chips is nearly stopped.
+   *
+   * It exists because pierce and slow turned out to multiply: a slow bunches
+   * contacts into a file, and pierce is worth more the longer the file, so
+   * Singularity manufactures exactly the condition that maximises Lance. The
+   * sweep's marginal block showed that pair winning every seed without losing a
+   * life while Nova's marginal contribution was *negative*. Armour is the axis
+   * on which that pair is weak and Nova is strong, so it makes Nova the answer
+   * to something rather than a more expensive way to do what Lance already did.
+   *
+   * Never total immunity — see `BALANCE.armorFloor`.
+   */
+  readonly armor: number;
+
+  /**
    * Overshield absorbed before hull. 0 for everything that has none.
    *
    * Shields punish *thin* coverage rather than low damage: they regenerate
