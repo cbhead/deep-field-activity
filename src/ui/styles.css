@@ -32,16 +32,17 @@ html, body {
   left: 50%;
   top: 50%;
   width: var(--board-w, 100%);
-  height: calc(var(--board-h, 100%) + var(--deck-h, 0px));
+  height: calc(var(--top-h, 0px) + var(--board-h, 100%) + var(--deck-h, 0px));
   transform: translate(-50%, -50%) scale(var(--board-scale, 1));
 }
 
 /* The board occupies the top of the stage; the reserved strip below it is the
    deck's, so no route tile is ever behind the deck. */
+/* The board sits between the two reserved strips. */
 #game-root {
   position: absolute;
   left: 0;
-  top: 0;
+  top: var(--top-h, 0px);
   width: var(--board-w, 100%);
   height: var(--board-h, 100%);
 }
@@ -92,16 +93,20 @@ kbd {
 
 /* ------------------------------------------------------------------ top */
 
+/* The reserved strip above the board — see fitCanvas. It used to overlay the
+   top two rows *and* take pointer events, so those tiles could be seen but not
+   built on. Now it is solid rather than a fade, because it no longer has a
+   board to fade into. */
 .top {
   pointer-events: auto;
   position: absolute;
   left: 0; right: 0; top: 0;
-  height: 46px;
+  height: var(--top-h, 46px);
   display: flex;
   align-items: center;
   gap: 22px;
   padding: 0 14px;
-  background: linear-gradient(to bottom, var(--bg), transparent);
+  background: var(--bg);
   box-shadow: inset 0 -1px 0 var(--panel-edge);
 }
 
@@ -169,7 +174,7 @@ kbd {
   position: absolute;
   left: 0;
   right: 0;
-  top: var(--board-h, auto);
+  top: calc(var(--top-h, 0px) + var(--board-h, 0px));
   height: var(--deck-h, 150px);
 }
 
@@ -252,6 +257,23 @@ kbd {
 .detail .head b { font-size: 13px; color: var(--text); }
 .detail .head .blurb { font-size: 10.5px; color: var(--dim); }
 .detail .line { font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+
+/* The station's defining mechanic, in figures. Accent-coloured because it is
+   the reason to buy this one rather than a cheaper one. */
+.special { font-size: 11px; color: var(--accent-soft); }
+
+/* Wave preview: one chip per contact type. Wraps, because a late wave has six
+   and the deck's height is fixed. */
+.chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.chip {
+  padding: 2px 7px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--slot) 60%, transparent);
+  font-size: 10.5px;
+  color: var(--bright);
+  white-space: nowrap;
+}
 /* The armour readout. `bad` marks a station losing more than half of every hit
    to armour, so "wrong tool for this contact" reads without doing the division. */
 .detail .line.armour { font-size: 11px; color: var(--dim); }
@@ -352,7 +374,8 @@ kbd {
    thing it is reporting on, not straddling the deck. */
 .overlay {
   position: absolute;
-  left: 0; top: 0;
+  left: 0;
+  top: var(--top-h, 0px);
   width: 100%;
   height: var(--board-h, 100%);
   display: grid;

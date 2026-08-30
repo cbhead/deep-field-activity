@@ -1,6 +1,7 @@
 import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
-import { ENEMIES } from '../content/enemies.ts';
+import type { TowerDef } from '../content/types.ts';
+import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import type { UiState } from '../app/uiState.ts';
 import {
   describeGaps,
@@ -369,6 +370,28 @@ function stat(label: string, value: string, cls = ''): string {
   return `<span class="cell"><label>${label}</label><b class="${cls}">${value}</b></span>`;
 }
 
+/**
+ * What this station does that the others don't, in numbers.
+ *
+ * Derived from the def rather than written into the blurb: a blurb saying
+ * "pierces three" becomes a lie the moment `pierce` is tuned, and this game's
+ * balance dials move. The blurb carries the identity, this carries the figures,
+ * and only one of them can go stale.
+ *
+ * The stat cells deliberately do not cover these — Dmg/Rate/Rng are the axes
+ * every station shares and are worth comparing side by side, where the special
+ * is exactly the thing that has no counterpart to compare against.
+ */
+function mechanics(d: TowerDef): string {
+  const parts: string[] = [];
+  if (d.pierce > 0) parts.push(`Passes through ${d.pierce} more`);
+  if (d.splashRadius > 0) parts.push(`Blast ${d.splashRadius.toFixed(1)} tiles`);
+  if (d.slowFactor < 1) {
+    parts.push(`Slows to ${Math.round(d.slowFactor * 100)}% for ${d.slowSeconds}s`);
+  }
+  return parts.join(' · ');
+}
+
 function renderArmed(id: TowerId): string {
   const d = TOWERS[id];
   return (
@@ -378,6 +401,7 @@ function renderArmed(id: TowerId): string {
       'Rate',
       (1 / d.fireInterval).toFixed(1),
     )}${stat('Rng', d.range.toFixed(1))}${stat('Cost', `$${d.cost}`, 'accent')}</div>` +
+    `<div class="special">${mechanics(d)}</div>` +
     `<div class="hint">Click to place · <b>Esc</b> or right-click to cancel</div>`
   );
 }
@@ -469,17 +493,35 @@ function renderNextContact(w: World): string {
     return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
   }
 
-  const first = plan[0]!;
-  const name = ENEMIES[first.enemy].name;
-  const gap =
-    plan.length > 1 ? (plan[plan.length - 1]!.at - first.at) / (plan.length - 1) : 0;
+  // Grouped by type, in order of first arrival.
+  //
+  // This used to read `plan[0]`'s name and hp and apply them to `plan.length`,
+  // which was true only while there was one contact type. With six it announced
+  // wave 10 as "40 × Drifter" when barely a quarter of it was Drifters — a
+  // confident lie, in the one panel whose entire job is telling the player what
+  // to prepare for.
+  const groups: { enemy: EnemyId; n: number; hp: number; shield: number }[] = [];
+  for (const p of plan) {
+    const hit = groups.find((g) => g.enemy === p.enemy);
+    if (hit === undefined) groups.push({ enemy: p.enemy, n: 1, hp: p.hp, shield: p.shield });
+    else hit.n++;
+  }
+
+  // Effective health, so a Warden's overshield counts toward "toughest" — it is
+  // health the player has to chew through whatever pool it sits in.
+  const toughest = groups.reduce((a, b) => (b.hp + b.shield > a.hp + a.shield ? b : a));
+
+  const chips = groups
+    .map((g) => `<span class="chip c-${g.enemy}">${g.n} ${ENEMIES[g.enemy].name}</span>`)
+    .join('');
 
   return (
-    `<div class="head"><i class="dot contact"></i><b>Wave ${s.index + 1}</b></div>` +
-    `<div class="line">${plan.length} × ${name}, ${first.hp} hp each` +
-    (gap > 0 ? `, ${gap.toFixed(2)}s apart` : '') +
-    `.</div>` +
-    `<div class="hint">Pick a slot, or click a station to inspect it.</div>`
+    `<div class="head"><i class="dot contact"></i><b>Wave ${s.index + 1}</b>` +
+    `<span class="blurb">${plan.length} contacts</span></div>` +
+    `<div class="chips">${chips}</div>` +
+    `<div class="hint">Toughest: ${ENEMIES[toughest.enemy].name}, ${toughest.hp}` +
+    (toughest.shield > 0 ? ` + ${toughest.shield} shield` : ' hp') +
+    `</div>`
   );
 }
 

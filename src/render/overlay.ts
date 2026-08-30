@@ -29,7 +29,7 @@ import type { Textures } from './textures.ts';
  */
 const REJECTION: Record<Exclude<PlacementError, 'offBoard'>, string> = {
   onRoute: 'On the route',
-  blocked: 'Scenery · no build',
+  blocked: 'Nebula · no build',
   occupied: 'Occupied',
   tooPoor: 'Not enough cash',
   locked: 'Locked',

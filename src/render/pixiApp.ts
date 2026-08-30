@@ -1,5 +1,5 @@
 import { Application, Container } from 'pixi.js';
-import { DECK_PX } from './constants.ts';
+import { DECK_PX, TOP_PX } from './constants.ts';
 import { THEME } from './theme.ts';
 
 /**
@@ -95,7 +95,7 @@ function fitCanvas(app: Application, mount: HTMLElement): void {
   // The deck's height is reserved beneath the board, so the two letterbox as a
   // single stack. Fitting the board alone would put the deck back on top of the
   // final approach, which is the one stretch that must stay visible.
-  const stackHeight = app.screen.height + DECK_PX;
+  const stackHeight = TOP_PX + app.screen.height + DECK_PX;
   const scale = Math.min(
     1,
     mount.clientWidth / app.screen.width,
@@ -115,6 +115,7 @@ function fitCanvas(app: Application, mount: HTMLElement): void {
   const root = document.documentElement.style;
   root.setProperty('--board-w', `${app.screen.width}px`);
   root.setProperty('--board-h', `${app.screen.height}px`);
+  root.setProperty('--top-h', `${TOP_PX}px`);
   root.setProperty('--deck-h', `${DECK_PX}px`);
   root.setProperty('--board-scale', String(scale));
 }

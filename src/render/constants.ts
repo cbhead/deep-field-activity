@@ -21,4 +21,14 @@ export const tilesToPx = (tiles: number): number => tiles * TILE_PX;
  */
 export const DECK_PX = 150;
 
+/**
+ * Height the top bar reserves above the board, in board-space px.
+ *
+ * Same reasoning as `DECK_PX`, arrived at later. The bar overlaid the top two
+ * rows and — worse than hiding them — it takes pointer events, so tiles up
+ * there could be looked at but not built on. A control strip that silently
+ * eats part of the play area is the same bug whichever edge it sits on.
+ */
+export const TOP_PX = 46;
+
 /** Colours live in `theme.ts`, so that a reskin is one file rather than five. */
