@@ -59,9 +59,23 @@ interface Result {
   won: boolean;
   cleared: number;
   lives: number;
+  /** Cash on the board when the run settled — the bank carried to the next sector. */
+  money: number;
 }
 
-function run(map: MapDef, rules: ReturnType<typeof resolveRules>, seed: number): Result {
+/**
+ * `stopBuyingAfter` models the one behaviour the carry rule is meant to create:
+ * a player who stops spending near the end of a sector so they arrive at the
+ * next one solvent. The default greedy builder never does this — it buys
+ * whenever it can afford to — which makes it the worst possible reader of a
+ * rule about saving.
+ */
+function run(
+  map: MapDef,
+  rules: ReturnType<typeof resolveRules>,
+  seed: number,
+  stopBuyingAfter = Infinity,
+): Result {
   const spots = rankedSpots(map, Math.max(...BUILD.map((b) => TOWERS[b].range)));
   const w = createWorld(map, seed, rules);
   let next = 0;
@@ -74,7 +88,8 @@ function run(map: MapDef, rules: ReturnType<typeof resolveRules>, seed: number):
     if (
       next < spots.length &&
       w.money >= TOWERS[want].cost &&
-      w.wave.index >= TOWERS[want].unlockWave
+      w.wave.index >= TOWERS[want].unlockWave &&
+      w.wave.clearedThrough + 1 < stopBuyingAfter
     ) {
       w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
       next++;
@@ -83,7 +98,12 @@ function run(map: MapDef, rules: ReturnType<typeof resolveRules>, seed: number):
     w.events.length = 0;
   }
 
-  return { won: w.phase === 'won', cleared: w.wave.clearedThrough + 1, lives: w.lives };
+  return {
+    won: w.phase === 'won',
+    cleared: w.wave.clearedThrough + 1,
+    lives: w.lives,
+    money: Math.floor(w.money),
+  };
 }
 
 console.log('\n\x1b[1mcampaign arc\x1b[0m');
@@ -112,6 +132,48 @@ for (const level of CAMPAIGN) {
         `  lives ${lives.toFixed(1).padStart(5)}/${rules.startingLives}`,
     );
   }
+}
+
+/**
+ * The campaign as one continuous run, with cash carried between sectors.
+ *
+ * This is the harshest possible reading of the carry rule, and deliberately so:
+ * the greedy builder buys whenever it can afford to, so it arrives at every
+ * hand-off with close to nothing. A human who knows the bank exists will hold
+ * some back — that is the decision the rule is for — so treat these numbers as
+ * the floor, not the expectation.
+ *
+ * What matters here is whether a spend-everything player is *stranded*. Being
+ * poorer is the intended cost; being unable to clear the next sector at all
+ * would mean the rule needs a floor after all.
+ */
+const STOP_BUYING_AFTER = Number(process.env['STOP_AFTER'] ?? Infinity);
+
+console.log('\n\x1b[1mcontinuous run — cash carried between sectors\x1b[0m');
+console.log(
+  `  \x1b[2mstops buying after wave ${STOP_BUYING_AFTER === Infinity ? '\u221e (never — spends to zero)' : STOP_BUYING_AFTER}\x1b[0m`,
+);
+console.log('  \x1b[2mgreedy builder spends to zero, so this is the worst case for banking\x1b[0m');
+
+for (const id of DIFFICULTY_ORDER) {
+  const parts: string[] = [];
+  let broke = false;
+
+  for (const seed of SEEDS.slice(0, 3)) {
+    let bank: number | undefined;
+    const legs: string[] = [];
+    for (const level of CAMPAIGN) {
+      const rules = resolveRules(level, id, bank);
+      const r = run(parseMap(level.map), rules, seed, STOP_BUYING_AFTER);
+      legs.push(`${r.won ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'}${String(r.cleared).padStart(2)}w $${r.money}`);
+      if (!r.won) { broke = true; break; }
+      bank = r.money;
+    }
+    parts.push(legs.join('  →  '));
+  }
+
+  console.log(`  \x1b[1m${DIFFICULTIES[id].name}\x1b[0m${broke ? ' \x1b[31m(run broke)\x1b[0m' : ''}`);
+  for (const line of parts) console.log(`    ${line}`);
 }
 
 console.log('');

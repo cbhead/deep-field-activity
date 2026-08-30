@@ -77,6 +77,25 @@ export const DIFFICULTIES = {
   },
 } as const satisfies Record<string, DifficultyDef>;
 
+/**
+ * Floor under a carried bank, as a fraction of the tier's own starting money.
+ *
+ * Cash carries between sectors and *replaces* the tier's starting money, which
+ * is what makes banking a real decision. Without a floor that rule has a
+ * degenerate end: `tools/campaign.ts` showed a normal spend-everything run
+ * finishing Switchback on $44–$101, and the cheapest station costs $75. Below
+ * that the player owns nothing, can buy nothing, and therefore earns no bounty
+ * — a sector that cannot be played rather than one that is hard. Every
+ * continuous run in the probe died there, on every difficulty, one of them with
+ * thirty lives still in hand.
+ *
+ * 0.6 leaves enough for a genuine opening (two Lances, or a Lance and a
+ * Singularity) without softening the mechanic: anything banked above the floor
+ * is still entirely the player's doing, and the floor is *below* every tier's
+ * normal start, so arriving poor still costs you.
+ */
+export const BANK_FLOOR = 0.6;
+
 export type DifficultyId = keyof typeof DIFFICULTIES;
 
 /** Menu order, easiest first. Explicit because object key order is a trap. */

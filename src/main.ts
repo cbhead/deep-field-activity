@@ -239,9 +239,26 @@ async function startSinglePlayer(
   const index = levelIndex(level.id);
   const nextLevel = CAMPAIGN[index + 1];
 
+  /**
+   * Money carried into this sector, and out of it.
+   *
+   * It rides in the URL alongside the level and difficulty, which gives the
+   * retry path its behaviour for free: `restart` reloads the same URL, so
+   * retrying a sector re-enters it with the bank it was *entered* with rather
+   * than whatever was left when the run collapsed. Banking cannot be farmed by
+   * dying repeatedly.
+   */
+  const carried = Number(params.get('bank'));
+  const bank = Number.isFinite(carried) && carried >= 0 ? Math.floor(carried) : undefined;
+
+  // Set when the run settles, read by `next`. The victory card is the only way
+  // to reach `next`, and it cannot be shown before `onEnd` has fired, so this
+  // is always populated by the time it is used.
+  let finalMoney = 0;
+
   await startGame(mount, hudRoot, resolveSeed(), {
     level,
-    rules: resolveRules(level, difficulty),
+    rules: resolveRules(level, difficulty, bank),
     campaign: {
       nextName: nextLevel?.name ?? null,
       menu: () => {
@@ -250,10 +267,14 @@ async function startSinglePlayer(
       next: () => {
         // Carrying the difficulty and dropping the seed is the useful default:
         // the next sector should be as hard as the last one, on a fresh board.
-        if (nextLevel !== undefined) location.search = runQuery(nextLevel, difficulty, '');
+        // The bank travels with it — that is what makes the campaign a run.
+        if (nextLevel !== undefined) {
+          location.search = runQuery(nextLevel, difficulty, '', finalMoney);
+        }
       },
     },
     onEnd: (w) => {
+      finalMoney = Math.floor(w.money);
       recordRun(
         level.id,
         difficulty,
@@ -270,9 +291,15 @@ async function startSinglePlayer(
   });
 }
 
-function runQuery(level: LevelDef, difficulty: DifficultyId, seed: string): string {
+function runQuery(
+  level: LevelDef,
+  difficulty: DifficultyId,
+  seed: string,
+  bank?: number,
+): string {
   const q = new URLSearchParams({ level: level.id, difficulty });
   if (seed !== '') q.set('seed', seed);
+  if (bank !== undefined) q.set('bank', String(bank));
   return `?${q.toString()}`;
 }
 

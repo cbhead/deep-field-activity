@@ -17,7 +17,7 @@
 
 import { BALANCE } from '../content/balance.ts';
 import { WAVES } from '../content/waves.ts';
-import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
+import { BANK_FLOOR, DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
 import type { LevelDef } from '../content/levels.ts';
 import type { WaveDef } from '../content/types.ts';
 
@@ -61,15 +61,36 @@ export const DEFAULT_RULES: Rules = {
   bountyFactor: 1,
 };
 
-/** Bind a campaign level and a difficulty tier into one run's rules. */
-export function resolveRules(level: LevelDef, difficulty: DifficultyId): Rules {
+/**
+ * Bind a campaign level and a difficulty tier into one run's rules.
+ *
+ * `bank` is money carried out of the previous sector, and it **replaces** the
+ * tier's starting money rather than adding to it. That is the whole point: if
+ * carried cash were a bonus on top, banking would be free and the decision it
+ * is meant to create — spend now or keep it for the next sector — would not
+ * exist. Replacing makes leftover cash genuinely yours and genuinely at risk.
+ *
+ * A sector entered poor is therefore possible and is meant to be, but it is
+ * floored at `BANK_FLOOR` of the tier's own starting money. Unfloored, the rule
+ * had a dead end rather than a hard mode: a normal run finished Switchback on
+ * $44–$101 against a cheapest station of $75, so the next sector opened with no
+ * towers, no way to buy one, and therefore no bounty ever. The floor sits below
+ * every tier's normal start, so arriving poor still costs you — it just cannot
+ * cost you the ability to play.
+ *
+ * Beyond that the bank is uncapped, so hoarding really does compound. That is a
+ * deliberate choice rather than an oversight: the run is the player's to make
+ * lopsided if they want to.
+ */
+export function resolveRules(level: LevelDef, difficulty: DifficultyId, bank?: number): Rules {
   const d = DIFFICULTIES[difficulty];
   return {
     levelId: level.id,
     difficultyId: d.id as DifficultyId,
     waves: level.waves,
     startingLives: d.startingLives,
-    startingMoney: d.startingMoney,
+    startingMoney:
+      bank === undefined ? d.startingMoney : Math.max(bank, Math.round(d.startingMoney * BANK_FLOOR)),
     hpFactor: d.hpFactor,
     bountyFactor: d.bountyFactor,
   };

@@ -687,7 +687,7 @@ function renderVictory(w: World, campaign: CampaignPorts | undefined): string {
     (hint === null
       ? ''
       : `<div class="note accent"><span class="eyebrow accent">Next grade up</span><p>${hint}</p></div>`) +
-    victoryActions(campaign)
+    victoryActions(campaign, Math.floor(w.money))
   );
 }
 
@@ -699,7 +699,7 @@ function renderVictory(w: World, campaign: CampaignPorts | undefined): string {
  * at the end of the campaign there is nothing to unlock and replaying for a
  * better grade is the only thing left, and in Race mode none of this exists.
  */
-function victoryActions(campaign: CampaignPorts | undefined): string {
+function victoryActions(campaign: CampaignPorts | undefined, bank: number): string {
   if (campaign === undefined) {
     return `<button class="btn primary wide" data-act="restart">Play again</button>`;
   }
@@ -711,8 +711,17 @@ function victoryActions(campaign: CampaignPorts | undefined): string {
       `<button class="btn wide" data-act="restart">Play again</button>`
     );
   }
+  // The bank is stated here, on the button, and in the note — because a rule the
+  // player only discovers *after* it has already cost them is not a rule they
+  // can play around. Naming the amount and what it replaces is the whole reason
+  // saving becomes a decision rather than a surprise.
   return (
-    `<button class="btn primary wide" data-act="next">Next sector: ${campaign.nextName}</button>` +
+    `<div class="note accent"><span class="eyebrow accent">Banked</span>` +
+    `<p><b>$${bank}</b> left over becomes your entire starting budget on ` +
+    `${campaign.nextName} — it replaces the usual amount rather than adding to ` +
+    `it. Coming back to this sector from the menu always starts fresh.</p></div>` +
+    `<button class="btn primary wide" data-act="next">` +
+    `Next sector: ${campaign.nextName} <em>with $${bank}</em></button>` +
     `<button class="btn wide" data-act="restart">Play again</button>` +
     `<button class="btn wide" data-act="menu">Choose another sector</button>`
   );
