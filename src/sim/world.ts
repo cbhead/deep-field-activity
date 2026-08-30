@@ -1,6 +1,21 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
-import type { Command, Creep, EntityId, MapDef, SimEvent } from './types.ts';
+import type { PlannedSpawn } from './wavePlan.ts';
+import type { Command, Creep, EntityId, MapDef, MatchPhase, SimEvent, WavePhase } from './types.ts';
+
+export interface WaveState {
+  /** 0-based index into WAVES. */
+  index: number;
+  phase: WavePhase;
+  /**
+   * Counts *down* during intermission and *up* during spawning. One field
+   * rather than two because the phases are mutually exclusive.
+   */
+  timer: number;
+  plan: PlannedSpawn[];
+  /** How far through `plan` the spawner has got. */
+  spawned: number;
+}
 
 /**
  * The entire game state. Plain mutable objects in flat arrays — deliberately
@@ -21,8 +36,10 @@ export interface World {
   /** Seconds of *simulated* time — `tick * DT`, never `performance.now()`. */
   time: number;
 
+  phase: MatchPhase;
   lives: number;
   money: number;
+  wave: WaveState;
 
   creeps: Creep[];
 
@@ -40,8 +57,16 @@ export function createWorld(map: MapDef, seed: number): World {
     map,
     tick: 0,
     time: 0,
+    phase: 'playing',
     lives: BALANCE.startingLives,
     money: BALANCE.startingMoney,
+    wave: {
+      index: 0,
+      phase: 'intermission',
+      timer: BALANCE.firstWaveDelay,
+      plan: [],
+      spawned: 0,
+    },
     creeps: [],
     commands: [],
     events: [],
@@ -49,9 +74,10 @@ export function createWorld(map: MapDef, seed: number): World {
   };
 }
 
-export function spawnCreep(w: World, defId: EnemyId): Creep {
+export function spawnCreep(w: World, defId: EnemyId, hp?: number, bounty?: number): Creep {
   const def = ENEMIES[defId];
   const start = w.map.spawn;
+  const health = hp ?? def.hp;
 
   const creep: Creep = {
     id: w.nextId++,
@@ -63,8 +89,9 @@ export function spawnCreep(w: World, defId: EnemyId): Creep {
     leg: 1,
     progress: 0,
     speed: def.speed,
-    hp: def.hp,
-    maxHp: def.hp,
+    hp: health,
+    maxHp: health,
+    bounty: bounty ?? def.bounty,
     dead: false,
   };
   w.creeps.push(creep);

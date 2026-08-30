@@ -62,11 +62,21 @@ export class WorldView {
     // --- Channel 2: drain discrete events. These are instants; if we miss one
     // the effect simply never plays, which is why they are pushed rather than
     // polled.
+    // M6 turns these into HUD updates; M8 gives them sound and screen shake.
+    // Until then the console is the HUD.
     for (const ev of w.events) {
       switch (ev.type) {
         case 'creepLeaked':
-          // M6 puts this on the HUD; M8 gives it a screen shake.
           console.info(`[td] leak at (${ev.x.toFixed(1)}, ${ev.y.toFixed(1)}) — ${w.lives} lives left`);
+          break;
+        case 'waveStarted':
+          console.info(`[td] wave ${ev.wave + 1} — ${ev.count} incoming`);
+          break;
+        case 'waveCleared':
+          console.info(`[td] wave ${ev.wave + 1} cleared — $${w.money}`);
+          break;
+        case 'gameOver':
+          console.info(`[td] ${ev.won ? 'VICTORY' : 'DEFEAT'} at ${w.time.toFixed(1)}s`);
           break;
       }
     }

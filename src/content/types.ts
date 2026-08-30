@@ -23,6 +23,20 @@ export interface EnemyDef {
   readonly color: number;
 }
 
+/** One burst of identical enemies inside a wave. */
+export interface WaveGroup {
+  readonly enemy: string;
+  readonly count: number;
+  /** Seconds between spawns within the group. */
+  readonly every: number;
+  /** Seconds into the wave before this group starts. */
+  readonly after: number;
+}
+
+export interface WaveDef {
+  readonly groups: readonly WaveGroup[];
+}
+
 export interface MapSource {
   readonly id: string;
   readonly name: string;

@@ -27,8 +27,8 @@ export function attachInput(app: Application, world: World): void {
     const [col, row] = pointerToTile(app, ev);
     console.info(`[td] click → tile ${col},${row}`);
 
-    // M2 scaffolding: any click spawns a creep so the path can be watched.
-    // M4 replaces this with the build commands.
-    world.commands.push({ type: 'spawnDebugCreep' });
+    // M3 scaffolding: any click sends the next wave early. M4 replaces this
+    // with the build commands and M6 gives the wave its own button.
+    world.commands.push({ type: 'startWave' });
   });
 }

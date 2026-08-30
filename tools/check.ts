@@ -11,6 +11,8 @@
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { BALANCE } from '../src/content/balance.ts';
+import { WAVES } from '../src/content/waves.ts';
+import { planWave, waveCount } from '../src/sim/wavePlan.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
@@ -102,8 +104,19 @@ section('rng — determinism');
 // ---------------------------------------------------------------------------
 section('loop — traversal');
 
-{
+/**
+ * A world with the wave machine parked, so the loop gates measure the loop.
+ * Without this, wave 1 auto-starts partway through and the board fills with
+ * creeps the assertion never meant to count.
+ */
+function soloWorld(): ReturnType<typeof createWorld> {
   const w = createWorld(map, 1234);
+  w.wave.phase = 'done';
+  return w;
+}
+
+{
+  const w = soloWorld();
   const c = spawnCreep(w, 'grunt');
   const acc: Accumulator = { debt: 0 };
   const expected = map.pathLength / c.speed;
@@ -159,7 +172,7 @@ section('loop — M2 gate: refresh-rate independence');
   };
 
   const run = (frames: number[]): { tick: number; x: number; y: number } => {
-    const w = createWorld(map, 1234);
+    const w = soloWorld();
     const c = spawnCreep(w, 'grunt');
     const acc: Accumulator = { debt: 0 };
     for (const d of frames) advance(w, acc, d, 1);
@@ -195,7 +208,7 @@ section('loop — hitch guards');
 
 {
   for (const speed of [1, 2, 4]) {
-    const w = createWorld(map, 1234);
+    const w = soloWorld();
     spawnCreep(w, 'grunt');
     const acc: Accumulator = { debt: 0 };
     // A backgrounded tab returns with a delta like this. Without the guards the
@@ -209,7 +222,7 @@ section('loop — hitch guards');
   }
 
   const at = (speed: number): number => {
-    const w = createWorld(map, 1234);
+    const w = soloWorld();
     spawnCreep(w, 'grunt');
     const acc: Accumulator = { debt: 0 };
     for (let i = 0; i < 300; i++) advance(w, acc, 1000 / 60, speed);
@@ -221,6 +234,95 @@ section('loop — hitch guards');
     'speed multiplier scales simulated time',
     `1x=${x1} 2x=${x2} 4x=${x4}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// The plan's N2 fairness gate in embryo: wave content must be a pure function
+// of (seed, waveIndex). If this holds, two machines in a Race face identical
+// boards, and it holds without any networking existing yet.
+section('waves — content is a pure function of (seed, wave)');
+
+{
+  const dump = (seed: number): string =>
+    JSON.stringify(Array.from({ length: waveCount() }, (_, i) => planWave(seed, i)));
+
+  check(dump(4242) === dump(4242), 'same seed reproduces every wave byte-for-byte');
+  check(dump(4242) !== dump(4243), 'a different seed gives a different match');
+
+  // The specific trap: with one global stream, drawing extra numbers early
+  // shifts every later wave. Planning waves out of order must change nothing.
+  const forward = JSON.stringify(Array.from({ length: waveCount() }, (_, i) => planWave(77, i)));
+  const shuffled: string[] = [];
+  for (const i of [7, 2, 9, 0, 5, 1, 8, 3, 6, 4]) shuffled[i] = JSON.stringify(planWave(77, i));
+  check(forward === `[${shuffled.join(',')}]`, 'planning waves out of order changes nothing');
+
+  const totalPlanned = Array.from({ length: waveCount() }, (_, i) => planWave(77, i).length)
+    .reduce((a, b) => a + b, 0);
+  const totalAuthored = WAVES.reduce(
+    (sum, wv) => sum + wv.groups.reduce((s, gr) => s + gr.count, 0),
+    0,
+  );
+  check(totalPlanned === totalAuthored, 'plan spawns exactly what the table authors', `${totalPlanned} creeps over ${waveCount()} waves`);
+
+  const w9 = planWave(77, 9);
+  check(
+    w9.every((s, i) => i === 0 || s.at >= w9[i - 1]!.at),
+    'spawns are ordered by time even with overlapping groups',
+  );
+  check(w9.every((s) => s.at >= 0), 'jitter never pulls a spawn before its group starts');
+
+  const scale = planWave(77, 9)[0]!.hp / planWave(77, 0)[0]!.hp;
+  check(scale > 4 && scale < 8, 'hp compounds across the arc', `wave 10 is ${scale.toFixed(1)}x wave 1`);
+}
+
+// ---------------------------------------------------------------------------
+// A full match, headlessly, at a speed no browser could render. This is the
+// seed of M9's balance harness, and it exists only because the sim is pure.
+section('waves — full match');
+
+{
+  const play = (opts: { invincible: boolean }): { w: ReturnType<typeof createWorld>; waves: number } => {
+    const w = createWorld(map, 4242);
+    const acc: Accumulator = { debt: 0 };
+    let cleared = 0;
+    for (let i = 0; i < 200_000 && w.phase === 'playing'; i++) {
+      advance(w, acc, 1000 / TICK_HZ, 1);
+      // Stand in for the towers M5 will bring: vaporise everything on the path.
+      if (opts.invincible) for (const c of w.creeps) c.dead = true;
+      for (const ev of w.events) if (ev.type === 'waveCleared') cleared++;
+      w.events.length = 0;
+    }
+    return { w, waves: cleared };
+  };
+
+  const lost = play({ invincible: false });
+  check(lost.w.phase === 'lost', 'undefended, the match is lost', `wave ${lost.w.wave.index + 1}, ${lost.w.time.toFixed(0)}s`);
+  check(lost.w.lives === 0, 'lives bottom out at zero, never negative', `lives=${lost.w.lives}`);
+
+  const won = play({ invincible: true });
+  check(won.w.phase === 'won', 'with everything killed, the match is won', `${won.w.time.toFixed(0)}s`);
+  check(won.waves === waveCount(), 'every wave reports cleared exactly once', `${won.waves}/${waveCount()}`);
+  check(won.w.lives === BALANCE.startingLives, 'a perfect run loses no lives');
+  check(won.w.wave.phase === 'done', 'the wave machine parks in done');
+
+  // Sending waves early must not skip or duplicate them.
+  {
+    const w = createWorld(map, 4242);
+    const acc: Accumulator = { debt: 0 };
+    let started = 0;
+    for (let i = 0; i < 200_000 && w.phase === 'playing'; i++) {
+      w.commands.push({ type: 'startWave' });
+      advance(w, acc, 1000 / TICK_HZ, 1);
+      for (const c of w.creeps) c.dead = true;
+      for (const ev of w.events) if (ev.type === 'waveStarted') started++;
+      w.events.length = 0;
+    }
+    check(
+      started === waveCount() && w.phase === 'won',
+      'spamming startWave neither skips nor repeats a wave',
+      `${started} starts, ${w.time.toFixed(0)}s vs ${won.w.time.toFixed(0)}s idle`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

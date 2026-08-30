@@ -1,4 +1,5 @@
 import { spawnCreep, type World } from '../world.ts';
+import { beginWave } from './waves.ts';
 
 /**
  * Drain the command queue. Runs as the first phase of every tick so that player
@@ -7,6 +8,9 @@ import { spawnCreep, type World } from '../world.ts';
 export function applyCommands(w: World): void {
   for (const cmd of w.commands) {
     switch (cmd.type) {
+      case 'startWave':
+        beginWave(w);
+        break;
       case 'spawnDebugCreep':
         spawnCreep(w, 'grunt');
         break;

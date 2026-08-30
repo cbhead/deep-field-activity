@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   // `td.loop.speed` from devtools is worth far more here than in a typical app,
   // because the interesting bugs are all "what is the sim actually doing".
   if (import.meta.env.DEV) {
-    (globalThis as Record<string, unknown>)['td'] = { world, loop, map, app };
+    (globalThis as Record<string, unknown>)['td'] = { world, loop, view, map, app, layers };
   }
 
   console.info(

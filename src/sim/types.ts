@@ -73,6 +73,8 @@ export interface Creep {
   speed: number;
   hp: number;
   maxHp: number;
+  /** Money paid on kill. Baked in at spawn, since it scales per wave. */
+  bounty: number;
 
   /** Set during the tick; the cleanup phase removes it from the array. */
   dead: boolean;
@@ -85,8 +87,10 @@ export interface Creep {
  * one place, and this is precisely the seam a replay or a netcode layer needs.
  */
 export type Command =
-  /** M2 scaffolding. The M3 wave spawner replaces this. */
-  { type: 'spawnDebugCreep' };
+  /** Send the next wave now, forfeiting the rest of the intermission. */
+  | { type: 'startWave' }
+  /** Debug scaffolding: drop a single creep on the path. */
+  | { type: 'spawnDebugCreep' };
 
 /**
  * Discrete instants, pushed by the sim and drained by the renderer once per
@@ -94,4 +98,21 @@ export type Command =
  * idempotent, so a dropped frame costs nothing. An event is a thing that
  * happened at a moment, and if the renderer misses it the effect never plays.
  */
-export type SimEvent = { type: 'creepLeaked'; x: number; y: number };
+export type SimEvent =
+  | { type: 'creepLeaked'; x: number; y: number }
+  | { type: 'waveStarted'; wave: number; count: number }
+  | { type: 'waveCleared'; wave: number }
+  | { type: 'gameOver'; won: boolean };
+
+/** Whole-match state. The sim stops stepping once this leaves 'playing'. */
+export type MatchPhase = 'playing' | 'lost' | 'won';
+
+export type WavePhase =
+  /** Build time. Counting down to the next wave. */
+  | 'intermission'
+  /** Working through the spawn plan. */
+  | 'spawning'
+  /** Everything is spawned; waiting for the board to empty. */
+  | 'clearing'
+  /** No waves left. */
+  | 'done';
