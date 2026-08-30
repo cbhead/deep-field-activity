@@ -16,6 +16,7 @@ import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts
 import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
 import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
+import { STATION_MARKS } from '../src/render/stationShape.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1569,6 +1570,59 @@ section('balance probe (informational)');
   console.log('  \x1b[2m"wait" lets each intermission run out; "rush" sends every wave early\x1b[0m');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// EVERY STATION HAS A MARK, AND EVERY MARK FITS WHERE IT IS ALLOWED TO.
+//
+// The deck's glyph and the board's bake read the same geometry so they cannot
+// drift — but sharing it only helps if the geometry is complete and in bounds.
+// A station with no mark comes out as a bare hexagon nobody can tell from its
+// neighbour, and a mark that strays outside its annulus collides with the hub,
+// the tier pips or the hull, each of which is already saying something else.
+// ---------------------------------------------------------------------------
+section('stations · mechanic marks');
+{
+  // Set by the hub below and the pip row above; see `stationShape.ts`.
+  const INNER = 0.15;
+  const OUTER = 0.34;
+  const LOWEST = 0.72;
+
+  check(
+    Object.keys(STATION_MARKS).length === TOWER_IDS.length,
+    'every station has a mark',
+    `${Object.keys(STATION_MARKS).length} of ${TOWER_IDS.length}`,
+  );
+
+  for (const id of TOWER_IDS) {
+    const mark = STATION_MARKS[id];
+    const pts = [
+      ...mark.lines.flat(),
+      ...mark.discs.map((d) => ({ x: d.cx, y: d.cy })),
+    ];
+
+    check(
+      pts.length > 0 || mark.arcs.length > 0,
+      `${id}: mark is not empty`,
+      `${mark.lines.length} lines · ${mark.discs.length} discs · ${mark.arcs.length} arcs`,
+    );
+
+    let worstOut = 0;
+    let lowest = 0;
+    for (const p of pts) {
+      worstOut = Math.max(worstOut, Math.hypot(p.x - 0.5, p.y - 0.5));
+      lowest = Math.max(lowest, p.y);
+    }
+    for (const a of mark.arcs) worstOut = Math.max(worstOut, a.r);
+
+    check(worstOut <= OUTER, `${id}: mark stays inside the hull`, `reaches ${worstOut.toFixed(3)} of ${OUTER}`);
+    check(lowest <= LOWEST, `${id}: mark clears the tier pips`, `lowest ${lowest.toFixed(2)} of ${LOWEST}`);
+
+    // A mark entirely inside the hub would be hidden by the core, which grows
+    // with tier — so it would vanish exactly as the station got interesting.
+    const reaches = Math.max(worstOut, ...mark.arcs.map((a) => a.r));
+    check(reaches >= INNER, `${id}: mark clears the core`, `reaches ${reaches.toFixed(3)}`);
   }
 }
 

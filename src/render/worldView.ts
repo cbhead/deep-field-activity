@@ -1,6 +1,7 @@
 import { Sprite, type Container, type Texture } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
 import { visualTier } from '../sim/build.ts';
+import type { TowerId } from '../content/towers.ts';
 import type { EntityId, SimEvent, Tower } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
@@ -84,7 +85,7 @@ export class WorldView {
       const tier = visualTier(t);
       let view = this.towers.get(t.id);
       if (view === undefined) {
-        const sprite = new Sprite(this.tierTexture(tier));
+        const sprite = new Sprite(this.tierTexture(t.defId, tier));
         sprite.tint = THEME.towers[t.defId];
         sprite.position.set(t.col * TILE_PX, t.row * TILE_PX);
         this.layers.towers.addChild(sprite);
@@ -94,7 +95,7 @@ export class WorldView {
         // Swap the texture rather than rebuild the sprite: position, tint and
         // parent are all still correct, and every tier bakes to the same 40x40
         // frame so the silhouette does not move.
-        view.sprite.texture = this.tierTexture(tier);
+        view.sprite.texture = this.tierTexture(t.defId, tier);
         view.tier = tier;
       }
 
@@ -145,9 +146,10 @@ export class WorldView {
   }
 
   /** Clamped, so a tier beyond the baked set degrades to the top art rather than throwing. */
-  private tierTexture(tier: number): Texture {
-    const i = Math.min(Math.max(tier, 1), this.textures.towers.length) - 1;
-    return this.textures.towers[i]!;
+  private tierTexture(defId: TowerId, tier: number): Texture {
+    const set = this.textures.towers[defId];
+    const i = Math.min(Math.max(tier, 1), set.length) - 1;
+    return set[i]!;
   }
 
   /**

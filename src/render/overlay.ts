@@ -1,5 +1,5 @@
 import { Graphics, Sprite, Text } from 'pixi.js';
-import { TOWERS, type TowerId } from '../content/towers.ts';
+import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { placementError } from '../sim/build.ts';
 import type { EntityId, PlacementError } from '../sim/types.ts';
 import { towerById, type World } from '../sim/world.ts';
@@ -43,8 +43,13 @@ export class Overlay {
   /** Last drawn state, so a stationary pointer costs nothing. */
   private lastKey = '';
 
-  constructor(layers: Layers, textures: Textures) {
-    this.ghost = new Sprite(textures.towers[0]!);
+  constructor(
+    layers: Layers,
+    private readonly textures: Textures,
+  ) {
+    // Any station's Mk I will do as the initial texture — the ghost is hidden
+    // until something is armed, and `sync` re-textures it before it is shown.
+    this.ghost = new Sprite(textures.towers[TOWER_IDS[0]!]![0]!);
     this.ghost.visible = false;
     this.ghost.alpha = 0.55;
 
@@ -87,6 +92,12 @@ export class Overlay {
       `:${inspected ? `${inspected.id}.${inspected.stats.range}` : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
+
+    // Each station bakes its own silhouette now, so the ghost has to follow the
+    // armed one — otherwise every placement preview would show the first
+    // station's mark whatever you were actually holding. `selected` is already
+    // in the key, so this costs one texture assignment per arming.
+    if (selected !== null) this.ghost.texture = this.textures.towers[selected]![0]!;
 
     this.gfx.clear();
 

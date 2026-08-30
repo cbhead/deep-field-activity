@@ -1,6 +1,9 @@
 import { Graphics, type Renderer, type Texture } from 'pixi.js';
 import { BALANCE } from '../content/balance.ts';
+import { TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { TILE_PX } from './constants.ts';
+import { strokeArc } from './draw.ts';
+import { MARK_STROKE, STATION_MARKS } from './stationShape.ts';
 import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
@@ -64,10 +67,22 @@ export interface Textures {
    */
   creepPlated: Texture;
   /**
-   * One bake per tier, indexed `tier - 1`. Baked neutral and tinted per tower
-   * type; `towers[0]` doubles as the build ghost, since placement is always Mk I.
+   * One bake per station per tier, indexed `[defId][tier - 1]`.
+   *
+   * It used to be one silhouette per tier, tinted per station — which made five
+   * stations five colours of the same shape, and a roster nobody could learn at
+   * a glance. Each now carries its own mechanic mark (see `stationShape.ts`).
+   *
+   * That is 15 textures rather than 3. The property this file exists to protect
+   * was never "exactly one texture" but "not one per entity": the towers layer
+   * can now produce up to five batches instead of one, still O(station types)
+   * and never O(stations placed). The contact layer already made the same trade
+   * for armour.
+   *
+   * `towers[id][0]` doubles as the build ghost, since placement is always Mk I —
+   * and the ghost must therefore re-texture when the armed station changes.
    */
-  towers: readonly Texture[];
+  towers: Readonly<Record<TowerId, readonly Texture[]>>;
   /** Tinted by the firing tower, so you can read which tower landed a shot. */
   projectile: Texture;
 }
@@ -204,7 +219,62 @@ function pinToTile(g: Graphics): void {
  * tint carries them — brightness comes from *radius and alpha*, never from
  * colour, because `tint` multiplies and would erase a baked colour shift.
  */
-function drawTower(g: Graphics, tier: number): void {
+/**
+ * The station's own mark, drawn inside the hull.
+ *
+ * Five stations used to bake to one silhouette distinguished only by tint,
+ * which meant the roster was unlearnable at a glance and the deck had nothing
+ * to match. See `stationShape.ts` for why this geometry is shared rather than
+ * duplicated, and for the annulus it has to stay inside.
+ */
+function drawMark(g: Graphics, defId: TowerId): void {
+  const mark = STATION_MARKS[defId];
+  const w = MARK_STROKE * TILE_PX;
+  const px = (v: number): number => v * TILE_PX;
+
+  for (const line of mark.lines) {
+    const [head, ...rest] = line;
+    if (head === undefined) continue;
+    g.moveTo(px(head.x), px(head.y));
+    for (const p of rest) g.lineTo(px(p.x), px(p.y));
+    g.stroke({ width: w, color: BAKE_NEUTRAL, alpha: 0.85, cap: 'round', join: 'round' });
+  }
+
+  for (const a of mark.arcs) {
+    const from = (a.from * Math.PI) / 180;
+    strokeArc(g, px(0.5), px(0.5), px(a.r), from, from + (a.span * Math.PI) / 180, {
+      width: w,
+      color: BAKE_NEUTRAL,
+      alpha: 0.85,
+    });
+  }
+
+  for (const d of mark.discs) {
+    g.circle(px(d.cx), px(d.cy), px(d.r)).fill({ color: BAKE_NEUTRAL, alpha: 0.85 });
+  }
+}
+
+/**
+ * Every station at every tier: `TOWER_IDS.length * maxTier` bakes, done once.
+ *
+ * Built by loop rather than `Object.fromEntries` so the record is typed by
+ * `TowerId` without a cast — which matters because adding a station should be a
+ * compile error everywhere it needs art, not a silent `undefined` at the first
+ * frame it is placed.
+ */
+function bakeTowers(renderer: Renderer): Readonly<Record<TowerId, readonly Texture[]>> {
+  const out = {} as Record<TowerId, readonly Texture[]>;
+  for (const id of TOWER_IDS) {
+    out[id] = Array.from({ length: BALANCE.upgrade.maxTier }, (_, i) =>
+      bake(renderer, (g) => {
+        drawTower(g, id, i + 1);
+      }),
+    );
+  }
+  return out;
+}
+
+function drawTower(g: Graphics, defId: TowerId, tier: number): void {
   const s = THEME.shape;
   pinToTile(g);
 
@@ -245,6 +315,7 @@ function drawTower(g: Graphics, tier: number): void {
   }
   g.circle(cx, cy, hub).fill(BAKE_NEUTRAL);
 
+  drawMark(g, defId);
   drawTierPips(g, tier);
 }
 
@@ -359,11 +430,7 @@ export function createTextures(renderer: Renderer): Textures {
       drawCreep(g, true);
     }),
 
-    towers: Array.from({ length: BALANCE.upgrade.maxTier }, (_, i) =>
-      bake(renderer, (g) => {
-        drawTower(g, i + 1);
-      }),
-    ),
+    towers: bakeTowers(renderer),
 
     projectile: bake(renderer, (g) => {
       const pr = PROJECTILE_RADIUS * TILE_PX;

@@ -427,7 +427,7 @@ function renderSlots(w: World, ui: UiState): string {
       .join(' ');
     return (
       `<button class="${cls}" data-act="arm" data-id="${id}" title="${def.blurb}">` +
-      `<kbd>${def.hotkey}</kbd>${stationIcon(30)}` +
+      `<kbd>${def.hotkey}</kbd>${stationIcon(id, 40)}` +
       `<span class="name">${def.name}</span>` +
       `<span class="cost">$${def.cost}</span></button>`
     );
@@ -483,7 +483,7 @@ function mechanics(d: TowerStats): string {
 function renderArmed(id: TowerId): string {
   const d = TOWERS[id];
   return (
-    `<div class="head t-${id}">${stationIcon(26)}<b>${d.name} — placing</b>` +
+    `<div class="head t-${id}">${stationIcon(id, 26)}<b>${d.name} — placing</b>` +
     `<span class="blurb">${d.blurb}</span></div>` +
     `<div class="cells">${stat('Dmg', String(d.damage))}${stat(
       'Rate',
@@ -505,7 +505,7 @@ function renderInspector(w: World, t: Tower): string {
   ).join('');
 
   return (
-    `<div class="head t-${t.defId}">${stationIcon(28)}` +
+    `<div class="head t-${t.defId}">${stationIcon(t.defId, 28)}` +
     `<b>${d.name} · Mk ${'I'.repeat(visualTier(t))}</b>` +
     `<span class="blurb">tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} dmg dealt</span>` +
     `</div>` +
