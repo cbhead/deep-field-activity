@@ -25,7 +25,7 @@ import {
 } from '../sim/types.ts';
 import { effectiveDamage } from '../sim/damage.ts';
 import { towerById, type World } from '../sim/world.ts';
-import { stationIcon, tierPips } from './icons.ts';
+import { pathDial, stationIcon, tierPips } from './icons.ts';
 
 /**
  * DOM, not Pixi.
@@ -478,12 +478,16 @@ function renderPathButtons(w: World, t: Tower): string {
     const { label, value } = pathPreview(t, path, next);
     const pips = tierPips(t.tiers[path], BALANCE.upgrade.maxTier);
 
+    // The dial shows where this path sits on the station's collar, so the
+    // board's positional code is taught at the moment the player buys into it.
+    const dial = pathDial(path);
+
     if (cost === null) {
-      return `<span class="path maxed"><label>${label}</label><b>${value}</b>${pips}<em>Max</em></span>`;
+      return `<span class="path maxed"><label>${dial}${label}</label><b>${value}</b>${pips}<em>Max</em></span>`;
     }
     return (
       `<button class="path${w.money < cost ? ' poor' : ''}" data-act="upgrade" data-path="${path}">` +
-      `<label>${label}</label><b>${value}</b>${pips}<em>$${cost}</em></button>`
+      `<label>${dial}${label}</label><b>${value}</b>${pips}<em>$${cost}</em></button>`
     );
   }).join('');
 }

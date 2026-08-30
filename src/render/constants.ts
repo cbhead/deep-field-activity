@@ -32,3 +32,31 @@ export const DECK_PX = 150;
 export const TOP_PX = 46;
 
 /** Colours live in `theme.ts`, so that a reskin is one file rather than five. */
+
+/**
+ * Where each upgrade path sits on the collar drawn around an upgraded station.
+ *
+ * **Position is the encoding, not colour.** Three paths need three channels and
+ * the palette has none to spare — every hue is already claimed by a station
+ * (Arc green, Filament violet) or a status (shield blue, slow cyan), so a colour
+ * code here would collide with something the player has already learned. Fixed
+ * sectors never clash, and the collar is drawn in the station's own tint so it
+ * reads as part of that station rather than as a fourth thing on the board.
+ *
+ * Clockwise from twelve in `UPGRADE_PATHS` order — damage, range, effect —
+ * which is also left-to-right order in the inspector's path buttons.
+ *
+ * Lives here rather than in either consumer because BOTH have to agree: the
+ * board draws these as Pixi arcs and the inspector's dial draws them as SVG
+ * paths, and the dial is the only place the positional code is ever taught. If
+ * the two drifted, the legend would quietly start lying about the board. This
+ * file is pixi-free, so the DOM side can import it without pulling in a renderer.
+ */
+export const COLLAR_SECTORS = [
+  { path: 'damage', from: -137 },
+  { path: 'range', from: -17 },
+  { path: 'effect', from: 103 },
+] as const;
+
+/** Degrees each sector spans. 94 of every 120, so the three read as separate. */
+export const COLLAR_SPAN = 94;
