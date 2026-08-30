@@ -20,6 +20,7 @@ import { DEFAULT_PORT } from './net/protocol.ts';
 import { MatchController } from './net/MatchController.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
+import { showResults } from './ui/resultsScreen.ts';
 
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
@@ -63,24 +64,46 @@ async function main(): Promise<void> {
   let controller: MatchController;
   let raceHud: RaceHud | null = null;
   let opponentName = 'opponent';
+  let currentRoom = '';
+  let playerName = '';
+
+  // A rematch reloads the page with {name, room} stashed, then rejoins and
+  // readies up without touching the form. Cleared immediately so a plain
+  // reload never accidentally re-enters a room.
+  const rejoinRaw = sessionStorage.getItem('race-rejoin');
+  sessionStorage.removeItem('race-rejoin');
+  const rejoin = rejoinRaw !== null ? (JSON.parse(rejoinRaw) as { name: string; room: string }) : null;
 
   const lobby = createLobbyScreen(mount, {
-    ...(race === '' ? {} : { prefillRoom: race }),
+    ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
     onReady: () => controller.ready(),
     onSubmit: (name, room) => {
+      playerName = name;
       controller = new MatchController({
         url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
-        autoReady: false,
+        autoReady: rejoin !== null,
         hooks: {
           onLobby: (roomCode, players) => {
+            currentRoom = roomCode;
             opponentName = players.find((p) => p.playerId !== controller.playerId)?.name ?? 'opponent';
             lobby.showRoster(roomCode, players);
           },
           onCountdown: (ms) => lobby.showCountdown(ms),
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),
+          onResult: (winnerId, standings) => {
+            showResults(mount, {
+              myId: controller.playerId,
+              winnerId,
+              standings,
+              onRematch: () => {
+                sessionStorage.setItem('race-rejoin', JSON.stringify({ name: playerName, room: currentRoom }));
+                location.reload();
+              },
+            });
+          },
           boot: (seed) => {
             lobby.remove();
             void startGame(mount, hudRoot, seed).then(({ world }) => {
@@ -93,6 +116,9 @@ async function main(): Promise<void> {
                   elapsedMs: Math.round(performance.now() - bootAt),
                 };
                 raceHud?.own(status);
+                // Defeat or full clear alike: report final figures once and
+                // let the server settle the match when both runs are over.
+                if (world.phase !== 'playing') controller.finish(status);
                 return status;
               });
             });

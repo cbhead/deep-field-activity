@@ -21,6 +21,8 @@ export interface LobbyScreen {
 export interface LobbyOptions {
   /** Room code from the URL, joined without showing the form. */
   prefillRoom?: string;
+  /** Rematch rejoin: skip the form entirely and connect straight away. */
+  autoJoin?: { name: string; room: string };
   onSubmit(name: string, room?: string): void;
   onReady(): void;
 }
@@ -73,7 +75,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     });
   }
 
-  if (opts.prefillRoom !== undefined) {
+  if (opts.autoJoin !== undefined) {
+    el.innerHTML = `<div>rejoining room <b>${opts.autoJoin.room}</b>…</div>`;
+    // Deferred a tick so the caller has its handle before callbacks fire.
+    const { name, room } = opts.autoJoin;
+    setTimeout(() => opts.onSubmit(name, room), 0);
+  } else if (opts.prefillRoom !== undefined) {
     // Deep link: name still matters, so show a one-field form.
     el.innerHTML =
       `<div style="display:grid;gap:14px">` +

@@ -24,7 +24,8 @@ export type C2S =
   | { t: 'hello'; v: number; name: string; room?: string }
   | { t: 'ready' }
   | { t: 'status'; wave: number; lives: number; elapsedMs: number }
-  | { t: 'dead'; wave: number; elapsedMs: number };
+  /** The run is over — defeat or full clear alike. lives>0 means a clear. */
+  | { t: 'dead'; wave: number; lives: number; elapsedMs: number };
 
 /** server → client */
 export type S2C =
@@ -33,8 +34,11 @@ export type S2C =
   | { t: 'start'; seed: number; countdownMs: number }
   | { t: 'peer'; wave: number; lives: number; elapsedMs: number }
   | { t: 'peerConn'; connected: boolean }
-  | { t: 'result'; winnerId: string | null }
+  | { t: 'result'; winnerId: string | null; standings: Standing[] }
   | { t: 'error'; reason: string };
+
+/** Final figures for one player, in ranking order: waves, lives, then time. */
+export type Standing = { playerId: string; name: string; wave: number; lives: number; elapsedMs: number };
 
 export const encode = (msg: C2S | S2C): string => JSON.stringify(msg);
 

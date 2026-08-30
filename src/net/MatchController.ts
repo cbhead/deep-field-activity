@@ -10,7 +10,7 @@
  * headless gate scripts.
  */
 import { NetClient } from './NetClient.ts';
-import { STATUS_INTERVAL_MS, type LobbyPlayer, type S2C } from './protocol.ts';
+import { STATUS_INTERVAL_MS, type LobbyPlayer, type S2C, type Standing } from './protocol.ts';
 
 /** What each side reports about itself, and hears about the other. */
 export interface RaceStatus {
@@ -30,6 +30,8 @@ export interface RaceHooks {
   boot(seed: number): void;
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
   onPeer?(status: RaceStatus): void;
+  /** Both runs are over; standings arrive already in ranking order. */
+  onResult?(winnerId: string | null, standings: Standing[]): void;
   onError(reason: string): void;
 }
 
@@ -77,16 +79,29 @@ export class MatchController {
   }
 
   private pump: ReturnType<typeof setInterval> | null = null;
+  private finished = false;
 
   /** Call after boot(): reports our progress every STATUS_INTERVAL_MS. */
   startStatusPump(sample: () => RaceStatus): void {
     this.stopStatusPump();
-    this.pump = setInterval(() => this.client.send({ t: 'status', ...sample() }), STATUS_INTERVAL_MS);
+    this.pump = setInterval(() => {
+      const status = sample();
+      // sample() may call finish(); a status frame after `dead` would be noise.
+      if (!this.finished) this.client.send({ t: 'status', ...status });
+    }, STATUS_INTERVAL_MS);
   }
 
   stopStatusPump(): void {
     if (this.pump !== null) clearInterval(this.pump);
     this.pump = null;
+  }
+
+  /** The run ended (defeat or full clear). Reports final figures exactly once. */
+  finish(status: RaceStatus): void {
+    if (this.finished) return;
+    this.finished = true;
+    this.stopStatusPump();
+    this.client.send({ t: 'dead', ...status });
   }
 
   private room = '';
@@ -114,9 +129,11 @@ export class MatchController {
       case 'peer':
         hooks.onPeer?.({ wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
         break;
-      case 'peerConn':
       case 'result':
-        break; // N4–N5
+        hooks.onResult?.(msg.winnerId, msg.standings);
+        break;
+      case 'peerConn':
+        break; // N5
     }
   }
 }
