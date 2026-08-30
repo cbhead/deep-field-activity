@@ -1,6 +1,8 @@
+import { ENEMIES, ENEMY_IDS, type EnemyId } from '../content/enemies.ts';
 import type { TowerId } from '../content/towers.ts';
 import { COLLAR_SECTORS, COLLAR_SPAN } from '../render/constants.ts';
 import { MARK_STROKE, STATION_MARKS } from '../render/stationShape.ts';
+import { THEME } from '../render/theme.ts';
 
 /**
  * The station glyph, as inline SVG for the DOM half of the HUD.
@@ -29,6 +31,72 @@ export function stationIcon(id: TowerId, size: number): string {
     markSvg(id) +
     `</svg>`
   );
+}
+
+/**
+ * A contact, drawn as the board draws it.
+ *
+ * The wave preview used to describe the wave in words — "4 Warden" — which
+ * forced the player to translate a name into the ringed pink circle they were
+ * about to see. This is the same silhouette the bake makes: a disc, or a plated
+ * hexagon with an inner seam when the contact carries armour.
+ *
+ * **Duplicated rather than shared, unlike the station marks, and the asymmetry
+ * is the point.** A station's mark is five distinct shapes each asserting a
+ * mechanic; a contact is two primitives and a seam ratio. The load-bearing
+ * values — `radius`, `armor`, `shield`, `plateSeam` — are already shared data
+ * read straight from `ENEMIES` and `THEME.shape`, so nothing here can drift
+ * except two shape formulas that have no reason to change.
+ *
+ * **Size is compressed, not proportional.** Radii run 0.17 to 0.46, a 2.7x
+ * span: drawn literally at chip scale a Mote would be nine pixels against a
+ * Monolith's twenty-six and simply illegible. The band preserves *order* — which
+ * is the information — while keeping the smallest readable.
+ */
+export function contactIcon(id: EnemyId, size: number): string {
+  const def = ENEMIES[id];
+  const s = THEME.shape;
+
+  // Order-preserving compression across the live roster, so adding a contact
+  // rescales the set rather than falling off either end of a fixed table.
+  const radii = ENEMY_IDS.map((e) => ENEMIES[e].radius);
+  const lo = Math.min(...radii);
+  const hi = Math.max(...radii);
+  const t = hi === lo ? 1 : (def.radius - lo) / (hi - lo);
+  const r = (0.62 + t * 0.34) * (size / 2) * 0.86;
+  const c = size / 2;
+
+  const body =
+    def.armor > 0
+      ? // Plated: a flat-top hexagon with an inner seam, as `drawCreep` bakes it.
+        `<path d="${hexPath(c, r)}" fill="currentColor" fill-opacity=".9"/>` +
+        `<path d="${hexPath(c, r * s.plateSeam)}" fill="none" stroke="var(--bg)" stroke-opacity=".55" stroke-width="${(size * 0.05).toFixed(1)}"/>`
+      : `<circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="currentColor"/>`;
+
+  // Shield is a BAND above the body, never a ring. `theme.ts` rejects a ring for
+  // shield on purpose: the gravity slow already owns that shape on the board,
+  // and teaching "ring = shield" here while the board teaches "ring = slowed"
+  // would make the two unlearnable together.
+  const band =
+    def.shield > 0
+      ? `<rect x="${(c - r).toFixed(1)}" y="${(c - r - size * 0.16).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(size * 0.075).toFixed(1)}" rx="${(size * 0.037).toFixed(1)}" fill="var(--shield)"/>`
+      : '';
+
+  return (
+    `<svg class="cg c-${id}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
+    band +
+    body +
+    `</svg>`
+  );
+}
+
+/** Flat-top hexagon, matching the plated silhouette the board bakes. */
+function hexPath(c: number, r: number): string {
+  const pts = Array.from({ length: 6 }, (_, i) => {
+    const a = (Math.PI / 3) * i - Math.PI / 2;
+    return `${(c + Math.cos(a) * r).toFixed(1)} ${(c + Math.sin(a) * r).toFixed(1)}`;
+  });
+  return `M${pts.join(' L')} Z`;
 }
 
 /** The station's mechanic mark, scaled from unit space into the 40-unit box. */

@@ -586,6 +586,18 @@ export function applyHudTheme(theme: Theme = THEME): void {
     style.setProperty(`--tower-${id}`, css(theme.towers[id as keyof typeof theme.towers]));
   }
 
+  const contacts = Object.keys(theme.enemies);
+  for (const id of contacts) {
+    style.setProperty(`--contact-${id}`, css(theme.enemies[id as keyof typeof theme.enemies]));
+  }
+
+  // The deck draws contact glyphs now, and they take their tint the same way a
+  // station does. Emitted from the roster for the same reason: a hand-written
+  // list would go stale the moment a seventh contact arrived, and it would go
+  // stale *silently* — a grey blob in the wave preview looks like a styling
+  // choice, not like a missing rule.
+  style.setProperty('--shield', css(theme.fx.shield));
+
   /**
    * The `.t-<id>` rules are generated here rather than written in `styles.css`,
    * and that is the point.
@@ -609,5 +621,7 @@ export function applyHudTheme(theme: Theme = THEME): void {
     // at equal specificity.
     document.head.appendChild(sheet);
   }
-  sheet.textContent = ids.map((id) => `.t-${id}{color:var(--tower-${id})}`).join('');
+  sheet.textContent =
+    ids.map((id) => `.t-${id}{color:var(--tower-${id})}`).join('') +
+    contacts.map((id) => `.c-${id}{color:var(--contact-${id})}`).join('');
 }

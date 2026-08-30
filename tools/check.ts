@@ -17,7 +17,8 @@ import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render
 import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
-import { deckKey } from '../src/ui/hud.ts';
+import { deckKey, renderNextContact, renderSlots } from '../src/ui/hud.ts';
+import { contactIcon } from '../src/ui/icons.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1572,6 +1573,134 @@ section('balance probe (informational)');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// THE WAVE PREVIEW CANNOT PROMISE A WAVE THE SPAWNER WILL NOT DELIVER.
+//
+// The panel whose whole job is "prepare for this" once read `plan[0]`'s name
+// and applied it to `plan.length`, announcing a six-type wave as forty
+// Drifters. It is grouped now, but the property worth pinning is the one that
+// made that possible: the preview is derived from `planWave`, not from any
+// single element of it.
+//
+// Contact glyph sizing is checked here too, because "compress but preserve
+// order" is exactly the kind of rule a later tweak breaks silently.
+// ---------------------------------------------------------------------------
+section('hud · wave preview');
+{
+  for (let wave = 0; wave < 6; wave++) {
+    const w = createWorld(map, 4242);
+    w.wave.index = wave;
+    const plan = planWave(w.seed, wave, w.rules);
+    const html = renderNextContact(w);
+
+    const nums = [...html.matchAll(/<b>(\d+)<\/b>/g)].map((m) => Number(m[1]));
+    // The last <b> is the ehp figure; everything before it is a chip count.
+    const chipTotal = nums.slice(0, -1).reduce((a, b) => a + b, 0);
+
+    check(
+      chipTotal === plan.length,
+      `wave ${wave + 1}: the chips account for every contact`,
+      `${chipTotal} of ${plan.length}`,
+    );
+
+    // Effective health, so an overshield counts — it is health that has to be
+    // chewed through whichever pool it sits in.
+    const worst = Math.max(...plan.map((p) => p.hp + p.shield));
+    check(
+      html.includes(`<b>${worst}</b> ehp`),
+      `wave ${wave + 1}: toughest is the real effective health`,
+      `${worst} ehp`,
+    );
+  }
+
+  // Order-preserving compression: a bigger contact must never draw smaller.
+  const sized = [...ENEMY_IDS]
+    .sort((a, b) => ENEMIES[a].radius - ENEMIES[b].radius)
+    .map((id) => {
+      const m = /r="([\d.]+)"/.exec(contactIcon(id, 26));
+      return { id, drawn: m === null ? 0 : Number(m[1]) };
+    })
+    .filter((s) => s.drawn > 0);
+
+  let monotonic = true;
+  for (let i = 1; i < sized.length; i++) {
+    if (sized[i]!.drawn < sized[i - 1]!.drawn) monotonic = false;
+  }
+  check(
+    monotonic,
+    'a bigger contact never draws smaller',
+    sized.map((s) => `${s.id} ${s.drawn}`).join(' < '),
+  );
+
+  // Shield is a band, never a ring: the slow already owns that shape on the
+  // board, and two meanings for one shape is a puzzle rather than a readout.
+  const shielded = ENEMY_IDS.find((id) => ENEMIES[id].shield > 0);
+  if (shielded !== undefined) {
+    const svg = contactIcon(shielded, 26);
+    check(svg.includes('<rect'), `${shielded}: shield is drawn as a band`);
+    check(!/<circle[^>]*stroke=/.test(svg), `${shielded}: shield is not a ring`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CAN'T-AFFORD AND LOCKED MUST NOT LOOK ALIKE.
+//
+// They used to share one signal — a dimmed slot — for two unrelated facts, so
+// the player had to read to find out which. The design's test is that the four
+// states are distinguishable with the type hidden; what is checkable headlessly
+// is the half that makes that possible: that each state emits its own markup,
+// that short states the real arithmetic, and that locked stays silent about
+// money because it is not a decision yet.
+// ---------------------------------------------------------------------------
+section('hud · build slot states');
+{
+  const ui = { deckOpen: true, selected: null, inspecting: null } as unknown as Parameters<
+    typeof renderSlots
+  >[1];
+  const armedUi = { ...ui, selected: TOWER_IDS[0]! } as typeof ui;
+
+  const rich = createWorld(map, 4242);
+  rich.money = 100_000;
+  const broke = createWorld(map, 4242);
+  broke.money = 0;
+
+  const affordable = renderSlots(rich, ui);
+  const unaffordable = renderSlots(broke, ui);
+
+  check(!affordable.includes('$'), 'slots carry no currency sigil');
+  check(!affordable.includes('class="slot poor'), 'affordable slots are not marked short');
+  check(unaffordable.includes('short '), 'unaffordable slots name the gap');
+  check(renderSlots(rich, armedUi).includes('armed'), 'the armed slot is marked');
+
+  // The shortfall is arithmetic, not decoration: it has to be the real number.
+  const first = TOWERS[TOWER_IDS[0]!];
+  const partial = createWorld(map, 4242);
+  partial.money = first.cost - 40;
+  check(
+    renderSlots(partial, ui).includes('short 40'),
+    'the gap is the real difference',
+    `cost ${first.cost} - money ${partial.money}`,
+  );
+
+  // Locked slots exist only if something is gated; all three boards gate two.
+  const locked = TOWER_IDS.filter((id) => TOWERS[id].unlockWave > 0);
+  check(locked.length > 0, 'something is gated behind a wave', `${locked.length} stations`);
+  for (const id of locked) {
+    const def = TOWERS[id];
+    // A locked slot renders as a div, so it cannot be armed at all — the state
+    // is enforced by the markup rather than by a guard someone can forget.
+    check(
+      affordable.includes(`Wave ${def.unlockWave + 1}`),
+      `${id}: locked slot states its wave`,
+      `wave ${def.unlockWave + 1}`,
+    );
+  }
+  check(
+    !/class="slot locked"[^]*?short /.test(affordable),
+    'locked slots never show a shortfall',
+  );
 }
 
 // ---------------------------------------------------------------------------

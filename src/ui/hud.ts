@@ -25,7 +25,7 @@ import {
 } from '../sim/types.ts';
 import { effectiveDamage } from '../sim/damage.ts';
 import { towerById, type World } from '../sim/world.ts';
-import { pathDial, stationIcon, tierPips } from './icons.ts';
+import { contactIcon, pathDial, stationIcon, tierPips } from './icons.ts';
 
 /**
  * DOM, not Pixi.
@@ -434,23 +434,52 @@ function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string
   );
 }
 
-function renderSlots(w: World, ui: UiState): string {
+/**
+ * The five build slots, in five states.
+ *
+ * The state that mattered most was the one that did not exist: **"can't afford"
+ * and "locked" used to share one signal** — a dimmed slot — for two unrelated
+ * facts, so the player had to read to find out which. Now short states the gap
+ * as a number and locked states the wave and nothing else. They can no longer
+ * be confused because they no longer look alike.
+ *
+ * Cost is a corner numeral with no sigil, name is a caps footer, and the glyph
+ * carries the mechanic (see `stationShape.ts`) so the roster is learnable at a
+ * glance rather than by reading five names.
+ *
+ * The blurb stays in `title` and stays figure-free. That is what stops it going
+ * stale: `mechanics()` derives the numbers from the def, so a tuned `pierce`
+ * updates the panel while prose saying "pierces three" would quietly start
+ * lying.
+ */
+export function renderSlots(w: World, ui: UiState): string {
   return TOWER_IDS.map((id) => {
     const def = TOWERS[id];
+
+    // Locked says one thing: when. No cost, no shortfall, nothing to weigh —
+    // it is not a decision yet.
     if (!isUnlocked(w, id)) {
       return (
-        `<div class="slot locked"><span>Locked<br>wave ${def.unlockWave + 1}</span></div>`
+        `<div class="slot locked" aria-label="${def.name}, unlocks at wave ${def.unlockWave + 1}">` +
+        `${stationIcon(id, 40)}<span class="wave">Wave ${def.unlockWave + 1}</span></div>`
       );
     }
-    const poor = w.money < def.cost;
+
+    const short = def.cost - w.money;
+    const poor = short > 0;
     const cls = ['slot', `t-${id}`, ui.selected === id ? 'armed' : '', poor ? 'poor' : '']
       .filter(Boolean)
       .join(' ');
+
     return (
       `<button class="${cls}" data-act="arm" data-id="${id}" title="${def.blurb}">` +
-      `<kbd>${def.hotkey}</kbd>${stationIcon(id, 40)}` +
-      `<span class="name">${def.name}</span>` +
-      `<span class="cost">$${def.cost}</span></button>`
+      `<kbd>${def.hotkey}</kbd>` +
+      `<span class="corner">${def.cost}</span>` +
+      stationIcon(id, 40) +
+      // Naming the gap turns "no" into "not yet, and by this much" — which is
+      // the difference between a dead control and a plan.
+      (poor ? `<span class="short">short ${short}</span>` : '') +
+      `<span class="name">${def.name}</span></button>`
     );
   }).join('');
 }
@@ -664,7 +693,7 @@ function renderArmourLine(w: World, t: Tower, next: number | null): string {
  * What is coming, drawn from `planWave` — the same pure function the spawner
  * uses, so the preview cannot promise a wave the sim won't deliver.
  */
-function renderNextContact(w: World): string {
+export function renderNextContact(w: World): string {
   const s = w.wave;
   if (s.phase === 'done' && w.creeps.length === 0) {
     return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
@@ -693,17 +722,28 @@ function renderNextContact(w: World): string {
   // health the player has to chew through whatever pool it sits in.
   const toughest = groups.reduce((a, b) => (b.hp + b.shield > a.hp + a.shield ? b : a));
 
+  // The real glyph at the real tint, not the name. The panel's whole job is
+  // "prepare for this", and it was describing the wave in a language the board
+  // does not use — the player had to translate "4 Warden" into the ringed pink
+  // circle they were about to see. Armour and shield are visible *before* the
+  // wave rather than only during it, which is the point at which they are still
+  // actionable.
   const chips = groups
-    .map((g) => `<span class="chip c-${g.enemy}">${g.n} ${ENEMIES[g.enemy].name}</span>`)
+    .map(
+      (g) =>
+        `<span class="chip c-${g.enemy}" title="${g.n} × ${ENEMIES[g.enemy].name}">` +
+        `${contactIcon(g.enemy, 26)}<b>${g.n}</b></span>`,
+    )
     .join('');
 
   return (
     `<div class="head"><i class="dot contact"></i><b>Wave ${s.index + 1}</b>` +
-    `<span class="blurb">${plan.length} contacts</span></div>` +
+    `<span class="blurb">${plan.length} inbound</span></div>` +
     `<div class="chips">${chips}</div>` +
-    `<div class="hint">Toughest: ${ENEMIES[toughest.enemy].name}, ${toughest.hp}` +
-    (toughest.shield > 0 ? ` + ${toughest.shield} shield` : ' hp') +
-    `</div>`
+    // One effective-health figure, because the biggest glyph above already
+    // named which contact it belongs to. Shield counts: it is health the player
+    // has to chew through whichever pool it sits in.
+    `<div class="hint">Toughest <b>${toughest.hp + toughest.shield}</b> ehp</div>`
   );
 }
 
