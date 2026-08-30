@@ -1,13 +1,13 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
 import { TILE_PX, COLORS } from './constants.ts';
-import type { TileTextures } from './textures.ts';
+import type { Textures } from './textures.ts';
 
 /**
  * The board. Built once and never touched again — nothing on this layer moves,
  * so it costs one batched draw call per frame and no per-frame work at all.
  */
-export function buildMapLayer(map: MapDef, tex: TileTextures): Container {
+export function buildMapLayer(map: MapDef, tex: Textures): Container {
   const layer = new Container();
 
   const tileField = new Container();

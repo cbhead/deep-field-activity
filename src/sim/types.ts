@@ -7,6 +7,8 @@
  * tile size never touches gameplay or balance.
  */
 
+import type { EnemyId } from '../content/enemies.ts';
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -48,3 +50,48 @@ export interface MapDef {
   /** Total route length in tiles. Used for progress and for pacing waves. */
   readonly pathLength: number;
 }
+
+export type EntityId = number;
+
+export interface Creep {
+  readonly id: EntityId;
+  readonly defId: EnemyId;
+
+  /** Position in tiles. */
+  x: number;
+  y: number;
+
+  /** Index of the waypoint currently being walked *toward*. */
+  leg: number;
+
+  /**
+   * Tiles travelled along the route. Targeting defaults to "furthest along"
+   * later, and comparing this is exact where comparing positions is not.
+   */
+  progress: number;
+
+  speed: number;
+  hp: number;
+  maxHp: number;
+
+  /** Set during the tick; the cleanup phase removes it from the array. */
+  dead: boolean;
+}
+
+/**
+ * Player intent. Nothing outside the sim mutates the world directly — a click
+ * pushes a Command, and `applyCommands` drains the queue as the first phase of
+ * the tick. Actions therefore land on exact tick boundaries, validation lives in
+ * one place, and this is precisely the seam a replay or a netcode layer needs.
+ */
+export type Command =
+  /** M2 scaffolding. The M3 wave spawner replaces this. */
+  { type: 'spawnDebugCreep' };
+
+/**
+ * Discrete instants, pushed by the sim and drained by the renderer once per
+ * frame. Continuous state (positions, hp fractions) is *pulled* instead — it is
+ * idempotent, so a dropped frame costs nothing. An event is a thing that
+ * happened at a moment, and if the renderer misses it the effect never plays.
+ */
+export type SimEvent = { type: 'creepLeaked'; x: number; y: number };

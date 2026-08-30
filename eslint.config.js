@@ -40,6 +40,7 @@ export default tseslint.config(
         { name: 'document', message: 'Not available headlessly. Keep the sim pure.' },
         { name: 'performance', message: 'The sim advances by fixed DT, never wall-clock time.' },
         { name: 'requestAnimationFrame', message: 'The loop drives the sim, not the other way round.' },
+        { name: 'process', message: 'The sim must behave identically in Node and the browser.' },
       ],
 
       'no-restricted-properties': ['error',

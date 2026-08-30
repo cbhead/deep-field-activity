@@ -12,7 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check": "zsh scripts/check.sh"
   },
   "dependencies": {
     "pixi.js": "^8.20.1"

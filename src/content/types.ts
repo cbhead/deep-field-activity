@@ -9,6 +9,20 @@
 /** A tile address. Integers, unlike the sim's float positions. */
 export type TileCoord = readonly [col: number, row: number];
 
+export interface EnemyDef {
+  readonly id: string;
+  readonly name: string;
+  readonly hp: number;
+  /** Tiles per second. Reads as a design value because the sim works in tiles. */
+  readonly speed: number;
+  /** Money awarded on kill. */
+  readonly bounty: number;
+  /** Draw and hit radius, in tiles. */
+  readonly radius: number;
+  /** Sprite tint. Presentational, but it belongs with the rest of the def. */
+  readonly color: number;
+}
+
 export interface MapSource {
   readonly id: string;
   readonly name: string;
