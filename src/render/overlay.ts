@@ -4,7 +4,7 @@ import { placementError } from '../sim/build.ts';
 import type { EntityId, PlacementError } from '../sim/types.ts';
 import { towerById, type World } from '../sim/world.ts';
 import { TILE_PX } from './constants.ts';
-import { THEME } from './theme.ts';
+import { BAKE_NEUTRAL, THEME } from './theme.ts';
 import type { Layers } from './pixiApp.ts';
 import type { Textures } from './textures.ts';
 
@@ -48,12 +48,17 @@ export class Overlay {
     this.ghost.visible = false;
     this.ghost.alpha = 0.55;
 
+    // `fill` is load-bearing: Pixi defaults text to black and this label is
+    // recoloured with `.tint`, which multiplies — so without a neutral fill the
+    // label was black on a near-black board no matter what tint was set.
     this.label = new Text({
       text: '',
       style: {
         fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-        fontSize: 11,
-        fontWeight: '600',
+        fontSize: 12,
+        fontWeight: '700',
+        fill: BAKE_NEUTRAL,
+        stroke: { color: THEME.fx.textOutline, width: 3, join: 'round' },
       },
     });
     this.label.visible = false;
@@ -123,7 +128,17 @@ export class Overlay {
     this.label.visible = true;
     this.label.text = ok ? `Deploy · −$${TOWERS[selected].cost}` : REJECTION[reason];
     this.label.tint = ok ? THEME.towers[selected] : THEME.feedback.invalid;
-    this.label.position.set((col + 1) * TILE_PX + 8, row * TILE_PX + 8);
+
+    // Sit to the right of the tile normally, but flip to the left rather than
+    // run off the board. Hovering the last few columns used to push the label
+    // past the canvas edge, where it was clipped away entirely — so the tiles
+    // whose verdict is least obvious were the ones that explained themselves
+    // least. `width` is only valid once `text` is set, hence the ordering.
+    const boardW = w.map.cols * TILE_PX;
+    const right = (col + 1) * TILE_PX + 8;
+    const flip = right + this.label.width > boardW;
+    this.label.x = flip ? Math.max(2, col * TILE_PX - 8 - this.label.width) : right;
+    this.label.y = Math.min(row * TILE_PX + 8, w.map.rows * TILE_PX - this.label.height - 2);
     // A legal ghost wears the tower's own colour, which answers "which tower"
     // as well as "yes"; only rejection needs a dedicated red.
     const tint = ok ? THEME.towers[selected] : THEME.feedback.invalid;

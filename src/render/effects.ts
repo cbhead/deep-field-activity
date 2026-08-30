@@ -4,7 +4,7 @@ import type { SimEvent } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { TILE_PX } from './constants.ts';
 import type { Layers } from './pixiApp.ts';
-import { THEME } from './theme.ts';
+import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
  * Transient combat feedback: health bars, floating damage, death bursts,
@@ -41,10 +41,24 @@ const MAX_PARTICLES = 160;
  */
 const EVENTS_PER_FRAME_BUDGET = 24;
 
+/**
+ * `fill` is not optional here, and the reason is worth stating.
+ *
+ * Pixi defaults text to BLACK, and these numbers are recoloured per firing
+ * station with `.tint` — which *multiplies*. Black times any tint is still
+ * black, so leaving the fill out did not produce "default-coloured" text, it
+ * produced permanently invisible text on a near-black board. Baking the fill
+ * neutral is what makes the tint mean anything, exactly as it does for every
+ * texture in `textures.ts`.
+ */
 const NUMBER_STYLE: TextStyleOptions = {
   fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
   fontSize: 13,
-  fontWeight: '600',
+  fontWeight: '700',
+  fill: BAKE_NEUTRAL,
+  // Damage numbers spawn on top of the contact that was hit, which is the
+  // brightest thing on the board. Without an outline they wash out against it.
+  stroke: { color: THEME.fx.textOutline, width: 3, join: 'round' },
 };
 
 interface FloatingNumber {

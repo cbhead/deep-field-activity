@@ -86,6 +86,14 @@ export interface Theme {
     /** Ring drawn around a contact held in a gravity well. */
     readonly slowRing: number;
     /**
+     * Outline behind in-world text.
+     *
+     * Canvas text sits over both the near-black field and the brightest thing
+     * on screen — a contact taking a hit. A fill alone is legible on one or the
+     * other, never both, so every in-world label carries this behind it.
+     */
+    readonly textOutline: number;
+    /**
      * Overshield, drawn as a band above the hull bar.
      *
      * Deliberately *not* a ring: the gravity slow already owns that shape, and
@@ -238,6 +246,7 @@ export const DEEP_FIELD: Theme = {
     leakBright: 0xffb4b4,
     slowRing: 0xa5eefb,
     shield: 0x9fbcff,
+    textOutline: 0x05060d,
   },
 
   shape: {

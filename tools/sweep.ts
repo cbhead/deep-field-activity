@@ -3,8 +3,16 @@
  *
  * Runs whole matches headlessly under different numbers and reports how each
  * strategy fared. It exists because balance is the part of this game that is
- * actually hard, and eyeballing a table of stats does not answer the only
- * question that matters: can a defence built entirely around one answer win?
+ * actually hard, and eyeballing a table of stats does not answer it.
+ *
+ * **Read the marginal block, not the mono-build rows.** "Can a defence built
+ * entirely around one station win?" was the original question and it is the
+ * wrong one: it is only answerable by a station that kills things, so asking it
+ * of a slow guarantees a false failure. Singularity wins 0/5 alone and is worth
+ * more to a real build than either of the others — tuning it until it wins alone
+ * means handing it damage, which collapses three stations back into three ways
+ * to do the same thing. The mono rows are still printed, but as a check for a
+ * *dominant* station; a weak one there means nothing on its own.
  *
  * It mutates BALANCE / TOWERS / ENEMIES between runs. `as const` is compile-time
  * only and every consumer reads these objects at call time, so this drives the
@@ -175,7 +183,56 @@ const apply = (c: Candidate) => () => {
   enemy('monolith', { hp: c.monolithHp });
 };
 
-sweep('as shipped', () => {});
+/**
+ * What each station is worth *to a build that already has the others*.
+ *
+ * This is the question S4 actually wants answered. Dropping one station from
+ * the full build leaves the survivors in the proportion they had before — a
+ * 1:1:1 cycle minus one slot is still 1:1 — so the delta is the station's
+ * contribution and not an artefact of a changed build order.
+ *
+ * A station earning near zero here is the real "non-viable", and a station
+ * whose absence barely registers is the real "decorative". Neither shows up in
+ * the mono-build rows, which is why those rows kept saying Singularity was
+ * broken while it was quietly carrying the strongest build in the game.
+ *
+ * `wait` only. Rushing is a separate axis and mixing it in here would fold two
+ * questions into one number.
+ */
+const REFERENCE: TowerId[] = ['nova', 'lance', 'singularity'];
 
-export { sweep, run, apply };
+function marginal(): void {
+  const score = (build: TowerId[]) => {
+    const rs = SEEDS.map((s) => run(build, false, s));
+    return {
+      wins: rs.filter((r) => r.won).length,
+      lives: rs.reduce((a, r) => a + r.lives, 0) / rs.length,
+    };
+  };
+
+  console.log(`\n\x1b[1mmarginal contribution\x1b[0m`);
+  console.log(`  \x1b[2mwhat each station adds to a build that already has the other two\x1b[0m`);
+
+  const base = score(REFERENCE);
+  console.log(
+    `  all three${' '.repeat(11)}won ${base.wins}/${SEEDS.length}` +
+      `  lives ${base.lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}`,
+  );
+
+  for (const drop of REFERENCE) {
+    const s = score(REFERENCE.filter((t) => t !== drop));
+    const delta = base.lives - s.lives;
+    console.log(
+      `  without ${drop.padEnd(12)}` +
+        ` won ${s.wins}/${SEEDS.length}` +
+        `  lives ${s.lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}` +
+        `  \x1b[1m${drop} is worth ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}\x1b[0m`,
+    );
+  }
+}
+
+sweep('as shipped', () => {});
+marginal();
+
+export { sweep, run, apply, marginal };
 export type { Candidate };
