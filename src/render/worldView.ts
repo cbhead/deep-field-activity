@@ -1,7 +1,7 @@
 import { Sprite, type Container, type Texture } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
 import { visualTier } from '../sim/build.ts';
-import type { EntityId, SimEvent } from '../sim/types.ts';
+import type { EntityId, SimEvent, Tower } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
 import { TILE_PX } from './constants.ts';
@@ -97,6 +97,14 @@ export class WorldView {
         view.sprite.texture = this.tierTexture(tier);
         view.tier = tier;
       }
+
+      // A ramping station brightens as it spins up. The arc in `towerChrome`
+      // already carries the figure; this carries the fact at a glance, so a
+      // charged Filament is distinguishable from a cold one without reading a
+      // dial. Both derive from `focusTime`, so both snap back on the same frame
+      // a retarget costs the multiplier — which is the frame that matters.
+      view.sprite.tint = mix(THEME.towers[t.defId], THEME.fx.hitFlash, charge(t) * RAMP_LIFT);
+
       view.seen = this.frame;
     }
 
@@ -209,6 +217,30 @@ export class WorldView {
       }
     }
   }
+}
+
+/**
+ * How far a fully-charged station's tint travels toward white.
+ *
+ * Small on purpose. A station sits below a contact in the contrast hierarchy,
+ * and a ramp that lit up like a hit flash would spend attention the creeps have
+ * already been promised. It only has to be enough to tell a charged Filament
+ * from a cold one, which is the whole ask.
+ */
+const RAMP_LIFT = 0.3;
+
+/**
+ * 0 cold, 1 at the ceiling. Non-ramping stations are always 0, so this costs
+ * one comparison for the four that do not ramp.
+ *
+ * The same expression `towerChrome.drawSpinUp` uses, deliberately — the arc and
+ * the brightness are two readings of one number, and if they could disagree
+ * they eventually would.
+ */
+function charge(t: Tower): number {
+  if (t.stats.rampPerSecond <= 0 || t.focusTime <= 0) return 0;
+  const toCeiling = (t.stats.rampMax - 1) / t.stats.rampPerSecond;
+  return toCeiling <= 0 ? 1 : Math.min(1, t.focusTime / toCeiling);
 }
 
 /**

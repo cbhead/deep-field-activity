@@ -108,6 +108,93 @@ function drawSlowClock(g: Graphics, c: Creep, r: number): void {
   });
 }
 
+/** How close two held contacts must be to count as one mass, in tiles. */
+const FIELD_REACH = 1.15;
+
+/** Below this a ring per contact is still the clearest thing to draw. */
+const FIELD_MIN = 3;
+
+/** How far the field puffs out past each member, in tiles. */
+const FIELD_PAD = 0.62;
+
+/**
+ * One soft field per bunch of held contacts, drawn behind their clocks.
+ *
+ * A slow's whole job is to bunch contacts into a file, so the effect
+ * manufactures the exact density at which its own indicator stops working: six
+ * outlines at 40px spacing stop being six readings and become a texture, and
+ * the player loses both *which are slowed* and *how many there are* at once.
+ *
+ * **The design's fix was to replace the rings at three or more. That would have
+ * been right against the indicator it described — a plain outline — but the
+ * shipped one is a clock**, whose arc burns down with the status and whose width
+ * carries how hard the slow bites. Merging would have discarded both, in the
+ * one situation where knowing which contact is about to speed up matters most.
+ *
+ * So the field goes *behind* instead: the group reads as one held mass at a
+ * glance, and every contact keeps its own timer on top. It costs a little more
+ * ink than the spec asked for and keeps two readings the spec would have spent.
+ *
+ * The union of overlapping soft discs has no outline, which is what makes this
+ * read as a field rather than as a fat ring — the same trick the nebula uses.
+ */
+function drawSlowFields(g: Graphics, w: World): void {
+  const held = w.creeps.filter((c) => !c.dead && c.slowTimer > 0);
+  if (held.length < FIELD_MIN) return;
+
+  const seen = new Set<number>();
+  for (const start of held) {
+    if (seen.has(start.id)) continue;
+
+    // Flood outward from one held contact to everything transitively near it,
+    // so a file of six is one field rather than four overlapping pairs.
+    const group = [start];
+    seen.add(start.id);
+    for (let i = 0; i < group.length; i++) {
+      const a = group[i]!;
+      for (const b of held) {
+        if (seen.has(b.id)) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) > FIELD_REACH) continue;
+        seen.add(b.id);
+        group.push(b);
+      }
+    }
+
+    if (group.length < FIELD_MIN) continue;
+    for (const c of group) {
+      g.circle(c.x * TILE_PX, c.y * TILE_PX, (ENEMIES[c.defId].radius + FIELD_PAD) * TILE_PX).fill({
+        color: THEME.fx.slowRing,
+        alpha: 0.07,
+      });
+    }
+  }
+}
+
+/**
+ * A contact whose shield has started coming back.
+ *
+ * The band already shows the shield filling, but nothing marked the *moment*
+ * regen began — so a Warden that healed in a coverage gap arrived whole with no
+ * prior warning, and the player learned about the gap from the leak rather than
+ * from the board.
+ *
+ * Blue, from `fx.shield`, which is already a separate token from the slow's
+ * cyan `fx.slowRing`. "Must not read as the slow field" is therefore satisfied
+ * by construction rather than by eye — and this is a filled halo where the slow
+ * is a ring, so the two differ in shape as well as hue.
+ */
+function drawRegenHalo(g: Graphics, c: Creep, r: number): void {
+  if (c.maxShield <= 0 || c.shieldTimer > 0 || c.shield >= c.maxShield) return;
+
+  g.circle(c.x * TILE_PX, c.y * TILE_PX, r + HALO_PAD).fill({
+    color: THEME.fx.shield,
+    alpha: 0.14,
+  });
+}
+
+/** Just outside the hull, inside the slow ring's band. */
+const HALO_PAD = 3;
+
 /**
  * Hull, and the overshield above it.
  *
@@ -160,9 +247,14 @@ export class CreepChrome {
     const g = this.gfx;
     g.clear();
 
+    // A pass of its own, before the loop, because call order is stacking order:
+    // the field has to sit *behind* the clocks rather than replace them.
+    drawSlowFields(g, w);
+
     for (const c of w.creeps) {
       if (c.dead) continue;
       const r = bodyRadius(c);
+      drawRegenHalo(g, c, r);
       drawSlowClock(g, c, r + RING_GAP);
       drawHealth(g, c, r);
     }

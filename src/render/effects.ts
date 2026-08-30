@@ -184,9 +184,7 @@ export class Effects {
         break;
       case 'creepSplit':
         this.spawnedThisFrame++;
-        // Tinted as the *children*, so the burst reads as "these are what you
-        // now have to deal with" rather than as an ordinary kill.
-        this.addBurst(ev.x, ev.y, THEME.enemies[ev.into]);
+        this.addSplitPips(ev.x, ev.y, ev.count, THEME.enemies[ev.into]);
         break;
       case 'shieldBroke':
         this.spawnedThisFrame++;
@@ -254,6 +252,45 @@ export class Effects {
         vy: Math.sin(angle) * speed,
         life: 0,
         ttl: 0.35 + Math.random() * 0.25,
+        tint,
+      });
+    }
+  }
+
+  /**
+   * A Cluster's death, told apart from every other death.
+   *
+   * The kill that makes things *worse* looked exactly like the kill that makes
+   * things better: both fired the same seven-particle scatter. So a Cluster
+   * killed at the front of the route was a mistake the player only found out
+   * about three Motes later, which is far too late to have placed anything
+   * differently.
+   *
+   * `count` pips rather than a fixed scatter, evenly spaced and tinted as the
+   * *children* — so the effect says how many are coming and what they are,
+   * before any of them has walked. Evenly spaced rather than random because
+   * three deliberate marks read as a count and seven random ones read as an
+   * explosion, and this event is a count.
+   */
+  private addSplitPips(tileX: number, tileY: number, count: number, tint: number): void {
+    const x = tileX * TILE_PX;
+    const y = tileY * TILE_PX;
+    // One random offset for the whole set, so the pips stay evenly spaced
+    // relative to each other but successive splits do not stamp identically.
+    const turn = Math.random() * Math.PI * 2;
+
+    for (let i = 0; i < count; i++) {
+      if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+      const angle = turn + (i / count) * Math.PI * 2;
+      const speed = 95 + Math.random() * 25;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0,
+        // Short and uniform: this is an announcement, not debris.
+        ttl: 0.25,
         tint,
       });
     }
