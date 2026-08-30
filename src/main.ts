@@ -4,6 +4,7 @@ import { buildMapLayer } from './render/mapLayer.ts';
 import { WorldView } from './render/worldView.ts';
 import { Overlay } from './render/overlay.ts';
 import { Effects } from './render/effects.ts';
+import { TowerChrome } from './render/towerChrome.ts';
 import { tilesToPx } from './render/constants.ts';
 import { applyHudTheme } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
@@ -334,6 +335,7 @@ async function startGame(
   const view = new WorldView(layers, textures);
   const overlay = new Overlay(layers, textures);
   const effects = new Effects(layers, boardW, boardH);
+  const towerChrome = new TowerChrome(layers);
 
   function togglePause(): void {
     ui.paused = !ui.paused;
@@ -385,7 +387,8 @@ async function startGame(
 
     view.sync(world, dt);
     overlay.sync(world, ui.selected, ui.hover, ui.inspecting);
-    effects.update(world, dt, ui.prefs);
+    effects.update(world, dt);
+    towerChrome.sync(world, ui.prefs);
 
     if (now >= hudDue) {
       hud.update();

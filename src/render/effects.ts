@@ -1,16 +1,20 @@
 import { Container, Graphics, Text, type TextStyleOptions } from 'pixi.js';
-import { BALANCE } from '../content/balance.ts';
 import type { UiPrefs } from '../app/uiState.ts';
 import { formatDamage } from '../sim/analysis.ts';
 import type { SimEvent } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
-import { COLLAR_SECTORS, COLLAR_SPAN, TILE_PX } from './constants.ts';
+import { TILE_PX } from './constants.ts';
 import type { Layers } from './pixiApp.ts';
 import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
  * Transient combat feedback: health bars, floating damage, death bursts,
  * tracers, and the leak flare.
+ *
+ * Everything here is anchored to something short-lived — a contact's health bar
+ * dies with the contact, a tracer with the shot — and the three rules below all
+ * follow from that. A station outlives the whole run, so its chrome is not here;
+ * see `towerChrome.ts`, which states the boundary.
  *
  * Three rules shape this file.
  *
@@ -85,62 +89,6 @@ interface Particle {
   life: number;
   ttl: number;
   tint: number;
-}
-
-/**
- * Clear of the hex, and clear of the neighbours.
- *
- * The station's vertices reach ~0.42 of a tile, so a collar at 0.44 was drawn
- * *on* the silhouette and lost the contrast fight with its own glow — legible
- * when zoomed, mush at 1x, which is the size the game is actually played at.
- * 0.48 rings it cleanly with ~1.5px between the collars of two adjacent towers.
- */
-const COLLAR_RADIUS = 0.48;
-
-/**
- * A tier gauge around a station: which paths it has been taken down, and how far.
- *
- * The baked art carries *overall* power — the pip row, the growing core, the
- * halo — and that is worth keeping, but it is driven by `visualTier`, which is
- * the sum of the three paths. Three towers at damage 3, range 3 and effect 3
- * therefore baked to the identical sprite while being 18 damage, 3.7 tiles of
- * reach and pierce 4 respectively. The board could show how *much* had been
- * spent on a station and never what it had been spent on.
- *
- * Nothing is drawn for a station at tier 1 in a path, and nothing at all for an
- * untouched one — so an early board stays as clean as it was, and every arc
- * that appears is something the player chose.
- */
-function drawUpgradeCollar(g: Graphics, t: World['towers'][number]): void {
-  const max = BALANCE.upgrade.maxTier;
-  if (max <= 1) return;
-
-  const cx = t.x * TILE_PX;
-  const cy = t.y * TILE_PX;
-  const r = TILE_PX * COLLAR_RADIUS;
-
-  for (const { path, from } of COLLAR_SECTORS) {
-    const tier = t.tiers[path];
-    if (tier <= 1) continue;
-
-    // Tier 2 fills half the sector, tier 3 all of it — "how far along this
-    // path", not "how many tiers", which is what the player is choosing.
-    const fill = (tier - 1) / (max - 1);
-    const a0 = (from * Math.PI) / 180;
-    const a1 = a0 + (COLLAR_SPAN * fill * Math.PI) / 180;
-
-    // `moveTo` before `arc`, or the arc draws a connector from wherever the
-    // previous shape ended — see the slow ring for the full story.
-    // Laid down twice: a dark backing, then the arc. The collar crosses both
-    // the starfield and the station's own halo, and a single stroke that reads
-    // on one washes out on the other.
-    g.moveTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r)
-      .arc(cx, cy, r, a0, a1)
-      .stroke({ width: 5, color: THEME.board.bg, alpha: 0.75 });
-    g.moveTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r)
-      .arc(cx, cy, r, a0, a1)
-      .stroke({ width: 3, color: THEME.towers[t.defId], alpha: 1 });
-  }
 }
 
 /** An expanding detonation ring, drawn at the blast's true radius. */
@@ -327,16 +275,22 @@ export class Effects {
    * `dt` is wall-clock seconds, not sim time: these are presentation and should
    * decay at the same rate whether the game is running at 1× or 4×, or paused.
    */
-  update(w: World, dt: number, prefs: UiPrefs): void {
-    this.drawBars(w, prefs);
+  update(w: World, dt: number): void {
+    this.drawBars(w);
     this.stepNumbers(dt);
     this.stepParticles(dt);
     this.stepBlasts(dt);
     this.stepRim(dt);
   }
 
-  /** Health bars and projectile tracers — one Graphics between them. */
-  private drawBars(w: World, prefs: UiPrefs): void {
+  /**
+   * Health bars, slow clocks and projectile tracers — one Graphics between them.
+   *
+   * `prefs` is gone from here: the only thing that read it was the always-on
+   * reach circle, which belongs to the station rather than to any transient
+   * entity and moved to `towerChrome.ts` with the rest of the station's chrome.
+   */
+  private drawBars(w: World): void {
     const g = this.bars;
     g.clear();
 
@@ -436,39 +390,6 @@ export class Effects {
       }
     }
 
-    for (const t of w.towers) {
-      // Spin-up, drawn on the station rather than on its shots.
-      //
-      // A ramp nobody can see is a ramp nobody can play around, and the useful
-      // question is about the *station* — "is this one up to speed, or did it
-      // just switch targets and lose everything" — not about any single shot.
-      // Putting it here also keeps the ramp out of the projectile, so the sim
-      // carries no field that exists only to be drawn.
-      // Live stats, not the def: the effect path moves the ramp dials, and the
-      // arc must fill against the ceiling the station actually has.
-      if (t.stats.rampPerSecond > 0 && t.focusTime > 0) {
-        const ceiling = (t.stats.rampMax - 1) / t.stats.rampPerSecond;
-        const charge = Math.min(1, t.focusTime / ceiling);
-        const r = TILE_PX * 0.32;
-        const start = -Math.PI / 2;
-        // `moveTo` first — see the slow ring above for why an arc without one
-        // trails a line back to whatever was drawn before it.
-        g.moveTo(t.x * TILE_PX, t.y * TILE_PX - r)
-          .arc(t.x * TILE_PX, t.y * TILE_PX, r, start, start + Math.PI * 2 * charge)
-          .stroke({ width: 1 + charge * 2.5, color: THEME.towers[t.defId], alpha: 0.4 + charge * 0.5 });
-      }
-
-      drawUpgradeCollar(g, t);
-
-      // Reach circles for every placed station, when the player asked for them.
-      if (prefs.reachCircles === 'always') {
-        g.circle(t.x * TILE_PX, t.y * TILE_PX, t.stats.range * TILE_PX).stroke({
-          width: 1,
-          color: THEME.towers[t.defId],
-          alpha: 0.16,
-        });
-      }
-    }
   }
 
   private stepNumbers(dt: number): void {
