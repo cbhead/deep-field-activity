@@ -35,6 +35,10 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
   layer.addChild(wash(tex, map, map.goal, WASH_REACH, field.lit, field.litAlpha));
   layer.addChild(wash(tex, map, map.spawn, HAZE_REACH, field.haze, field.hazeAlpha));
 
+  // Over the tiles, under the lattice — see `buildNebula` for why this is not
+  // where the design put it.
+  layer.addChild(buildNebula(map, field));
+
   layer.addChild(buildLattice(map, field));
   layer.addChild(buildEndMarkers(map, field));
 
@@ -147,14 +151,17 @@ function buildTileField(map: MapDef, tex: Textures, field: SectorField): Contain
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
       const kind = map.tiles[row * map.cols + col]!;
-
-      // Blocked keeps its own texture until the nebula moves into board space;
-      // everything else is the shared square wearing a colour.
-      const sprite = new Sprite(kind === 'blocked' ? tex.blocked : tex.tile);
+      const sprite = new Sprite(tex.tile);
 
       if (kind === 'path') {
         sprite.tint = field.path;
-      } else if (kind !== 'blocked') {
+      } else if (kind === 'blocked') {
+        // A thin plate, so the cloud drawn beneath it reads through. The plate
+        // is the rule and the cloud is the atmosphere; the lattice draws the
+        // clump's perimeter, which is what keeps "no build here" tile-accurate.
+        sprite.tint = field.blocked;
+        sprite.alpha = field.blockedAlpha;
+      } else {
         // Checker the buildable ground, so a tile is countable without a hard
         // grid line having to do the whole job.
         sprite.tint = (col + row) % 2 === 0 ? field.ground : field.groundAlt;
@@ -167,6 +174,67 @@ function buildTileField(map: MapDef, tex: Textures, field: SectorField): Contain
   }
 
   return tileField;
+}
+
+/**
+ * A literal, like `SKY_SEED`, and for the same reason: a cloud that reshuffled
+ * on every reload would read as a rendering fault rather than as a place.
+ */
+const NEBULA_SEED = 0x2be7;
+
+/**
+ * The nebula, as one board-space cloud rather than a per-tile bake.
+ *
+ * **The overhang is the entire point.** Baking forced every disc inside its own
+ * 40px tile, and a disc inscribed in a square touches each edge at exactly one
+ * point — so a clump of blocked tiles left a dark cross tracing the grid.
+ * Nothing here calls `generateTexture`, so bounds no longer matter and the
+ * puffs can spill across tile borders and into the ground beside them, which is
+ * what makes a clump read as one mass instead of four coins.
+ *
+ * **Drawn over the tiles, not under them — which is not where the design put
+ * it, and the reason is worth recording.** Under the tile field the plate has
+ * to be nearly transparent for its own cloud to show through, and a blocked
+ * tile at 0.15 against ground at 0.72 stops reading as gas and starts reading
+ * as a *hole in the board*. Tried it, looked wrong, moved it. Above the tiles
+ * the plate can sit at a normal weight, the cloud lands at the value it was
+ * authored at, and the spill onto neighbouring ground costs a few percent of
+ * dimming there — which is what atmosphere is.
+ *
+ * The lattice still draws above this, so the clump's perimeter survives and
+ * "you cannot build here" stays tile-accurate. That was the actual constraint;
+ * being underneath was only one way of meeting it.
+ *
+ * One Graphics for the whole cloud, built once — this layer's per-frame cost
+ * stays at zero.
+ */
+function buildNebula(map: MapDef, field: SectorField): Graphics {
+  const g = new Graphics();
+  const rand = mulberry32(NEBULA_SEED);
+
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      if (map.tiles[row * map.cols + col] !== 'blocked') continue;
+
+      for (let i = 0; i < field.nebulaPerTile; i++) {
+        // Centres wander up to half a tile out and radii run well past one, so
+        // no puff shares a boundary with the tile that spawned it.
+        const cx = (col + 0.5 + (rand() - 0.5)) * TILE_PX;
+        const cy = (row + 0.5 + (rand() - 0.5)) * TILE_PX;
+        const r = (0.45 + rand() * 1.15) * TILE_PX;
+
+        // A denser knot now and then, so the mass has structure rather than
+        // being an even smear — the failure mode of stacking equal discs.
+        const knot = rand() < 0.25;
+        g.circle(cx, cy, knot ? r * 0.45 : r).fill({
+          color: knot ? field.blockedEdge : field.blocked,
+          alpha: field.nebulaAlpha,
+        });
+      }
+    }
+  }
+
+  return g;
 }
 
 /**

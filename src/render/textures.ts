@@ -1,7 +1,7 @@
 import { Graphics, type Renderer, type Texture } from 'pixi.js';
 import { BALANCE } from '../content/balance.ts';
 import { TILE_PX } from './constants.ts';
-import { BAKE_NEUTRAL, THEME, type SectorField } from './theme.ts';
+import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
  * Every repeated visual is baked into a GPU texture once, then instanced as
@@ -40,7 +40,6 @@ export interface Textures {
    * batch in two.
    */
   falloff: Texture;
-  blocked: Texture;
   /**
    * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
    * GPU and keeps every unarmoured creep on one texture, hence one draw call.
@@ -126,54 +125,25 @@ function drawFalloff(g: Graphics): void {
 }
 
 /**
- * The nebula — what an unbuildable tile is in Deep Field.
+ * The nebula used to be baked here, per tile, and the reasoning that put it
+ * there is worth keeping because it is still correct — it was the *conclusion*
+ * that was wrong.
  *
- * Discs, as fractions of the tile: centre x, centre y, radius. Overlapping them
- * at low alpha rather than drawing one shape is the entire trick, because the
- * union of soft discs has no outline, and an outline is the difference between
- * gas and a rock. Deliberately not concentric — a shared centre stacks into
- * visible rings, which is this shape's obvious failure mode.
+ * Overlapping soft discs at low alpha is the right way to draw gas: the union
+ * of them has no outline, and an outline is the difference between gas and a
+ * rock. But `generateTexture` sizes from geometry bounds, so every disc had to
+ * be *contained within its 40px tile* — and a disc inscribed in a square meets
+ * each edge at exactly one point. Adjacent blocked tiles therefore left a dark
+ * cross along their shared borders, tracing the grid perfectly. Four coins, not
+ * one cloud. A flat coat was added to fight it and only turned the cross into a
+ * seam.
  *
- * Every disc is contained within the tile deliberately: `generateTexture` sizes
- * from geometry bounds, so a single pixel of overhang would quietly produce a
- * larger-than-40px texture and skew every tile after it.
+ * The containment was never a design choice; it was a constraint of baking. So
+ * the cloud moved to `buildNebula` in `mapLayer.ts`, where it is drawn in board
+ * space and its puffs are free to overhang tiles — which is the entire fix.
+ * Scenery that traces the grid tells the player the board is made of squares at
+ * the exact moment it should be telling them it is made of gas.
  */
-const NEBULA_PUFFS: readonly (readonly [number, number, number])[] = [
-  [0.5, 0.5, 0.5],
-  [0.34, 0.38, 0.3],
-  [0.68, 0.4, 0.28],
-  [0.36, 0.66, 0.28],
-  [0.65, 0.64, 0.31],
-  [0.52, 0.5, 0.22],
-];
-
-/** Denser knots in the gas, in `blockedEdge`. Two is enough to kill the flatness. */
-const NEBULA_KNOTS: readonly (readonly [number, number, number])[] = [
-  [0.45, 0.47, 0.24],
-  [0.57, 0.56, 0.16],
-];
-
-/**
- * Low enough that no single disc has a boundary you can pick out, so the cloud
- * comes from accumulation rather than from any one shape. It also caps how
- * bright the nebula can get: the puffs stack to roughly the density of the old
- * flat plate at the middle, which is where scenery belongs — below a station,
- * far below a contact.
- */
-const NEBULA_ALPHA = 0.15;
-const NEBULA_KNOT_ALPHA = 0.15;
-
-/**
- * A flat coat under the puffs, covering the tile corner to corner.
- *
- * Without it a clump of nebula reads as four coins rather than one mass, and
- * this is a tiling artefact rather than a taste call: a disc inscribed in the
- * tile meets each edge at exactly one point, so adjacent tiles leave a dark
- * cross along their shared borders that traces the grid perfectly. The coat buys
- * that back for a straight boundary where the clump ends — at this alpha a
- * smaller step than the grid line already drawn on every tile around it.
- */
-const NEBULA_COAT_ALPHA = 0.18;
 
 /**
  * A pointy-top hexagon inscribed in the tile — the Deep Field station.
@@ -353,7 +323,18 @@ function drawCreep(g: Graphics, plated: boolean): void {
   });
 }
 
-export function createTextures(renderer: Renderer, board: SectorField): Textures {
+/**
+ * **Nothing baked here knows which sector it is for**, and that is the shape the
+ * board rebuild arrived at rather than the one it set out for.
+ *
+ * The design asked for textures to "bake per field at level load". But once the
+ * grid moved into the lattice and the nebula moved into board space, every
+ * remaining bake was `BAKE_NEUTRAL` — the field's colours are all applied as
+ * `tint` at draw time. So the requirement dissolved instead of being satisfied,
+ * and a fourth sector now costs zero GPU memory rather than a fresh set of
+ * textures.
+ */
+export function createTextures(renderer: Renderer): Textures {
   const { shape } = THEME;
 
   return {
@@ -393,21 +374,5 @@ export function createTextures(renderer: Renderer, board: SectorField): Textures
     // and a rectangular hole in a starfield is a far louder tile artefact than
     // the two-values-of-255 seam it would fix. The cloud is what occludes the
     // stars here, and it does it gradually, which is what a cloud should do.
-    blocked: bake(renderer, (g) => {
-      g.rect(0, 0, TILE_PX, TILE_PX).fill({ color: board.ground, alpha: board.groundAlpha });
-      g.rect(0, 0, TILE_PX, TILE_PX).fill({ color: board.blocked, alpha: NEBULA_COAT_ALPHA });
-      for (const [cx, cy, r] of NEBULA_PUFFS) {
-        g.circle(cx * TILE_PX, cy * TILE_PX, r * TILE_PX).fill({
-          color: board.blocked,
-          alpha: NEBULA_ALPHA,
-        });
-      }
-      for (const [cx, cy, r] of NEBULA_KNOTS) {
-        g.circle(cx * TILE_PX, cy * TILE_PX, r * TILE_PX).fill({
-          color: board.blockedEdge,
-          alpha: NEBULA_KNOT_ALPHA,
-        });
-      }
-    }),
   };
 }

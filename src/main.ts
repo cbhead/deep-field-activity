@@ -341,7 +341,7 @@ async function startGame(
   const field = fieldFor(opts.level?.field);
   const { app, layers } = await createRenderer(mount, boardW, boardH, field);
 
-  const textures = createTextures(app.renderer, field);
+  const textures = createTextures(app.renderer);
   layers.map.addChild(buildMapLayer(map, textures, field));
 
   const view = new WorldView(layers, textures);

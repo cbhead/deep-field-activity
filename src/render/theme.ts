@@ -43,8 +43,26 @@ export interface SectorField {
    * per edge, and this is what buys back the weight that lost.
    */
   readonly gridAlpha: number;
+  /** The nebula's mass, and the denser knots in it. */
   readonly blocked: number;
   readonly blockedEdge: number;
+  /**
+   * How opaque a blocked tile's own plate is.
+   *
+   * Sits a little under `groundAlpha`, so a clump reads as *denser* than open
+   * ground rather than as a hole punched in it. The cloud is drawn on top, so
+   * this no longer has to be nearly transparent to let its own nebula through —
+   * see `buildNebula` for why that ordering changed.
+   */
+  readonly blockedAlpha: number;
+  /**
+   * Per-puff alpha, and how many puffs each blocked tile contributes.
+   *
+   * Density is per *field*, which is most of what separates the three sectors:
+   * Cascade's board should feel emptier, Pincer's should feel pressed in on.
+   */
+  readonly nebulaAlpha: number;
+  readonly nebulaPerTile: number;
   readonly path: number;
   /**
    * `null` means the path tile gets no edge stroke, so the route reads as one
@@ -262,6 +280,9 @@ const SWITCHBACK: SectorField = {
   gridAlpha: 0.85,
   blocked: 0x232532,
   blockedEdge: 0x2f3245,
+  blockedAlpha: 0.72,
+  nebulaAlpha: 0.14,
+  nebulaPerTile: 4,
   // The route reads *lighter* than the field it crosses, so the path is
   // legible in greyscale rather than relying on hue.
   path: 0x1b1f36,
