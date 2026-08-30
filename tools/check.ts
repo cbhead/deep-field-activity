@@ -12,9 +12,9 @@
 import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
-import { planWave, waveCount } from '../src/sim/wavePlan.ts';
+import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
-import { ENEMIES, ENEMY_IDS } from '../src/content/enemies.ts';
+import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost } from '../src/sim/build.ts';
 import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
 import type { TargetMode } from '../src/sim/types.ts';
@@ -1327,6 +1327,90 @@ section('contacts — splits');
 // Not assertions — a readout. The plan calls M5 the point where we find out
 // whether the game is fun, and this is the cheapest way to see whether the
 // numbers are anywhere near sane before playing it.
+section('matchup matrix (informational)');
+
+{
+  /**
+   * Every station against every contact, in isolation.
+   *
+   * The whole-run probe below answers "does this build survive the arc", which
+   * stopped being diagnostic the moment there were five contact types — a
+   * station can beat Drifters comfortably and still be helpless against
+   * Monoliths, and the run probe reports both as one number.
+   *
+   * This asks the design question instead: **is each station the answer to
+   * something, and is anything unanswerable?** A row of zeros is a station that
+   * beats everything; a column that nothing clears is a contact with no counter.
+   * Both are balance failures, and neither is visible from win rates.
+   *
+   * Money is unlimited here on purpose. This measures combat, not economy —
+   * the run probe is where affordability gets tested.
+   */
+  const DUEL_WAVE = 5;
+  const DUEL_STATIONS = 8;
+
+  /**
+   * Counts and spacing per contact, taken from how each actually appears in
+   * `WAVES` rather than a flat ten of everything.
+   *
+   * The flat version was tried first and was actively misleading: ten Motes
+   * read as zero leaks against every station, which says Motes are trivial.
+   * They are not — they arrive fourteen and sixteen at a time, and the swarm is
+   * the entire point of them. Measuring a contact at a pressure it never occurs
+   * at measures nothing.
+   */
+  const PRESSURE: Record<EnemyId, { count: number; every: number }> = {
+    drifter: { count: 10, every: 0.9 },
+    mote: { count: 15, every: 0.27 },
+    monolith: { count: 3, every: 2.5 },
+    warden: { count: 4, every: 1.6 },
+    cluster: { count: 4, every: 1.6 },
+    bulwark: { count: 4, every: 1.9 },
+  };
+
+  const duel = (tower: TowerId, enemy: EnemyId): number => {
+    const w = createWorld(map, 4242);
+    w.wave.phase = 'done';
+    w.money = 1_000_000;
+    // Deep enough that a leak never ends the run — we want the count, not a loss.
+    w.lives = 9999;
+
+    for (const [col, row] of rankedSpots(TOWERS[tower].range).slice(0, DUEL_STATIONS)) {
+      w.commands.push({ type: 'placeTower', defId: tower, col, row });
+    }
+    stepWorld(w, DT);
+
+    const stats = scaledStats(enemy, DUEL_WAVE);
+    const { count, every } = PRESSURE[enemy];
+    let spawned = 0;
+    let t = 0;
+
+    for (let i = 0; i < 60 * 300; i++) {
+      if (spawned < count && t >= spawned * every) {
+        spawnCreep(w, enemy, { ...stats, wave: DUEL_WAVE });
+        spawned++;
+      }
+      stepWorld(w, DT);
+      w.events.length = 0;
+      t += DT;
+      if (spawned >= count && w.creeps.length === 0) break;
+    }
+    return 9999 - w.lives;
+  };
+
+  const pad = (s: string, n: number): string => s.padStart(n);
+  console.log(
+    `  \x1b[2m${DUEL_STATIONS} stations vs a representative group at wave ${DUEL_WAVE} stats · unlimited money · leaks of N sent (lower is better)\x1b[0m`,
+  );
+  console.log(`  \x1b[2m${pad('', 13)}${ENEMY_IDS.map((e) => pad(e, 10)).join('')}\x1b[0m`);
+
+  for (const t of TOWER_IDS) {
+    const cells = ENEMY_IDS.map((e) => pad(`${duel(t, e)}/${PRESSURE[e].count}`, 10)).join('');
+    console.log(`  \x1b[2m${t.padEnd(13)}${cells}\x1b[0m`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 section('balance probe (informational)');
 
 {
@@ -1338,7 +1422,11 @@ section('balance probe (informational)');
    */
   const SEEDS = [4242, 7, 999, 31337, 12345];
 
-  const play = (build: TowerId[], rush: boolean, seed: number): { won: boolean; lives: number } => {
+  const play = (
+    build: TowerId[],
+    rush: boolean,
+    seed: number,
+  ): { won: boolean; lives: number; towers: number; wave: number; earned: number } => {
     // Rank by the widest range in the build so every strategy shares one notion
     // of "good tile" and none is flattered by its own ordering.
     const spots = rankedSpots(Math.max(...build.map((b) => TOWERS[b].range)));
@@ -1356,21 +1444,49 @@ section('balance probe (informational)');
       advance(w, acc, 1000 / TICK_HZ, 1);
       w.events.length = 0;
     }
-    return { won: w.phase === 'won', lives: w.lives };
+    return {
+      won: w.phase === 'won',
+      lives: w.lives,
+      // How far the economy got, not just whether it survived. A run that dies
+      // with four stations built is an income problem; one that dies with
+      // twenty is a station-power problem, and the win rate alone cannot tell
+      // those apart.
+      towers: w.towers.length,
+      wave: w.wave.clearedThrough + 1,
+      earned: w.stats.bounty,
+    };
   };
+
+  const mean = (ns: number[]): number => ns.reduce((a, b) => a + b, 0) / ns.length;
 
   const row = (label: string, build: TowerId[], rush: boolean): string => {
     const rs = SEEDS.map((s) => play(build, rush, s));
     const wins = rs.filter((r) => r.won).length;
-    const lives = rs.reduce((a, r) => a + r.lives, 0) / rs.length;
-    return `${rush ? 'rush' : 'wait'} ${label.padEnd(9)} won ${wins}/${SEEDS.length}  avg lives ${lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}`;
+    return (
+      `${rush ? 'rush' : 'wait'} ${label.padEnd(13)}` +
+      ` won ${wins}/${SEEDS.length}` +
+      `  lives ${mean(rs.map((r) => r.lives)).toFixed(1).padStart(4)}/${BALANCE.startingLives}` +
+      `  waves ${mean(rs.map((r) => r.wave)).toFixed(1).padStart(4)}/${waveCount()}` +
+      `  built ${mean(rs.map((r) => r.towers)).toFixed(1).padStart(4)}` +
+      `  bounty $${Math.round(mean(rs.map((r) => r.earned)))}`
+    );
   };
 
+  /**
+   * Mixed builds matter more than pure ones now.
+   *
+   * A pure Singularity build cannot win by construction — it is a support
+   * station, and slowing without killing just delays a leak. `singularity` at
+   * 0/5 is therefore not evidence of a weak station; the question is whether
+   * adding one to a working build *helps*, which only a mix can answer.
+   */
   const builds: [string, TowerId[]][] = [
     ['lance', ['lance']],
     ['nova', ['nova']],
     ['singularity', ['singularity']],
     ['nova+2lance', ['nova', 'lance', 'lance']],
+    ['nova+lance+sing', ['nova', 'lance', 'singularity']],
+    ['2nova+sing', ['nova', 'nova', 'singularity']],
   ];
 
   console.log(`  \x1b[2mgreedy auto-builder · real starting money · ${SEEDS.length} seeds\x1b[0m`);
