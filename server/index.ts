@@ -1,15 +1,20 @@
 /**
- * Race-mode relay server — N1: rooms, lobby, ready → start.
+ * Race-mode relay server — N5: heartbeat, forfeit, resume.
  *
- * The server never runs game logic. Its whole job, even when finished
- * (~250 lines), is: agree on a seed, ferry status blobs between two clients,
- * decide who won. In-memory rooms, zero validation — cheating is a non-goal
- * between two trusted friends.
+ * The server never runs game logic. Its whole job is: agree on a seed, ferry
+ * status blobs between two clients, decide who won. In-memory rooms, zero
+ * validation — cheating is a non-goal between two trusted friends.
  *
  * Binds 0.0.0.0 so the friend's machine can reach it over Tailscale — binding
  * localhost is the single most common first failure. The bare HTTP response
  * exists so reachability can be checked from a browser before any game client
  * exists: http://<tailscale-ip>:8787 should say the server is up.
+ *
+ * Connection lifecycle over the internet: sockets drop. A ws ping every 15s
+ * finds dead ones; a dropped player's seat is held (roster survives players),
+ * the opponent sees a peerConn badge, and a 90s timer settles the match for
+ * the survivor if the seat stays empty. A client reclaims its seat by sending
+ * hello with resume=<playerId>.
  */
 import http from 'node:http';
 import process from 'node:process';
@@ -18,6 +23,9 @@ import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } fro
 
 const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
 const COUNTDOWN_MS = 3000;
+const HEARTBEAT_MS = 15_000;
+/** Env-overridable so the forfeit path can be exercised in seconds in tests. */
+const FORFEIT_MS = Number(process.env['FORFEIT_MS'] ?? 90_000);
 
 /** Rematch reloads the page, so an emptied room must outlive its sockets. */
 const EMPTY_ROOM_TTL_MS = 60_000;
@@ -27,9 +35,14 @@ type Room = {
   code: string;
   players: Player[];
   started: boolean;
+  /** Everyone who ever joined — a dropped player's seat, held for resume. */
+  roster: Map<string, string>;
   /** Final figures per playerId — kept on the room, not the player, so a
    *  finished player who disconnects still counts toward the result. */
   finals: Map<string, Standing>;
+  /** Last relayed status per playerId; the forfeit standings come from here. */
+  lastStatus: Map<string, { wave: number; lives: number; elapsedMs: number }>;
+  forfeitTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const rooms = new Map<string, Room>();
@@ -42,7 +55,10 @@ function newRoom(): Room {
   do {
     code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
   } while (rooms.has(code));
-  const room: Room = { code, players: [], started: false, finals: new Map() };
+  const room: Room = {
+    code, players: [], started: false,
+    roster: new Map(), finals: new Map(), lastStatus: new Map(), forfeitTimer: null,
+  };
   rooms.set(code, room);
   return room;
 }
@@ -50,21 +66,6 @@ function newRoom(): Room {
 /** Ranking order: waves cleared, then lives remaining, then elapsed time. */
 function rank(a: Standing, b: Standing): number {
   return b.wave - a.wave || b.lives - a.lives || a.elapsedMs - b.elapsedMs;
-}
-
-function settle(room: Room): void {
-  const standings = [...room.finals.values()].sort(rank);
-  const [first, second] = standings;
-  const tie = first && second && rank(first, second) === 0;
-  const winnerId = tie || !first ? null : first.playerId;
-  console.log(`[result] room ${room.code} winner=${winnerId ?? 'tie'}`);
-  broadcast(room, { t: 'result', winnerId, standings });
-  // Reset for a rematch: same room, fresh readies, next start deals a new seed.
-  room.started = false;
-  room.finals.clear();
-  room.players.forEach((p) => {
-    p.ready = false;
-  });
 }
 
 const send = (ws: WebSocket, msg: S2C): void => ws.send(encode(msg));
@@ -76,6 +77,39 @@ const broadcastLobby = (room: Room): void =>
     t: 'lobby',
     players: room.players.map(({ id, name, ready }) => ({ playerId: id, name, ready })),
   });
+
+const standingFor = (room: Room, id: string): Standing =>
+  room.finals.get(id) ?? {
+    playerId: id,
+    name: room.roster.get(id) ?? '?',
+    ...(room.lastStatus.get(id) ?? { wave: 0, lives: 0, elapsedMs: 0 }),
+  };
+
+function settle(room: Room, forfeitWinner?: string): void {
+  const standings = [...room.roster.keys()].map((id) => standingFor(room, id)).sort(rank);
+  let winnerId: string | null;
+  if (forfeitWinner !== undefined) {
+    winnerId = forfeitWinner;
+    standings.sort((a, b) => (a.playerId === forfeitWinner ? -1 : b.playerId === forfeitWinner ? 1 : 0));
+  } else {
+    const [first, second] = standings;
+    winnerId = first && second && rank(first, second) === 0 ? null : (first?.playerId ?? null);
+  }
+  console.log(`[result] room ${room.code} winner=${winnerId ?? 'tie'}${forfeitWinner ? ' (forfeit)' : ''}`);
+  broadcast(room, {
+    t: 'result', winnerId, standings,
+    ...(forfeitWinner !== undefined ? { reason: 'forfeit' as const } : {}),
+  });
+  // Reset for a rematch: same room, fresh readies, next start deals a new seed.
+  room.started = false;
+  room.finals.clear();
+  room.lastStatus.clear();
+  if (room.forfeitTimer !== null) clearTimeout(room.forfeitTimer);
+  room.forfeitTimer = null;
+  room.players.forEach((p) => {
+    p.ready = false;
+  });
+}
 
 const httpServer = http.createServer((_req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain' });
@@ -92,6 +126,18 @@ wss.on('connection', (ws: WebSocket, req) => {
   let room: Room | null = null;
   console.log(`[conn] ${from}`);
 
+  // Heartbeat: browsers answer pings automatically, so a silent socket is a
+  // dead one. Terminate fires 'close', which starts the forfeit clock.
+  let alive = true;
+  ws.on('pong', () => {
+    alive = true;
+  });
+  const heartbeat = setInterval(() => {
+    if (!alive) return ws.terminate();
+    alive = false;
+    ws.ping();
+  }, HEARTBEAT_MS);
+
   ws.on('message', (data) => {
     const msg = decodeC2S(String(data));
     if (!msg) return;
@@ -99,6 +145,28 @@ wss.on('connection', (ws: WebSocket, req) => {
     switch (msg.t) {
       case 'hello': {
         if (me) return;
+
+        // Resume: reclaim a held seat after a drop, before the forfeit fires.
+        if (msg.resume !== undefined && msg.room !== undefined) {
+          const wanted = rooms.get(msg.room.toUpperCase());
+          const seatHeld = wanted?.roster.has(msg.resume) === true &&
+            !wanted.players.some((p) => p.id === msg.resume);
+          if (wanted && seatHeld) {
+            room = wanted;
+            me = { id: msg.resume, name: msg.name, ready: room.started, ws };
+            room.players.push(me);
+            if (room.forfeitTimer !== null) clearTimeout(room.forfeitTimer);
+            room.forfeitTimer = null;
+            console.log(`[resume] "${me.name}" reclaims ${me.id} in room ${room.code}`);
+            send(ws, { t: 'joined', playerId: me.id, room: room.code });
+            room.players.filter((p) => p !== me).forEach((p) => send(p.ws, { t: 'peerConn', connected: true }));
+            if (!room.started) broadcastLobby(room);
+            return;
+          }
+          // Seat gone (forfeit fired, room expired) — fall through to a normal
+          // join attempt so the client gets an honest error.
+        }
+
         if (msg.room !== undefined) {
           const wanted = rooms.get(msg.room.toUpperCase());
           if (!wanted) return send(ws, { t: 'error', reason: `no room ${msg.room.toUpperCase()}` });
@@ -109,6 +177,7 @@ wss.on('connection', (ws: WebSocket, req) => {
         }
         me = { id: `p${nextPlayer++}`, name: msg.name, ready: false, ws };
         room.players.push(me);
+        room.roster.set(me.id, me.name);
         console.log(`[hello] "${me.name}" → ${me.id} in room ${room.code} (${from})`);
         send(ws, { t: 'joined', playerId: me.id, room: room.code });
         broadcastLobby(room);
@@ -122,6 +191,8 @@ wss.on('connection', (ws: WebSocket, req) => {
         broadcastLobby(room);
         if (room.players.length === 2 && room.players.every((p) => p.ready)) {
           room.started = true;
+          // A fresh match: only current seat-holders count toward the result.
+          room.roster = new Map(room.players.map((p) => [p.id, p.name]));
           const seed = (Math.random() * 0x100000000) >>> 0;
           console.log(`[start] room ${room.code} seed=${seed}`);
           broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS });
@@ -133,8 +204,14 @@ wss.on('connection', (ws: WebSocket, req) => {
       // consumer, and cheating is a non-goal between trusted friends.
       case 'status': {
         if (!me || !room) return;
+        room.lastStatus.set(me.id, { wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
         const other = room.players.find((p) => p !== me);
-        if (other) send(other.ws, { t: 'peer', wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
+        if (other) {
+          send(other.ws, {
+            t: 'peer', wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs,
+            ...(msg.hidden !== undefined ? { hidden: msg.hidden } : {}),
+          });
+        }
         break;
       }
 
@@ -152,16 +229,37 @@ wss.on('connection', (ws: WebSocket, req) => {
   });
 
   ws.on('close', () => {
+    clearInterval(heartbeat);
     console.log(`[gone] ${me ? `${me.name} (${me.id})` : from}`);
     if (!room || !me) return;
     const r = room;
-    r.players = r.players.filter((p) => p !== me);
+    const gone = me;
+    r.players = r.players.filter((p) => p !== gone);
+
     if (r.players.length === 0) {
       // Both sides reload to rematch, so hold the room open briefly.
       r.started = false;
+      if (r.forfeitTimer !== null) clearTimeout(r.forfeitTimer);
+      r.forfeitTimer = null;
       setTimeout(() => {
         if (r.players.length === 0) rooms.delete(r.code);
       }, EMPTY_ROOM_TTL_MS);
+      return;
+    }
+
+    if (r.started && !r.finals.has(gone.id)) {
+      // Mid-match drop with an unfinished run: badge the survivor and start
+      // the forfeit clock. A resume before it fires cancels it.
+      broadcast(r, { t: 'peerConn', connected: false });
+      if (r.forfeitTimer !== null) clearTimeout(r.forfeitTimer);
+      r.forfeitTimer = setTimeout(() => {
+        r.forfeitTimer = null;
+        const survivor = r.players[0];
+        if (r.started && survivor) {
+          console.log(`[forfeit] ${gone.name} (${gone.id}) never returned to room ${r.code}`);
+          settle(r, survivor.id);
+        }
+      }, FORFEIT_MS);
     } else {
       broadcastLobby(r);
     }

@@ -19,6 +19,8 @@ export interface RaceStatus {
   lives: number;
   /** Self-measured; never compared against the opponent's clock. */
   elapsedMs: number;
+  /** Set while our tab is hidden — the opponent sees a frozen-sim badge. */
+  hidden?: boolean;
 }
 
 export interface RaceHooks {
@@ -31,7 +33,11 @@ export interface RaceHooks {
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
   onPeer?(status: RaceStatus): void;
   /** Both runs are over; standings arrive already in ranking order. */
-  onResult?(winnerId: string | null, standings: Standing[]): void;
+  onResult?(winnerId: string | null, standings: Standing[], reason?: 'forfeit'): void;
+  /** The opponent's socket dropped (false) or they resumed their seat (true). */
+  onPeerConn?(connected: boolean): void;
+  /** Our own socket dropped and we're retrying (false), or we're back (true). */
+  onSelfConn?(connected: boolean): void;
   onError(reason: string): void;
 }
 
@@ -59,6 +65,7 @@ export class MatchController {
   async run(): Promise<void> {
     const { url, name, room, hooks, autoReady = true } = this.opts;
     this.client.onMessage = (msg) => this.handle(msg);
+    this.client.onClose = () => this.onDropped();
     try {
       const joined = room === undefined
         ? await this.client.connect(url, name)
@@ -72,6 +79,41 @@ export class MatchController {
     } catch (err) {
       hooks.onError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  private resulted = false;
+  private reconnecting = false;
+
+  /**
+   * Socket dropped. If we ever joined and the match hasn't been settled,
+   * retry with our seat id until the server lets us back in or tells us the
+   * seat is gone (forfeit fired, room expired).
+   */
+  private onDropped(): void {
+    if (this.playerId === '' || this.resulted || this.reconnecting) return;
+    this.reconnecting = true;
+    this.opts.hooks.onSelfConn?.(false);
+    void (async () => {
+      const { url, name, hooks } = this.opts;
+      while (!this.resulted) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          await this.client.connect(url, name, this.room, this.playerId);
+          this.reconnecting = false;
+          hooks.onSelfConn?.(true);
+          return;
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          // Unreachable server → keep trying. An explicit refusal → give up.
+          if (/no room|room is full/.test(reason)) {
+            this.reconnecting = false;
+            hooks.onError(`connection lost: ${reason}`);
+            return;
+          }
+        }
+      }
+      this.reconnecting = false;
+    })();
   }
 
   ready(): void {
@@ -127,13 +169,19 @@ export class MatchController {
         hooks.onError(msg.reason);
         break;
       case 'peer':
-        hooks.onPeer?.({ wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
+        hooks.onPeer?.({
+          wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs,
+          ...(msg.hidden !== undefined ? { hidden: msg.hidden } : {}),
+        });
         break;
       case 'result':
-        hooks.onResult?.(msg.winnerId, msg.standings);
+        this.resulted = true;
+        this.stopStatusPump();
+        hooks.onResult?.(msg.winnerId, msg.standings, ...(msg.reason !== undefined ? [msg.reason] : []));
         break;
       case 'peerConn':
-        break; // N5
+        hooks.onPeerConn?.(msg.connected);
+        break;
     }
   }
 }

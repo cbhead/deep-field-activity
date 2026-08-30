@@ -26,18 +26,21 @@ export class NetClient {
 
   /**
    * Resolves once the server answers hello with joined. No `room` creates a
-   * fresh room; a code joins that one. Rejects if the server answers with an
-   * error first (bad code, full room) or the socket cannot open.
+   * fresh room; a code joins that one; `resume` reclaims a prior seat after a
+   * dropped socket. Rejects if the server answers with an error first (bad
+   * code, full room) or the socket cannot open.
    */
-  connect(url: string, name: string, room?: string): Promise<{ playerId: string; room: string }> {
+  connect(url: string, name: string, room?: string, resume?: string): Promise<{ playerId: string; room: string }> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       this.ws = ws;
       let joined = false;
       ws.onopen = () =>
-        ws.send(encode(room === undefined
-          ? { t: 'hello', v: PROTOCOL_VERSION, name }
-          : { t: 'hello', v: PROTOCOL_VERSION, name, room }));
+        ws.send(encode({
+          t: 'hello', v: PROTOCOL_VERSION, name,
+          ...(room === undefined ? {} : { room }),
+          ...(resume === undefined ? {} : { resume }),
+        }));
       ws.onerror = () => reject(new Error(`could not reach ${url}`));
       ws.onclose = () => this.onClose?.();
       ws.onmessage = (ev) => {
@@ -57,7 +60,9 @@ export class NetClient {
   }
 
   send(msg: C2S): void {
-    this.ws?.send(encode(msg));
+    // Quietly drop while reconnecting: a missed status blob costs nothing,
+    // and send() on a non-open socket throws.
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(encode(msg));
   }
 
   close(): void {

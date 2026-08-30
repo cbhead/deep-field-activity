@@ -93,11 +93,14 @@ async function main(): Promise<void> {
           onCountdown: (ms) => lobby.showCountdown(ms),
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),
-          onResult: (winnerId, standings) => {
+          onPeerConn: (connected) => raceHud?.peerConn(connected),
+          onSelfConn: (connected) => raceHud?.selfConn(connected),
+          onResult: (winnerId, standings, reason) => {
             showResults(mount, {
               myId: controller.playerId,
               winnerId,
               standings,
+              ...(reason !== undefined ? { reason } : {}),
               onRematch: () => {
                 sessionStorage.setItem('race-rejoin', JSON.stringify({ name: playerName, room: currentRoom }));
                 location.reload();
@@ -109,18 +112,25 @@ async function main(): Promise<void> {
             void startGame(mount, hudRoot, seed).then(({ world }) => {
               raceHud = createRaceHud(mount, opponentName);
               const bootAt = performance.now();
+              const sample = (): Parameters<typeof controller.finish>[0] => ({
+                wave: world.wave.clearedThrough + 1,
+                lives: world.lives,
+                elapsedMs: Math.round(performance.now() - bootAt),
+                ...(document.hidden ? { hidden: true } : {}),
+              });
               controller.startStatusPump(() => {
-                const status = {
-                  wave: world.wave.clearedThrough + 1,
-                  lives: world.lives,
-                  elapsedMs: Math.round(performance.now() - bootAt),
-                };
+                const status = sample();
                 raceHud?.own(status);
                 // Defeat or full clear alike: report final figures once and
                 // let the server settle the match when both runs are over.
                 if (world.phase !== 'playing') controller.finish(status);
                 return status;
               });
+              // The pump is throttled in hidden tabs, so tell the opponent
+              // immediately that our sim froze (and when it thawed).
+              document.addEventListener('visibilitychange', () =>
+                controller.client.send({ t: 'status', ...sample() }),
+              );
             });
           },
         },

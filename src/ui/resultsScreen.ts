@@ -13,6 +13,8 @@ export interface ResultsOptions {
   winnerId: string | null;
   /** Already in ranking order: waves cleared, lives, time. */
   standings: Standing[];
+  /** 'forfeit': the loser dropped and never reclaimed their seat. */
+  reason?: 'forfeit';
   onRematch(): void;
 }
 
@@ -31,8 +33,11 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
   parent.style.position = 'relative';
   parent.appendChild(el);
 
-  const headline =
+  const outcome =
     opts.winnerId === null ? 'DEAD HEAT' : opts.winnerId === opts.myId ? 'YOU WIN' : 'YOU LOSE';
+  const headline = opts.reason === 'forfeit'
+    ? `${outcome} <span style="font-size:14px;opacity:0.7">— by forfeit</span>`
+    : outcome;
 
   const rows = opts.standings
     .map((s, i) =>

@@ -19,11 +19,13 @@ export const STATUS_INTERVAL_MS = 500;
 
 export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
 
-/** client → server. hello without a room creates one; with a room, joins it. */
+/** client → server. hello without a room creates one; with a room, joins it.
+ *  `resume` is a prior playerId: reclaim that seat after a dropped socket. */
 export type C2S =
-  | { t: 'hello'; v: number; name: string; room?: string }
+  | { t: 'hello'; v: number; name: string; room?: string; resume?: string }
   | { t: 'ready' }
-  | { t: 'status'; wave: number; lives: number; elapsedMs: number }
+  /** `hidden` rides along on visibility changes: the sim freezes with the tab. */
+  | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean }
   /** The run is over — defeat or full clear alike. lives>0 means a clear. */
   | { t: 'dead'; wave: number; lives: number; elapsedMs: number };
 
@@ -32,9 +34,9 @@ export type S2C =
   | { t: 'joined'; playerId: string; room: string }
   | { t: 'lobby'; players: LobbyPlayer[] }
   | { t: 'start'; seed: number; countdownMs: number }
-  | { t: 'peer'; wave: number; lives: number; elapsedMs: number }
+  | { t: 'peer'; wave: number; lives: number; elapsedMs: number; hidden?: boolean }
   | { t: 'peerConn'; connected: boolean }
-  | { t: 'result'; winnerId: string | null; standings: Standing[] }
+  | { t: 'result'; winnerId: string | null; standings: Standing[]; reason?: 'forfeit' }
   | { t: 'error'; reason: string };
 
 /** Final figures for one player, in ranking order: waves, lives, then time. */

@@ -14,6 +14,10 @@ export interface RaceHud {
   own(status: RaceStatus): void;
   /** The opponent's latest blob. */
   peer(status: RaceStatus): void;
+  /** Opponent's socket state: false shows the offline/forfeit badge. */
+  peerConn(connected: boolean): void;
+  /** Our socket state: false shows the reconnecting badge. */
+  selfConn(connected: boolean): void;
   remove(): void;
 }
 
@@ -43,6 +47,8 @@ export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHu
   let theirs: RaceStatus | null = null;
   let lastPeerWave = 0;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let peerOnline = true;
+  let selfOnline = true;
 
   function toast(text: string): void {
     toastEl.textContent = text;
@@ -54,8 +60,11 @@ export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHu
   }
 
   function render(): void {
-    const my = mine ? `you · wave ${mine.wave} · ${mine.lives} lives` : 'you · —';
-    const their = theirs ? `${opponentName} · wave ${theirs.wave} · ${theirs.lives} lives` : `${opponentName} · —`;
+    const my = (mine ? `you · wave ${mine.wave} · ${mine.lives} lives` : 'you · —') +
+      (selfOnline ? '' : ' · reconnecting…');
+    let their = theirs ? `${opponentName} · wave ${theirs.wave} · ${theirs.lives} lives` : `${opponentName} · —`;
+    if (!peerOnline) their += ' · OFFLINE — forfeits in 90s';
+    else if (theirs?.hidden) their += ' · tab hidden';
     // Ranking order: waves cleared, then lives. Time is the third tiebreak and
     // deliberately not shown as a live comparison — clocks are never compared.
     let standing = '';
@@ -77,6 +86,15 @@ export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHu
         toast(`${opponentName} cleared wave ${status.wave}`);
       }
       theirs = status;
+      render();
+    },
+    peerConn(connected) {
+      peerOnline = connected;
+      toast(connected ? `${opponentName} reconnected` : `${opponentName} lost connection`);
+      render();
+    },
+    selfConn(connected) {
+      selfOnline = connected;
       render();
     },
     remove() {
