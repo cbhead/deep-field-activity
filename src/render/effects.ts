@@ -8,13 +8,22 @@ import type { Layers } from './pixiApp.ts';
 import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
- * Transient combat feedback: health bars, floating damage, death bursts,
- * tracers, and the leak flare.
+ * Transient combat feedback: floating damage, death bursts, detonation rings,
+ * shot tracers, and the leak flare.
  *
- * Everything here is anchored to something short-lived — a contact's health bar
- * dies with the contact, a tracer with the shot — and the three rules below all
- * follow from that. A station outlives the whole run, so its chrome is not here;
- * see `towerChrome.ts`, which states the boundary.
+ * Everything here is **event-driven and droppable**. It is pushed by discrete
+ * `SimEvent`s, pooled, and capped — a burst must degrade rather than pile up,
+ * and a dropped particle costs nothing.
+ *
+ * State *readouts* are the opposite: pulled from the world every frame, and a
+ * dropped frame would be a lie. Those live in the chrome layers, split by the
+ * entity they hang off — `towerChrome.ts` and `creepChrome.ts`. That is the line
+ * between these files and the rule for where a new indicator goes: if it answers
+ * "what is true right now", it is chrome; if it answers "what just happened", it
+ * is an effect.
+ *
+ * Tracers stay here because a shot *is* the transient thing — the tracer is the
+ * event, not a readout of it.
  *
  * Three rules shape this file.
  *
@@ -103,7 +112,7 @@ interface Blast {
 }
 
 export class Effects {
-  private readonly bars = new Graphics();
+  private readonly tracers = new Graphics();
   private readonly burst = new Graphics();
   private readonly rim = new Graphics();
   private readonly numberLayer = new Container();
@@ -122,7 +131,7 @@ export class Effects {
     private readonly boardW: number,
     private readonly boardH: number,
   ) {
-    layers.effects.addChild(this.bars, this.burst, this.numberLayer);
+    layers.effects.addChild(this.tracers, this.burst, this.numberLayer);
     // The rim belongs on top of everything world-anchored, but under the DOM
     // HUD — the overlay layer is exactly that slot.
     layers.overlay.addChild(this.rim);
@@ -276,22 +285,16 @@ export class Effects {
    * decay at the same rate whether the game is running at 1× or 4×, or paused.
    */
   update(w: World, dt: number): void {
-    this.drawBars(w);
+    this.drawTracers(w);
     this.stepNumbers(dt);
     this.stepParticles(dt);
     this.stepBlasts(dt);
     this.stepRim(dt);
   }
 
-  /**
-   * Health bars, slow clocks and projectile tracers — one Graphics between them.
-   *
-   * `prefs` is gone from here: the only thing that read it was the always-on
-   * reach circle, which belongs to the station rather than to any transient
-   * entity and moved to `towerChrome.ts` with the rest of the station's chrome.
-   */
-  private drawBars(w: World): void {
-    const g = this.bars;
+/** Shots in flight. A piercing one draws its whole track; the rest a short tail. */
+  private drawTracers(w: World): void {
+    const g = this.tracers;
     g.clear();
 
     for (const p of w.projectiles) {
@@ -323,73 +326,6 @@ export class Effects {
         .lineTo(p.x * TILE_PX, p.y * TILE_PX)
         .stroke({ width: 2, color: THEME.towers[p.defId], alpha: 0.4 });
     }
-
-    for (const c of w.creeps) {
-      if (c.dead) continue;
-
-      // Ahead of the health-bar early-out below: a contact held in a well reads
-      // as slowed whether or not it has been scratched yet, and it shares the
-      // bars Graphics rather than taking one of its own.
-      //
-      // A flat ring said "slowed" and nothing else — not how much, and not how
-      // long is left, which are the two things a player actually decides on.
-      // The ring is now a clock: a faint full track with a bright arc burning
-      // down as the slow expires, thickening with how hard the slow bites. A
-      // well wearing off is visible *before* the contact speeds up.
-      if (c.slowTimer > 0 && c.slowMax > 0) {
-        const cx = c.x * TILE_PX;
-        const cy = c.y * TILE_PX;
-        const r = TILE_PX * 0.36;
-        // 0 at no slow, 1 at a full stop. Singularity's 0.8 factor is a fifth
-        // of the way up that scale, so the width range is deliberately narrow —
-        // this has to read as emphasis, not as a different effect.
-        const bite = Math.min(1, Math.max(0, 1 - c.slowFactor));
-        const width = 1.5 + bite * 5;
-
-        g.circle(cx, cy, r).stroke({ width, color: THEME.fx.slowRing, alpha: 0.16 });
-
-        // Clockwise from twelve, so a nearly-expired slow is a short stub at
-        // the top rather than a gap that has to be measured against nothing.
-        //
-        // The `moveTo` is load-bearing, not tidiness. `arc` behaves like the
-        // canvas primitive it wraps: with a path already open it draws a
-        // connecting line from the current point to where the arc begins. Every
-        // slowed contact was therefore trailing a stray line back to whatever
-        // shape happened to be drawn before it — long diagonals across the
-        // board that looked like a projectile bug. Seeding the path at the arc's
-        // own start point is what makes the sub-path independent.
-        const start = -Math.PI / 2;
-        g.moveTo(cx, cy - r)
-          .arc(cx, cy, r, start, start + Math.PI * 2 * (c.slowTimer / c.slowMax))
-          .stroke({ width, color: THEME.fx.slowRing, alpha: 0.85 });
-      }
-
-      const frac = c.hp / c.maxHp;
-      const shieldFrac = c.maxShield > 0 ? c.shield / c.maxShield : 0;
-      // Undamaged creeps get no bar: a board of full bars is noise, and the
-      // bar appearing is itself the signal that something is being worked on.
-      // A shielded contact is exempt — its shield regenerating back to full is
-      // exactly the thing the player needs to see, and hiding the bar the
-      // moment it recovered would hide the whole mechanic.
-      if (frac >= 0.999 && shieldFrac >= 0.999) continue;
-
-      const wpx = 32;
-      const x = c.x * TILE_PX - wpx / 2;
-      const y = c.y * TILE_PX - TILE_PX * 0.42;
-      g.rect(x, y, wpx, 4).fill({ color: THEME.fx.hpTrack, alpha: 0.8 });
-      g.rect(x, y, wpx * frac, 4).fill(frac < 0.3 ? THEME.fx.hpLow : THEME.fx.hpFull);
-
-      // The shield sits as its own band *above* the hull bar rather than as a
-      // segment within it, so a full shield over a hurt hull reads as two
-      // separate quantities instead of one confusingly long bar.
-      if (c.maxShield > 0) {
-        g.rect(x, y - 3.5, wpx, 2.5).fill({ color: THEME.fx.hpTrack, alpha: 0.8 });
-        if (shieldFrac > 0) {
-          g.rect(x, y - 3.5, wpx * shieldFrac, 2.5).fill(THEME.fx.shield);
-        }
-      }
-    }
-
   }
 
   private stepNumbers(dt: number): void {

@@ -4,6 +4,7 @@ import type { UiPrefs } from '../app/uiState.ts';
 import type { Tower } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { COLLAR_SECTORS, COLLAR_SPAN, TILE_PX } from './constants.ts';
+import { strokeArc } from './draw.ts';
 import type { Layers } from './pixiApp.ts';
 import { THEME } from './theme.ts';
 
@@ -39,6 +40,10 @@ import { THEME } from './theme.ts';
  * the collar itself started at 0.44, sat on the hex's ~0.42 vertices, and lost
  * the contrast fight with the station's own glow.
  *
+ * Its sibling is `creepChrome.ts`, which does the same job for contacts and
+ * documents the one way the two differ: contacts vary in size, so its budget is
+ * measured out from each contact's own radius rather than from fixed constants.
+ *
  * One Graphics for all of it, as in `effects.ts`: one draw call regardless of
  * how many stations are on the board, where a Graphics per tower would be
  * dozens and would break the sprite batch `textures.ts` exists to protect.
@@ -56,32 +61,6 @@ const SPIN_UP_RADIUS = 0.32;
  * adjacent towers.
  */
 const COLLAR_RADIUS = 0.48;
-
-/**
- * Stroke an arc as its own sub-path.
- *
- * Every arc in this file goes through here, and that is the point. `Graphics.arc`
- * behaves like the canvas primitive it wraps: with a path already open it draws
- * a connecting line from the current point to where the arc begins. Because one
- * Graphics carries every indicator on every tower, that trap is live on all but
- * the first arc of the frame — it once had every slowed contact trailing a
- * diagonal across the board, which looked convincingly like a projectile bug.
- * Seeding the sub-path with `moveTo` is the fix, and putting it here is what
- * stops the next indicator from rediscovering it.
- */
-function strokeArc(
-  g: Graphics,
-  cx: number,
-  cy: number,
-  r: number,
-  from: number,
-  to: number,
-  style: { width: number; color: number; alpha: number },
-): void {
-  g.moveTo(cx + Math.cos(from) * r, cy + Math.sin(from) * r)
-    .arc(cx, cy, r, from, to)
-    .stroke(style);
-}
 
 /**
  * Which paths this station has been taken down, and how far.
