@@ -28,6 +28,7 @@ import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
 import { showResults } from './ui/resultsScreen.ts';
 import { getWebhook, matchReport, postToDiscord } from './ui/discord.ts';
+import { recordSeries, formatSeries } from './app/raceSeries.ts';
 
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
@@ -112,11 +113,17 @@ async function main(): Promise<void> {
             raceHud?.selfConn(connected);
           },
           onResult: (winnerId, standings, reason) => {
+            const outcome = winnerId === null ? 't' : winnerId === controller.playerId ? 'w' : 'l';
+            const series = formatSeries(opponentName, recordSeries(opponentName, outcome));
             showResults(mount, {
               myId: controller.playerId,
               winnerId,
               standings,
               ...(reason !== undefined ? { reason } : {}),
+              sector: matchSector,
+              room: currentRoom,
+              seed: matchSeed,
+              series,
               onRematch: () => {
                 sessionStorage.setItem('race-rejoin', JSON.stringify({ name: playerName, room: currentRoom }));
                 location.reload();
@@ -127,7 +134,8 @@ async function main(): Promise<void> {
             // (normally just the host's), so results arrive once.
             if (getWebhook() !== null) {
               void postToDiscord(
-                matchReport(matchSector, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit'),
+                matchReport(matchSector, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit') +
+                  `\n${series}`,
               ).then((ok) => {
                 const log = document.getElementById('results-log');
                 if (log) log.textContent = ok ? 'match logged to Discord ✓' : "couldn't log to Discord — check the webhook";
