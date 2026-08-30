@@ -18,6 +18,8 @@ import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
 import { deckKey, renderInspector, renderNextContact, renderSlots } from '../src/ui/hud.ts';
+import { boardFacts, boardThumb } from '../src/ui/boardThumb.ts';
+import { CAMPAIGN } from '../src/content/levels.ts';
 import { contactIcon } from '../src/ui/icons.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
@@ -1573,6 +1575,53 @@ section('balance probe (informational)');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// A BOARD CANNOT LIE ABOUT ITS OWN SHAPE.
+//
+// The front-door cards state road length and turn count, and the whole point of
+// deriving them is that changing a map's `rows` changes its card with no other
+// edit. So the derivation is pinned here rather than trusted.
+//
+// The turn count is the interesting one. The spec prescribes
+// `waypoints.length - 2`; measured against the shipped maps that gives 7/7/9
+// where the real heading changes are 6/6/8 — and Switchback's own blurb says
+// "six turns". Implementing the formula literally would have put a numeral on
+// the card contradicting the prose beside it.
+// ---------------------------------------------------------------------------
+section('front door · derived board facts');
+{
+  for (const level of CAMPAIGN) {
+    const facts = boardFacts(level.map);
+    const m = parseMap(level.map);
+
+    check(
+      facts.road === m.tiles.filter((t) => t === 'path').length,
+      `${level.name}: road length is counted, not written`,
+      `${facts.road} tiles`,
+    );
+    check(
+      facts.turns < m.waypoints.length - 2,
+      `${level.name}: turns are heading changes, not waypoints`,
+      `${facts.turns} turns vs ${m.waypoints.length - 2} interior waypoints`,
+    );
+
+    // The thumbnail has to cover the board and draw every road tile, or the
+    // card is showing a different map from the one that will be played.
+    const svg = boardThumb(level.map, 120);
+    const rects = (svg.match(/<rect /g) ?? []).length;
+    check(rects > facts.road, `${level.name}: the thumbnail draws its road`, `${rects} rects`);
+    check(!svg.includes('#'), `${level.name}: thumbnail carries no colour literal`);
+  }
+
+  // Switchback's blurb names its turn count in words; the numeral must agree.
+  const sw = CAMPAIGN[0]!;
+  check(
+    /six turns/i.test(sw.blurb) === (boardFacts(sw.map).turns === 6),
+    'Switchback: the numeral agrees with its own prose',
+    `blurb says six, derived ${boardFacts(sw.map).turns}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
