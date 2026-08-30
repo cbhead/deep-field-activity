@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:pixijs.com)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/pixijs/pixijs-skills/main/skills/pixijs-ticker/SKILL.md\" -o ticker.md)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/pixijs/pixijs-skills/main/skills/pixijs-application/SKILL.md\" -o app.md)"
+    ]
+  }
+}
