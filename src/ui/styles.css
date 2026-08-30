@@ -121,6 +121,12 @@ kbd {
 .top .stat b.crit { color: var(--danger); }
 
 .ribbon {
+  /* One indirection, so the alarm recolours the ribbon without any rule below
+     needing to know about it — and, more importantly, without the fill's
+     geometry changing. The bar still means "progress"; only its hue carries
+     the alarm. If it ever starts reading as "42% doomed", drop the fill back
+     to --accent and let the border and rim do it alone. */
+  --ribbon: var(--accent);
   flex: 1;
   position: relative;
   display: flex;
@@ -133,14 +139,24 @@ kbd {
   overflow: hidden;
 }
 .ribbon span { position: relative; z-index: 1; font-size: 11.5px; color: var(--bright); }
+.ribbon span .dot { margin: 0 5px 0 3px; }
 /* The fill sits under the label rather than beside it, so the bar is a
    progress indicator and a caption in the same 26px. */
 .ribbon i {
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--ribbon) 26%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--ribbon) 60%, transparent);
   transition: width .2s linear;
+}
+/* At or below BALANCE.critLives the alarm is the width of the screen rather
+   than one red digit: the player is looking at the board, not at a stat cell,
+   and the collapsed deck's status strip that used to carry this is gone. */
+.ribbon.crit {
+  --ribbon: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 22%, transparent),
+              0 0 14px color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 .seg { display: inline-flex; border: 1px solid var(--panel-edge); border-radius: 7px; overflow: hidden; }
@@ -407,7 +423,6 @@ button.path:hover { border-color: var(--accent); }
   border-radius: 10px 10px 0 0;
   box-shadow: 0 -10px 34px rgb(0 0 0 / .7);
 }
-.strip-status { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--bright); }
 
 /* ------------------------------------------------------------- overlays */
 

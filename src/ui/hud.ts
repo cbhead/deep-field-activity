@@ -325,12 +325,27 @@ function renderTop(w: World, speed: number, paused: boolean): string {
     label = `wave ${s.index + 1} · in ${Math.ceil(s.timer)}s`;
     fill = 1 - Math.max(0, s.timer) / BALANCE.intermission;
   } else if (s.phase === 'spawning') {
-    label = `wave ${s.index + 1} · ${aliveInWave(w, s.index)} of ${s.plan.length} alive`;
+    // A contact glyph rather than the word "alive": the deck is teaching this
+    // vocabulary two rows down, and one dot the player already recognises beats
+    // a noun. Not three anonymous dots, which invite reading "3 alive".
+    label =
+      `wave ${s.index + 1} · <i class="dot contact"></i>${aliveInWave(w, s.index)}` +
+      ` of ${s.plan.length}`;
     fill = s.plan.length === 0 ? 0 : s.spawned / s.plan.length;
   } else {
     label = 'last wave out';
     fill = 1;
   }
+
+  // The alarm is the width of the screen rather than one red digit, because a
+  // player at four lives is looking at the board, not at the stat cells — and
+  // the collapsed deck's status strip, which used to carry this, is gone.
+  //
+  // The fill's *geometry* is untouched: `--ribbon` recolours it, so it still
+  // reads as a progress value rather than as a second quantity. If it ever
+  // starts reading as "42% doomed", drop `.crit` to a rim and border only and
+  // leave the fill on the accent.
+  const crit = w.lives <= BALANCE.critLives;
 
   const speeds = SPEEDS.map(
     (v) =>
@@ -338,10 +353,12 @@ function renderTop(w: World, speed: number, paused: boolean): string {
   ).join('');
 
   return (
-    `<div class="stat"><label>Cash</label><b>$${w.money}</b></div>` +
-    `<div class="stat"><label>Lives</label><b class="${w.lives <= 5 ? 'crit' : ''}">${w.lives}</b></div>` +
+    // No sigil. Costs lost theirs in the deck, and a currency mark repeated on
+    // every price is a character the player has already agreed to.
+    `<div class="stat"><label>Cash</label><b>${w.money}</b></div>` +
+    `<div class="stat"><label>Lives</label><b class="${crit ? 'crit' : ''}">${w.lives}</b></div>` +
     `<div class="stat"><label>Waves held</label><b>${cleared} / ${total}</b></div>` +
-    `<div class="ribbon"><span>${label}</span>` +
+    `<div class="ribbon${crit ? ' crit' : ''}"><span>${label}</span>` +
     `<i style="width:${(clamp01(fill) * 100).toFixed(1)}%"></i></div>` +
     `<div class="seg speeds">${speeds}</div>` +
     `<button class="icon" data-act="pause" title="Pause (Esc)">${paused ? '▶' : '❚❚'}</button>`
@@ -358,10 +375,26 @@ function aliveInWave(w: World, wave: number): number {
 
 // ------------------------------------------------------------------- deck
 
-function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
+/**
+ * A **constant** while the deck is closed, and that is the point.
+ *
+ * The closed deck is one static handle. It used to carry a live status strip
+ * repeating the Incoming ribbon forty pixels above it, in the same words, in
+ * space that belongs to the board — so the key folded in the alive count and
+ * the whole region rebuilt on every kill to redraw text that had not changed
+ * meaning. Two live readouts of one fact is one readout and one distraction,
+ * and the duplicate was the one sitting on the play area.
+ *
+ * The early return is therefore load-bearing rather than an optimisation, and
+ * it is a trapdoor: anything live added to the closed deck later will silently
+ * freeze. `tools/check.ts` asserts the invariance.
+ */
+export function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
+  if (!ui.deckOpen) return 'c';
+
   const s = w.wave;
   return [
-    ui.deckOpen ? 'o' : 'c',
+    'o',
     ui.selected ?? '-',
     inspected
       ? `${inspected.id}:${inspected.tiers.damage}${inspected.tiers.range}${inspected.tiers.effect}:${inspected.targeting}:${inspected.kills}`
@@ -371,9 +404,6 @@ function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
     s.index,
     s.phase,
     Math.ceil(s.timer),
-    // Only the collapsed strip shows a live enemy count. Including it
-    // unconditionally would rebuild the whole open deck on every kill.
-    ui.deckOpen ? '' : aliveInWave(w, s.index),
     // The inspector prices the armed station against this, and while the deck
     // is open nothing else in this key changes when the last Bulwark dies.
     inspected ? (toughestArmour(w)?.defId ?? '-') : '',
@@ -386,7 +416,10 @@ function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string
     `<kbd>Tab</kbd></button>`;
 
   if (!ui.deckOpen) {
-    return `<div class="strip">${renderStripStatus(w)}${handle}</div>`;
+    // The handle alone. Everything the strip used to say, the ribbon says
+    // better and higher up; its one non-duplicate — the lives alarm — moved
+    // there in `renderTop`.
+    return `<div class="strip">${handle}</div>`;
   }
 
   return (
@@ -399,18 +432,6 @@ function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string
     `<section class="send">${handle}${renderSend(w)}</section>` +
     `</div>`
   );
-}
-
-function renderStripStatus(w: World): string {
-  const s = w.wave;
-  const dotClass = w.lives <= 5 ? 'dot crit' : 'dot';
-  const text =
-    s.phase === 'spawning'
-      ? `Wave ${s.index + 1} running — ${aliveInWave(w, s.index)} of ${s.plan.length} alive`
-      : s.phase === 'intermission'
-        ? `Wave ${s.index + 1} in ${Math.ceil(s.timer)}s`
-        : 'Last wave out';
-  return `<span class="strip-status"><i class="${dotClass}"></i>${text}</span>`;
 }
 
 function renderSlots(w: World, ui: UiState): string {

@@ -17,6 +17,7 @@ import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render
 import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
+import { deckKey } from '../src/ui/hud.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1571,6 +1572,45 @@ section('balance probe (informational)');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// A CLOSED DECK DOES NO DOM WORK.
+//
+// The closed deck is one static handle, so its key must not move — otherwise
+// the whole region re-renders on every kill to redraw a chevron. That was the
+// real cost of the status strip that used to live there, and deleting the strip
+// only fixes it while the key stays constant.
+//
+// The early return in `deckKey` is a trapdoor: anything live added to the
+// closed deck later will silently freeze instead of updating. This is the
+// assertion that turns that into a failure rather than a mystery.
+// ---------------------------------------------------------------------------
+section('hud · closed deck is inert');
+{
+  const world = createWorld(map, 4242);
+  const shut = { deckOpen: false, selected: null, inspecting: null } as unknown as Parameters<
+    typeof deckKey
+  >[1];
+  const open = { deckOpen: true, selected: null, inspecting: null } as unknown as Parameters<
+    typeof deckKey
+  >[1];
+
+  const keys = new Set<string>();
+  const openKeys = new Set<string>();
+
+  // A real run: money changes, waves advance, contacts die.
+  const acc: Accumulator = { debt: 0 };
+  world.commands.push({ type: 'startWave' });
+  for (let i = 0; i < TICK_HZ * 40; i++) {
+    advance(world, acc, 1000 / TICK_HZ, 1);
+    world.events.length = 0;
+    keys.add(deckKey(world, shut, undefined));
+    openKeys.add(deckKey(world, open, undefined));
+  }
+
+  check(keys.size === 1, 'closed deck: key never changes', `${keys.size} distinct over 40s`);
+  check(openKeys.size > 1, 'open deck: key still tracks the run', `${openKeys.size} distinct`);
 }
 
 // ---------------------------------------------------------------------------

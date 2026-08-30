@@ -64,6 +64,16 @@ export const BALANCE = {
   waveClearReward: 20,
 
   /**
+   * At or below this many lives the HUD goes to its alarm state.
+   *
+   * A presentation threshold, but it lives here rather than in the HUD for the
+   * same reason every other figure does: it is derived from `startingLives`,
+   * and a hard-coded 5 in two places would quietly stop meaning "nearly dead"
+   * the moment the reserve changed. The HUD reads it; it never restates it.
+   */
+  critLives: 5,
+
+  /**
    * Cash per second of intermission forfeited by sending a wave early.
    *
    * This is the risk/reward lever: rushing buys tempo and money but stacks the
