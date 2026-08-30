@@ -23,8 +23,15 @@
  */
 import { CAMPAIGN, levelById, type LevelDef } from '../content/levels.ts';
 import { DIFFICULTIES, type DifficultyId } from '../content/difficulty.ts';
-import { furthestUnlocked, levelRecord, loadProgress, type Progress } from '../app/progress.ts';
+import {
+  furthestUnlocked,
+  levelRecord,
+  loadProgress,
+  resetProgress,
+  type Progress,
+} from '../app/progress.ts';
 import { readSeries, formatSeries, describeLast } from '../app/raceSeries.ts';
+import { LEGEND_STYLE, legendHtml } from './legend.ts';
 import { probeRelay } from '../net/relay.ts';
 import { boardThumb } from './boardThumb.ts';
 
@@ -97,6 +104,33 @@ const STYLE = `
 #home-screen .hm-relay.up{background:#86e39b;box-shadow:0 0 8px #86e39b}
 #home-screen .hm-relay.down{background:#e06d6d;box-shadow:0 0 8px #e06d6d}
 #home-screen .hm-relaynote{max-width:640px;font-size:11.5px;color:#e06d6d;min-height:1em}
+#home-screen .hm-baractions{display:flex;gap:18px}
+#home-screen .hm-link{border:0;background:none;cursor:pointer;padding:0;
+  font:400 12px/1 Inter,sans-serif;color:#75798c}
+#home-screen .hm-link:hover{color:#cfd3e5}
+
+/* One sheet, two contents. Both are things you look at and dismiss, so they
+   share a container rather than each growing their own screen. */
+#home-screen .hm-sheet{position:absolute;inset:0;z-index:20;display:grid;place-items:center;
+  background:rgba(4,5,10,.82);padding:32px}
+#home-screen .hm-sheet-in{position:relative;max-width:760px;max-height:88%;overflow-y:auto;
+  padding:26px 30px;border:1px solid #23263a;border-radius:14px;background:#0b0d16}
+#home-screen .hm-sheet h2{margin:0 0 6px;font:500 24px/1.2 Inter,sans-serif;color:#f2f3f8}
+#home-screen .hm-sheet h3{margin:16px 0 8px;font:600 10px/1 Inter,sans-serif;letter-spacing:.16em;
+  text-transform:uppercase;color:#9184d9}
+#home-screen .hm-close{position:absolute;right:14px;top:12px;border:0;background:none;
+  cursor:pointer;color:#75798c;font-size:15px;padding:4px 6px}
+#home-screen .hm-close:hover{color:#e9e9ed}
+#home-screen .hm-danger-note{font-size:11.5px;color:#75798c;margin:0 0 10px;max-width:44em}
+#home-screen .hm-danger{padding:9px 16px;border:1px solid #4a2a34;border-radius:8px;
+  background:none;color:#e06d6d;font:600 12.5px/1 Inter,sans-serif;cursor:pointer}
+#home-screen .hm-danger:hover{border-color:#e06d6d}
+#home-screen .hm-danger.armed{background:rgba(224,109,109,.14);border-color:#e06d6d}
+
+/* Focus has to be visible everywhere, because this screen is now navigable
+   without a pointer. */
+#home-screen :focus-visible{outline:2px solid #9184d9;outline-offset:2px;border-radius:8px}
+${LEGEND_STYLE}
 `;
 
 export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeScreen {
@@ -119,7 +153,11 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
   el.innerHTML =
     `<div class="hm-board">${boardThumb((resume ?? CAMPAIGN[0]!).map, 1100, true)}</div>` +
     `<div class="hm-scrim"></div>` +
-    `<div class="hm-bar"><span class="hm-mark">Deep Field</span></div>` +
+    `<div class="hm-bar"><span class="hm-mark">Deep Field</span>` +
+    `<span class="hm-baractions">` +
+    `<button class="hm-link" data-act="how">How to play</button>` +
+    `<button class="hm-link" data-act="settings">Settings</button></span></div>` +
+    `<div class="hm-sheet" id="hm-sheet" hidden><div class="hm-sheet-in" id="hm-sheet-in"></div></div>` +
     `<div class="hm-wrap">${cleared === 0 ? firstRun() : returning(progress, resume, cleared)}</div>`;
 
   // Probed when the Race card is first pointed at or focused — never on load.
@@ -152,22 +190,86 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
   raceCard?.addEventListener('pointerenter', checkRelay);
   raceCard?.addEventListener('focus', checkRelay);
 
+  const sheet = el.querySelector<HTMLElement>('#hm-sheet');
+  const sheetIn = el.querySelector<HTMLElement>('#hm-sheet-in');
+
+  /** Two clicks to erase, and the second one asks. See `settingsHtml`. */
+  let eraseArmed = false;
+
+  function openSheet(html: string): void {
+    if (sheet === null || sheetIn === null) return;
+    sheetIn.innerHTML = `<button class="hm-close" data-act="close" aria-label="Close">✕</button>${html}`;
+    sheet.hidden = false;
+    sheet.querySelector<HTMLElement>('.hm-close')?.focus();
+  }
+
+  function closeSheet(): void {
+    if (sheet === null) return;
+    sheet.hidden = true;
+    eraseArmed = false;
+  }
+
   el.addEventListener('click', (ev) => {
-    const act = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset['act'];
+    const target = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    const act = target?.dataset['act'];
     if (act === undefined) return;
+
     if (act === 'race') opts.onRace();
     else if (act === 'campaign') opts.onCampaign();
     else if (act === 'play') {
       const level = resume ?? CAMPAIGN[0]!;
       opts.onPlay(level, progress.lastDifficulty);
+    } else if (act === 'how') openSheet(legendHtml());
+    else if (act === 'settings') openSheet(settingsHtml(eraseArmed));
+    else if (act === 'close') closeSheet();
+    else if (act === 'erase') {
+      // Settings is where a destructive action belongs — off the screens with
+      // Launch buttons on them — and it still asks before doing it.
+      if (!eraseArmed) {
+        eraseArmed = true;
+        openSheet(settingsHtml(true));
+        return;
+      }
+      resetProgress();
+      location.reload();
     }
   });
 
+  // Esc closes the sheet. The screen behind it is the thing you were trying to
+  // get back to, so it should not take a click to do that.
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Escape' && sheet !== null && !sheet.hidden) closeSheet();
+  };
+  document.addEventListener('keydown', onKey);
+
   return {
     destroy(): void {
+      document.removeEventListener('keydown', onKey);
       el.remove();
     },
   };
+}
+
+/**
+ * Settings — and specifically, where Reset progress lives.
+ *
+ * It used to be a ghost button under the sector cards, always visible once
+ * anything was cleared, on a screen that now has a Launch button on every card.
+ * A destructive action does not belong one mis-click from the thing you press
+ * most. Here it is two clicks from a screen with no Launch on it at all, and
+ * the second click asks rather than tells.
+ */
+function settingsHtml(armed: boolean): string {
+  return (
+    `<h2>Settings</h2>` +
+    `<p class="lg-lede">In-game preferences — reach circles, damage numbers and the ` +
+    `route current — live in the pause menu, where you can see what they change.</p>` +
+    `<h3>Campaign</h3>` +
+    `<p class="hm-danger-note">Clears every recorded run and re-locks every sector. ` +
+    `There is no undo.</p>` +
+    `<button class="hm-danger${armed ? ' armed' : ''}" data-act="erase">` +
+    `${armed ? 'Erase everything — really?' : 'Reset campaign progress'}</button>`
+  );
 }
 
 /**

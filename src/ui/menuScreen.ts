@@ -21,7 +21,6 @@ import {
   levelRecord,
   loadProgress,
   rememberLaunch,
-  resetProgress,
   type Progress,
 } from '../app/progress.ts';
 
@@ -133,6 +132,13 @@ const STYLE = `
 #menu-screen .mn-card .mn-btn{height:38px;font-size:13px}
 #menu-screen .mn-seedrow{display:flex;align-items:center;gap:14px}
 #menu-screen .mn-seedbox{width:min(452px,90vw)}
+#menu-screen .mn-keys{font:400 10.5px/1 Inter,sans-serif;color:#4b4e5e;letter-spacing:.04em}
+/* The keyboard cursor. Without a visible mark, arrow keys move something the
+   player cannot see, which is worse than not supporting them. */
+#menu-screen .mn-card.cursor{box-shadow:inset 0 0 0 2px rgba(145,132,217,.8),
+  0 0 34px rgba(145,132,217,.2)}
+#menu-screen:focus{outline:none}
+#menu-screen :focus-visible{outline:2px solid #9184d9;outline-offset:2px;border-radius:8px}
 `;
 
 /**
@@ -168,43 +174,20 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
   parent.style.position = 'relative';
   parent.appendChild(el);
 
-  let progress: Progress = loadProgress();
+  const progress: Progress = loadProgress();
   let chosen = 0;
   let difficulty: DifficultyId = progress.lastDifficulty;
 
 
-  /** Two clicks, deliberately — see `wireBar`. */
-  let resetArmed = false;
-
   const bar = (sub: string): string =>
     `<div class="mn-bar"><span class="mn-brand">Deep Field</span>` +
     `<span class="mn-sep"></span><span class="mn-sub">${esc(sub)}</span>` +
-    `<span class="mn-right">` +
-    `<button class="mn-btn ghost" id="mn-reset">${resetArmed ? 'Erase everything?' : 'Reset progress'}</button>` +
+    `<span class="mn-right"><span class="mn-keys">↑↓ sector · 1–3 difficulty · ↵ launch</span>` +
     `<button class="mn-btn ghost" id="mn-race">Race a friend →</button></span></div>`;
 
   function wireBar(): void {
     el.querySelector('#mn-race')?.addEventListener('click', () => opts.onRace());
-
-    // A destructive action does not belong one mis-click from Launch, and this
-    // screen now has a Launch button on every card. It moves to the bar and
-    // takes two clicks — the second one asking rather than telling. Settings is
-    // its proper home; this is the interim that keeps the capability without
-    // keeping the hazard.
-    el.querySelector('#mn-reset')?.addEventListener('click', () => {
-      if (!resetArmed) {
-        resetArmed = true;
-        showLevels();
-        return;
-      }
-      resetProgress();
-      progress = loadProgress();
-      difficulty = progress.lastDifficulty;
-      resetArmed = false;
-      showLevels();
-    });
   }
-
 
   /**
    * The best grade across every difficulty, as **one** badge.
@@ -264,7 +247,7 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
       }).join('');
 
       return (
-        `<div class="mn-card${open ? '' : ' locked'}">` +
+        `<div class="mn-card${open ? '' : ' locked'}${open && i === chosen ? ' cursor' : ''}">` +
         `<div class="mn-thumb">${boardThumb(level.map, 256, !open)}</div>` +
         `<div class="mn-card-top"><div><div class="mn-kicker">${esc(level.kicker)}</div>` +
         // The blurb moves to a tooltip: good writing about a shape the player
@@ -340,8 +323,70 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
   }
 
 
+  /**
+   * The front door was the one mouse-only screen in the game.
+   *
+   * The in-game HUD is fully keyboard-driven — hotkeys arm stations, Esc
+   * cancels, Tab toggles the deck — and then launching a run required a
+   * pointer. Arrows move the sector cursor, 1–3 pick a difficulty, Enter
+   * launches, Esc goes back.
+   *
+   * Bound on the element rather than the document so it dies with the screen,
+   * and skipped while a text field has focus — otherwise typing "3" into the
+   * seed box would silently change the difficulty.
+   */
+  function onKey(ev: KeyboardEvent): void {
+    const tag = (ev.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') {
+      if (ev.key === 'Enter') launch(chosen);
+      if (ev.key === 'Escape') (ev.target as HTMLElement).blur();
+      return;
+    }
+
+    const open = CAMPAIGN.map((_, i) => i).filter((i) => isUnlocked(progress, i));
+    if (open.length === 0) return;
+    const at = Math.max(0, open.indexOf(chosen));
+
+    switch (ev.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        chosen = open[(at + 1) % open.length]!;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        chosen = open[(at - 1 + open.length) % open.length]!;
+        break;
+      case '1':
+      case '2':
+      case '3': {
+        const pick = DIFFICULTY_ORDER[Number(ev.key) - 1];
+        if (pick === undefined) return;
+        difficulty = pick;
+        break;
+      }
+      case 'Enter':
+        ev.preventDefault();
+        launch(chosen);
+        return;
+      case 'Escape':
+        ev.preventDefault();
+        // Back to the home screen, which is where this screen was reached from.
+        location.search = '';
+        return;
+      default:
+        return;
+    }
+
+    ev.preventDefault();
+    showLevels();
+  }
+
+  el.tabIndex = -1;
+  el.addEventListener('keydown', onKey);
+
   chosen = furthestUnlocked(progress);
   showLevels();
+  el.focus();
 
   return {
     remove() {
