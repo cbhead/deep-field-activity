@@ -9,7 +9,7 @@ import { applyHudTheme } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
 import { parseMap } from './sim/util/grid.ts';
 import { hashSeed, formatSeed } from './sim/util/rng.ts';
-import { createWorld } from './sim/world.ts';
+import { createWorld, type World } from './sim/world.ts';
 import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
@@ -18,7 +18,8 @@ import { planWave } from './sim/wavePlan.ts';
 import { serverUrl } from './net/NetClient.ts';
 import { DEFAULT_PORT } from './net/protocol.ts';
 import { MatchController } from './net/MatchController.ts';
-import { createRaceOverlay } from './ui/raceOverlay.ts';
+import { createLobbyScreen } from './ui/lobbyScreen.ts';
+import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
 
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
@@ -55,30 +56,55 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Race mode, N2 dev-grade entry: `?race` creates a room, `?race=CODE` joins.
-  // The real lobby screen replaces this at N3. Port is explicit because dev
-  // serves the page from Vite while the relay listens on DEFAULT_PORT; at N6
-  // one process serves both and the two collapse to the same host:port.
-  const overlay = createRaceOverlay(mount);
-  const name = params.get('name') ?? `pilot-${Math.floor(Math.random() * 1000)}`;
-  const controller = new MatchController({
-    url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
-    name,
-    ...(race === '' ? {} : { room: race }),
-    hooks: {
-      onLobby: (room, players) => overlay.lobby(room, players),
-      onCountdown: (ms) => overlay.countdown(ms),
-      onError: (reason) => overlay.error(reason),
-      boot: (seed) => {
-        overlay.remove();
-        void startGame(mount, hudRoot, seed);
-      },
+  // Race mode: `?race` opens the lobby screen, `?race=CODE` deep-links into a
+  // room. Port is explicit because dev serves the page from Vite while the
+  // relay listens on DEFAULT_PORT; at N6 one process serves both and the two
+  // collapse to the same host:port.
+  let controller: MatchController;
+  let raceHud: RaceHud | null = null;
+  let opponentName = 'opponent';
+
+  const lobby = createLobbyScreen(mount, {
+    ...(race === '' ? {} : { prefillRoom: race }),
+    onReady: () => controller.ready(),
+    onSubmit: (name, room) => {
+      controller = new MatchController({
+        url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
+        name,
+        ...(room === undefined ? {} : { room }),
+        autoReady: false,
+        hooks: {
+          onLobby: (roomCode, players) => {
+            opponentName = players.find((p) => p.playerId !== controller.playerId)?.name ?? 'opponent';
+            lobby.showRoster(roomCode, players);
+          },
+          onCountdown: (ms) => lobby.showCountdown(ms),
+          onError: (reason) => lobby.showError(reason),
+          onPeer: (status) => raceHud?.peer(status),
+          boot: (seed) => {
+            lobby.remove();
+            void startGame(mount, hudRoot, seed).then(({ world }) => {
+              raceHud = createRaceHud(mount, opponentName);
+              const bootAt = performance.now();
+              controller.startStatusPump(() => {
+                const status = {
+                  wave: world.wave.clearedThrough + 1,
+                  lives: world.lives,
+                  elapsedMs: Math.round(performance.now() - bootAt),
+                };
+                raceHud?.own(status);
+                return status;
+              });
+            });
+          },
+        },
+      });
+      void controller.run();
     },
   });
-  void controller.run();
 }
 
-async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number): Promise<void> {
+async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number): Promise<{ world: World }> {
   const map = parseMap(LEVEL01);
   const world = createWorld(map, seed);
   const ui = createUiState();
@@ -174,6 +200,9 @@ async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number)
         JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i))),
     };
   }
+
+  // Race mode reads the world for the status pump; single player ignores this.
+  return { world };
 }
 
 main().catch((err: unknown) => {

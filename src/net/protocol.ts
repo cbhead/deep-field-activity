@@ -14,6 +14,9 @@ export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 8787;
 export const WS_PATH = '/ws';
 
+/** 500ms: a race readout, not a mirrored sim. 2Hz is plenty for ahead/behind. */
+export const STATUS_INTERVAL_MS = 500;
+
 export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
 
 /** client → server. hello without a room creates one; with a room, joins it. */

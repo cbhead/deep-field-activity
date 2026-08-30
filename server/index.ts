@@ -87,6 +87,7 @@ wss.on('connection', (ws: WebSocket, req) => {
 
       case 'ready': {
         if (!me || !room || room.started) return;
+        console.log(`[ready] ${me.name} (${me.id}) in room ${room.code}`);
         me.ready = true;
         broadcastLobby(room);
         if (room.players.length === 2 && room.players.every((p) => p.ready)) {
@@ -98,8 +99,16 @@ wss.on('connection', (ws: WebSocket, req) => {
         break;
       }
 
-      // status/dead relay lands at N3/N4.
-      case 'status':
+      // Relay, verbatim and unvalidated: the opponent's client is the only
+      // consumer, and cheating is a non-goal between trusted friends.
+      case 'status': {
+        if (!me || !room) return;
+        const other = room.players.find((p) => p !== me);
+        if (other) send(other.ws, { t: 'peer', wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
+        break;
+      }
+
+      // dead/result lands at N4.
       case 'dead':
         break;
     }

@@ -10,7 +10,16 @@
  * headless gate scripts.
  */
 import { NetClient } from './NetClient.ts';
-import type { LobbyPlayer, S2C } from './protocol.ts';
+import { STATUS_INTERVAL_MS, type LobbyPlayer, type S2C } from './protocol.ts';
+
+/** What each side reports about itself, and hears about the other. */
+export interface RaceStatus {
+  /** Waves fully cleared — the first ranking metric. */
+  wave: number;
+  lives: number;
+  /** Self-measured; never compared against the opponent's clock. */
+  elapsedMs: number;
+}
 
 export interface RaceHooks {
   /** Called once joined, and again whenever the lobby roster changes. */
@@ -19,6 +28,8 @@ export interface RaceHooks {
   onCountdown(ms: number): void;
   /** Build the world with the server's seed and start the loop. */
   boot(seed: number): void;
+  /** The opponent's latest status blob. UI state only — the sim never sees it. */
+  onPeer?(status: RaceStatus): void;
   onError(reason: string): void;
 }
 
@@ -53,6 +64,7 @@ export class MatchController {
       // NetClient consumes `joined` to resolve connect(), so the room code
       // must be captured here — handle() will never see that message.
       this.room = joined.room;
+      this.playerId = joined.playerId;
       hooks.onLobby(joined.room, []);
       if (autoReady) this.ready();
     } catch (err) {
@@ -64,7 +76,23 @@ export class MatchController {
     this.client.send({ t: 'ready' });
   }
 
+  private pump: ReturnType<typeof setInterval> | null = null;
+
+  /** Call after boot(): reports our progress every STATUS_INTERVAL_MS. */
+  startStatusPump(sample: () => RaceStatus): void {
+    this.stopStatusPump();
+    this.pump = setInterval(() => this.client.send({ t: 'status', ...sample() }), STATUS_INTERVAL_MS);
+  }
+
+  stopStatusPump(): void {
+    if (this.pump !== null) clearInterval(this.pump);
+    this.pump = null;
+  }
+
   private room = '';
+
+  /** Our server-assigned id; '' until joined. Lets UI tell "us" from "them". */
+  playerId = '';
 
   private handle(msg: S2C): void {
     const { hooks } = this.opts;
@@ -84,9 +112,11 @@ export class MatchController {
         hooks.onError(msg.reason);
         break;
       case 'peer':
+        hooks.onPeer?.({ wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
+        break;
       case 'peerConn':
       case 'result':
-        break; // N3–N4
+        break; // N4–N5
     }
   }
 }
