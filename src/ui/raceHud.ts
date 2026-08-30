@@ -11,6 +11,7 @@ import type { RaceStatus } from '../net/MatchController.ts';
 import type { TowerPin } from '../net/protocol.ts';
 import type { MapDef } from '../sim/types.ts';
 import { tileAt } from '../sim/util/grid.ts';
+import { THEME, css } from '../render/theme.ts';
 
 export interface RaceHud {
   /** Our own sampled status — called by the same pump that reports upstream. */
@@ -29,12 +30,13 @@ const TOAST_MS = 3000;
 /** Minimap pixels per tile. */
 const TILE_PX = 5;
 
-/** Station colours, matching the build deck's hexagons closely enough to read. */
-const PIN_COLORS: Record<string, string> = {
-  lance: '#8fc4fa',
-  nova: '#fcc08a',
-  singularity: '#b5abfc',
-};
+/**
+ * Pin colours come from the theme's station palette, so a tower added to the
+ * roster is automatically legible here — hardcoding these is how the minimap
+ * would quietly stop matching the build deck the first time the roster grew.
+ */
+const pinColor = (kind: string): string =>
+  css((THEME.towers as Record<string, number | undefined>)[kind] ?? 0xe9e9ed);
 
 export function createRaceHud(parent: HTMLElement, opponentName: string, room: string, map: MapDef): RaceHud {
   const el = document.createElement('div');
@@ -99,7 +101,7 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
       }
     }
     for (const p of pins) {
-      g.fillStyle = PIN_COLORS[p.k] ?? '#e9e9ed';
+      g.fillStyle = pinColor(p.k);
       // Tier reads as size: Mk I is a dot, upgrades grow toward the full tile.
       const px = Math.min(TILE_PX, 2 + p.tier);
       const off = (TILE_PX - px) / 2;
