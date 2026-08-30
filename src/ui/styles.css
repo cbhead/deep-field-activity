@@ -1,8 +1,10 @@
 :root {
   --bg: #0f172a;
   --panel: #1e293b;
+  --panel-edge: #334155;
   --text: #e2e8f0;
   --muted: #94a3b8;
+  --danger: #ef4444;
 }
 
 * { box-sizing: border-box; }
@@ -16,16 +18,131 @@ html, body {
   overflow: hidden;
 }
 
-/* The canvas and the DOM HUD share this stacking context.
-   World-anchored visuals live in Pixi; screen-anchored UI lives in DOM on top. */
-#game-root {
+#app {
   position: relative;
   width: 100%;
   height: 100%;
+}
+
+/* The canvas fills the window and letterboxes itself (see fitCanvas). */
+#game-root {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
 }
 
-#game-root canvas {
-  display: block;
+#game-root canvas { display: block; }
+
+/* The HUD floats over the board. Transparent to the pointer except on the
+   controls themselves, so clicks fall through to the canvas. */
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.hud-stats,
+.hud-build {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+
+.hud-stats {
+  align-self: flex-start;
+  display: flex;
+  gap: 22px;
+  padding: 8px 16px;
+}
+
+.hud-stat { display: flex; flex-direction: column; }
+
+.hud-stat-label {
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hud-stat-value {
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-stat-value.is-critical { color: var(--danger); }
+
+.hud-build {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+.tower-btn {
+  --tint: #60a5fa;
+  display: grid;
+  grid-template-areas: "key name" "key cost";
+  grid-template-columns: auto 1fr;
+  gap: 0 9px;
+  align-items: center;
+  min-width: 116px;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-edge);
+  border-left: 3px solid var(--tint);
+  border-radius: 7px;
+  background: #0f172a;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tower-btn:hover { border-color: var(--tint); }
+
+.tower-btn.is-selected {
+  background: color-mix(in srgb, var(--tint) 22%, #0f172a);
+  border-color: var(--tint);
+}
+
+/* Unaffordable, not unavailable — still selectable, so the range circle can be
+   used to plan the next purchase. */
+.tower-btn.is-poor { opacity: 0.45; }
+.tower-btn.is-poor .tower-cost { color: var(--danger); }
+
+.tower-key {
+  grid-area: key;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tower-name { grid-area: name; font-weight: 600; }
+
+.tower-cost {
+  grid-area: cost;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-hint {
+  max-width: 190px;
+  padding-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
 }

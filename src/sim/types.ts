@@ -8,6 +8,7 @@
  */
 
 import type { EnemyId } from '../content/enemies.ts';
+import type { TowerId } from '../content/towers.ts';
 
 export interface Vec2 {
   x: number;
@@ -80,6 +81,29 @@ export interface Creep {
   dead: boolean;
 }
 
+export interface Tower {
+  readonly id: EntityId;
+  readonly defId: TowerId;
+
+  /** Towers are tile-aligned, so the tile is the identity and x/y is derived. */
+  readonly col: number;
+  readonly row: number;
+  /** Tile centre, cached because targeting reads it every tick. */
+  readonly x: number;
+  readonly y: number;
+
+  range: number;
+  damage: number;
+  fireInterval: number;
+  projectileSpeed: number;
+
+  /** Seconds until this tower may fire again. */
+  cooldown: number;
+
+  /** Total money sunk in, for the M7 sell refund. */
+  spent: number;
+}
+
 /**
  * Player intent. Nothing outside the sim mutates the world directly — a click
  * pushes a Command, and `applyCommands` drains the queue as the first phase of
@@ -89,8 +113,18 @@ export interface Creep {
 export type Command =
   /** Send the next wave now, forfeiting the rest of the intermission. */
   | { type: 'startWave' }
+  | { type: 'placeTower'; defId: TowerId; col: number; row: number }
   /** Debug scaffolding: drop a single creep on the path. */
   | { type: 'spawnDebugCreep' };
+
+/**
+ * Why a tower may not go on a tile. `null` means it may.
+ *
+ * A reason rather than a boolean, because the placement ghost is the highest
+ * value UI in the game and "you can't" is much worse feedback than "not on the
+ * road" or "you can't afford that".
+ */
+export type PlacementError = 'offBoard' | 'notBuildable' | 'occupied' | 'tooPoor';
 
 /**
  * Discrete instants, pushed by the sim and drained by the renderer once per
@@ -102,6 +136,8 @@ export type SimEvent =
   | { type: 'creepLeaked'; x: number; y: number }
   | { type: 'waveStarted'; wave: number; count: number }
   | { type: 'waveCleared'; wave: number }
+  | { type: 'towerPlaced'; id: EntityId; col: number; row: number }
+  | { type: 'buildRejected'; reason: PlacementError }
   | { type: 'gameOver'; won: boolean };
 
 /** Whole-match state. The sim stops stepping once this leaves 'playing'. */

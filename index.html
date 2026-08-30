@@ -7,8 +7,12 @@
     <link rel="stylesheet" href="/src/ui/styles.css" />
   </head>
   <body>
-    <div id="game-root">
-      <!-- Pixi's canvas is injected here. DOM HUD layers on top via CSS. -->
+    <div id="app">
+      <div id="game-root">
+        <!-- Pixi's canvas is injected here. World-anchored visuals live inside it. -->
+      </div>
+      <!-- Screen-anchored chrome, layered on top. -->
+      <div id="hud"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

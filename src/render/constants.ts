@@ -23,4 +23,7 @@ export const COLORS = {
 
   spawn: 0xf87171,
   goal: 0x38bdf8,
+
+  /** Rejected placement. Red reads as "no" without needing a label. */
+  invalid: 0xef4444,
 } as const;

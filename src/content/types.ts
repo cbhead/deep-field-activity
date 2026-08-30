@@ -23,6 +23,24 @@ export interface EnemyDef {
   readonly color: number;
 }
 
+export interface TowerDef {
+  readonly id: string;
+  readonly name: string;
+  /** One-line pitch, shown in the build bar. */
+  readonly blurb: string;
+  readonly cost: number;
+  /** Firing radius in tiles, measured from the tower's tile centre. */
+  readonly range: number;
+  readonly damage: number;
+  /** Seconds between shots. */
+  readonly fireInterval: number;
+  /** Tiles per second. A high value simulates hitscan without a second system. */
+  readonly projectileSpeed: number;
+  readonly color: number;
+  /** Number key that selects this tower. */
+  readonly hotkey: string;
+}
+
 /** One burst of identical enemies inside a wave. */
 export interface WaveGroup {
   readonly enemy: string;

@@ -1,7 +1,16 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import type { PlannedSpawn } from './wavePlan.ts';
-import type { Command, Creep, EntityId, MapDef, MatchPhase, SimEvent, WavePhase } from './types.ts';
+import type {
+  Command,
+  Creep,
+  EntityId,
+  MapDef,
+  MatchPhase,
+  SimEvent,
+  Tower,
+  WavePhase,
+} from './types.ts';
 
 export interface WaveState {
   /** 0-based index into WAVES. */
@@ -42,6 +51,7 @@ export interface World {
   wave: WaveState;
 
   creeps: Creep[];
+  towers: Tower[];
 
   /** Drained at the start of each tick. See the Command doc comment. */
   commands: Command[];
@@ -68,6 +78,7 @@ export function createWorld(map: MapDef, seed: number): World {
       spawned: 0,
     },
     creeps: [],
+    towers: [],
     commands: [],
     events: [],
     nextId: 1,

@@ -13,6 +13,9 @@ import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, waveCount } from '../src/sim/wavePlan.ts';
+import { TOWERS } from '../src/content/towers.ts';
+import { placementError } from '../src/sim/build.ts';
+import { stepWorld } from '../src/sim/step.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
@@ -323,6 +326,72 @@ section('waves — full match');
       `${started} starts, ${w.time.toFixed(0)}s vs ${won.w.time.toFixed(0)}s idle`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+section('build — placement rules');
+
+{
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+
+  check(placementError(w, 'arrow', 0, 0) === null, 'open ground accepts a tower');
+  check(placementError(w, 'arrow', 5, 2) === 'notBuildable', 'the road refuses a tower');
+  check(placementError(w, 'arrow', 3, 5) === 'notBuildable', 'scenery refuses a tower');
+  check(placementError(w, 'arrow', -1, 0) === 'offBoard', 'off-board is rejected');
+  check(placementError(w, 'arrow', map.cols, 0) === 'offBoard', 'past the right edge is rejected');
+  check(placementError(w, 'arrow', 0.5, 0) === 'offBoard', 'a fractional tile is rejected');
+
+  const before = w.money;
+  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 0, row: 0 });
+  stepWorld(w, DT);
+  check(w.towers.length === 1, 'a valid command builds exactly one tower');
+  check(w.money === before - TOWERS.arrow.cost, 'the cost is deducted once', `$${before} → $${w.money}`);
+  check(placementError(w, 'arrow', 0, 0) === 'occupied', 'the tile is now occupied');
+
+  // The same tile twice in one tick is the double-click case, and it must not
+  // build two towers or charge twice.
+  const moneyBefore = w.money;
+  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 1, row: 1 });
+  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 1, row: 1 });
+  stepWorld(w, DT);
+  check(w.towers.length === 2, 'a duplicate command in the same tick is rejected', `${w.towers.length} towers`);
+  check(w.money === moneyBefore - TOWERS.arrow.cost, 'and is not charged for');
+
+  // Spend down to nothing and confirm the wallet cannot go negative.
+  let built = 2;
+  for (let col = 2; col < 20 && w.money >= 0; col++) {
+    w.commands.push({ type: 'placeTower', defId: 'arrow', col, row: 0 });
+    stepWorld(w, DT);
+    if (w.towers.length > built) built = w.towers.length;
+  }
+  check(w.money >= 0, 'money never goes negative', `$${w.money} after ${w.towers.length} towers`);
+  check(placementError(w, 'cannon', 21, 0) === 'tooPoor', 'unaffordable towers are refused');
+}
+
+// ---------------------------------------------------------------------------
+// The placement ghost calls placementError and so does applyCommands. If they
+// could disagree, the player would be shown a green tile that then refuses the
+// build. Sweeping every tile proves they cannot.
+section('build — the ghost cannot lie');
+
+{
+  let mismatches = 0;
+  let legal = 0;
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      const w = createWorld(map, 4242);
+      w.wave.phase = 'done';
+      const shown = placementError(w, 'arrow', col, row) === null;
+      w.commands.push({ type: 'placeTower', defId: 'arrow', col, row });
+      stepWorld(w, DT);
+      const built = w.towers.length === 1;
+      if (shown !== built) mismatches++;
+      if (built) legal++;
+    }
+  }
+  check(mismatches === 0, 'every tile agrees between ghost and sim', `${map.cols * map.rows} tiles swept`);
+  check(legal === 339, 'the buildable tile count matches the map', `${legal} legal tiles`);
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,8 @@ export interface Textures {
    * GPU and keeps every creep on one texture, hence one draw call.
    */
   creep: Texture;
+  /** Also baked white and tinted per tower type. Doubles as the build ghost. */
+  tower: Texture;
 }
 
 /** Radius the creep texture is baked at, in tiles. Sprites scale from this. */
@@ -62,6 +64,17 @@ export function createTextures(renderer: Renderer): Textures {
       g.circle(r, r, r - 1)
         .fill(0xffffff)
         .stroke({ width: 2, color: 0x000000, alpha: 0.35 });
+    }),
+
+    // A plinth with a barrel hub, so a tower reads as built rather than as a
+    // coloured tile. Drawn white; the tint carries the type.
+    tower: bake(renderer, (g) => {
+      const pad = 4;
+      const size = TILE_PX - pad * 2;
+      g.roundRect(pad, pad, size, size, 7)
+        .fill({ color: 0xffffff, alpha: 0.32 })
+        .stroke({ width: 2, color: 0xffffff });
+      g.circle(TILE_PX / 2, TILE_PX / 2, TILE_PX * 0.19).fill(0xffffff);
     }),
     ground: bake(renderer, flatTile(COLORS.ground, COLORS.gridLine)),
     groundAlt: bake(renderer, flatTile(COLORS.groundAlt, COLORS.gridLine)),

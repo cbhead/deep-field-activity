@@ -1,5 +1,6 @@
 import { Sprite } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
+import { TOWERS } from '../content/towers.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
@@ -22,6 +23,8 @@ interface CreepView {
  */
 export class WorldView {
   private readonly creeps = new Map<EntityId, CreepView>();
+  /** Towers never move and never die (until M7's sell), so a plain set suffices. */
+  private readonly towers = new Set<EntityId>();
   private frame = 0;
 
   constructor(
@@ -31,6 +34,15 @@ export class WorldView {
 
   sync(w: World): void {
     this.frame++;
+
+    for (const t of w.towers) {
+      if (this.towers.has(t.id)) continue;
+      const sprite = new Sprite(this.textures.tower);
+      sprite.tint = TOWERS[t.defId].color;
+      sprite.position.set(t.col * TILE_PX, t.row * TILE_PX);
+      this.layers.towers.addChild(sprite);
+      this.towers.add(t.id);
+    }
 
     // --- Channel 1: pull continuous state. Idempotent, so a dropped frame
     // costs nothing.
@@ -74,6 +86,12 @@ export class WorldView {
           break;
         case 'waveCleared':
           console.info(`[td] wave ${ev.wave + 1} cleared — $${w.money}`);
+          break;
+        case 'towerPlaced':
+          console.info(`[td] built at ${ev.col},${ev.row} — $${w.money} left`);
+          break;
+        case 'buildRejected':
+          console.info(`[td] build rejected: ${ev.reason}`);
           break;
         case 'gameOver':
           console.info(`[td] ${ev.won ? 'VICTORY' : 'DEFEAT'} at ${w.time.toFixed(1)}s`);
