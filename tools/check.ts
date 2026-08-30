@@ -17,7 +17,7 @@ import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render
 import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
-import { deckKey, renderNextContact, renderSlots } from '../src/ui/hud.ts';
+import { deckKey, renderInspector, renderNextContact, renderSlots } from '../src/ui/hud.ts';
 import { contactIcon } from '../src/ui/icons.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
@@ -26,7 +26,7 @@ import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost, visualTier } from '../src/sim/build.ts';
 import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
-import type { TargetMode } from '../src/sim/types.ts';
+import { UPGRADE_PATHS, type TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
@@ -1573,6 +1573,99 @@ section('balance probe (informational)');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// TEN WORDS OR FEWER IN THE INSPECTOR, INCLUDING THE SELL BUTTON.
+//
+// The panel a player consults *while under attack* was the most text-dense
+// surface in the game — roughly sixty words and two dozen numbers in a 150px
+// band, with contacts walking. Reading it cost a wave.
+//
+// `title` text is free, and correctly so: it is not on screen, so the sentences
+// moved there are not lost, only moved. Numerals and units are not words —
+// "1.2s" and "74%" are figures the eye takes without reading.
+//
+// **The budget and "Max" share one fixture on purpose.** The cheapest way to
+// pass a word count is to delete the word "Max" from a maxed upgrade card, so
+// the all-maxed case has to satisfy both assertions at once or neither.
+// ---------------------------------------------------------------------------
+section('hud · inspector word budget');
+{
+  const spot = (() => {
+    for (let row = 0; row < map.rows; row++) {
+      for (let col = 0; col < map.cols; col++) {
+        if (isBuildableTile(map, col, row)) return { col, row };
+      }
+    }
+    throw new Error('no buildable tile');
+  })();
+
+  const BUDGET = 10;
+  /** Units read as part of the figure they follow, not as words of their own. */
+  const UNITS = new Set(['tl', 's', 'ehp', 'hp', 'kills']);
+  /** "Mk III" is one word and one numeral — the accounting the design used. */
+  const ROMAN = /^[IVX]+$/;
+
+  const words = (html: string): string[] =>
+    html
+      // Strips tags AND their attributes, so `title` costs nothing on screen.
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&[a-z]+;|&#\d+;/g, ' ')
+      .split(/[\s·—–|,]+/)
+      .filter((t) => /[A-Za-z]/.test(t))
+      .filter((t) => !/\d/.test(t))
+      .filter((t) => !ROMAN.test(t))
+      .filter((t) => !UNITS.has(t.toLowerCase()));
+
+  let worst = 0;
+  let worstAt = '';
+  let worstList: string[] = [];
+
+  for (const id of TOWER_IDS) {
+    for (const maxed of [false, true]) {
+      for (const armoured of [false, true]) {
+        const w = createWorld(map, 4242);
+        w.money = 100_000;
+        // Late enough that every station is past its unlock gate. Without this
+        // the two gated ones silently never place, and the whole gate passes on
+        // an empty string — which is how it read "worst 0" the first time.
+        w.wave.index = 20;
+        // Something armoured on the board, so the armour line renders.
+        if (armoured) spawnCreep(w, 'bulwark');
+
+        w.commands.push({ type: 'placeTower', defId: id, col: spot.col, row: spot.row });
+        stepWorld(w, DT);
+        const t = w.towers.at(-1);
+        if (t === undefined) throw new Error(`could not place ${id} for the word-budget gate`);
+
+        if (maxed) {
+          for (const path of UPGRADE_PATHS) {
+            for (let i = 1; i < BALANCE.upgrade.maxTier; i++) {
+              w.commands.push({ type: 'upgradeTower', id: t.id, path });
+              stepWorld(w, DT);
+            }
+          }
+        }
+
+        const html = renderInspector(w, t);
+        const list = words(html);
+        if (list.length > worst) {
+          worst = list.length;
+          worstAt = `${id}${maxed ? ' maxed' : ''}${armoured ? ' +armour' : ''}`;
+          worstList = list;
+        }
+
+        if (maxed) check(html.includes('Max'), `${id}: a maxed path still reads "Max"`);
+      }
+    }
+  }
+
+  check(
+    worst <= BUDGET,
+    `inspector stays within ${BUDGET} words`,
+    `worst ${worst} · ${worstAt} · ${worstList.join(' ')}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

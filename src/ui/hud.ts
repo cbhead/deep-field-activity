@@ -25,7 +25,7 @@ import {
 } from '../sim/types.ts';
 import { effectiveDamage } from '../sim/damage.ts';
 import { towerById, type World } from '../sim/world.ts';
-import { contactIcon, pathDial, stationIcon, tierPips } from './icons.ts';
+import { collarDial, contactIcon, pathDial, stationIcon, tierPips } from './icons.ts';
 
 /**
  * DOM, not Pixi.
@@ -93,6 +93,14 @@ const TARGET_LABEL: Record<TargetMode, string> = {
   last: 'Last',
   strong: 'Strong',
   close: 'Close',
+};
+
+/** Direction of travel for first/last, mass for strong, proximity for close. */
+const TARGET_GLYPH: Record<TargetMode, string> = {
+  first: '▶',
+  last: '◀',
+  strong: '▲',
+  close: '◎',
 };
 
 /** How long the wave-cleared summary stays up, in ms of wall clock. */
@@ -492,9 +500,19 @@ function renderDetail(w: World, ui: UiState, inspected: Tower | undefined): stri
   return renderNextContact(w);
 }
 
-function stat(label: string, value: string, cls = ''): string {
-  return `<span class="cell"><label>${label}</label><b class="${cls}">${value}</b></span>`;
-}
+/**
+ * `stat()` and `mechanics()` lived here and are gone.
+ *
+ * Both rendered a *label* beside a value — "Dmg 8", "Slows to 74% for 1.2s" —
+ * and labels were most of the word count that made the inspector the densest
+ * surface in the game to read while under attack. `mechanicChips` and
+ * `axisChips` replace them with bare numerals carrying units, and move the
+ * sentence into `title` where it costs nothing on screen.
+ *
+ * The one piece of `mechanics()` worth restating: upgraded values are sums of
+ * floats, so every figure is `toFixed`. `1.2000000000002s` is not a stat, it is
+ * a bug report.
+ */
 
 /**
  * What this station does that the others don't, in numbers.
@@ -508,70 +526,123 @@ function stat(label: string, value: string, cls = ''): string {
  * every station shares and are worth comparing side by side, where the special
  * is exactly the thing that has no counterpart to compare against.
  */
-function mechanics(d: TowerStats): string {
-  const parts: string[] = [];
-  if (d.pierce > 0) parts.push(`Passes through ${d.pierce} more`);
-  if (d.splashRadius > 0) parts.push(`Blast ${d.splashRadius.toFixed(1)} tiles`);
+/**
+ * The station's own numbers as numeral chips, in its tint.
+ *
+ * Wordless by construction, which is what lets the inspector hit its budget:
+ * `↓74%` and `1.2s` say what "Slows to 74% for 1.2s" said, in a form the eye
+ * takes in without reading. The full sentence survives in `title`, which costs
+ * nothing on screen.
+ *
+ * Station-specific first and in tint, shared axes after and in neutral — so the
+ * thing that distinguishes this station from the other four leads.
+ */
+function mechanicChips(d: TowerStats): string {
+  const chips: string[] = [];
+  const chip = (v: string, hint: string): string => `<b class="mc" title="${hint}">${v}</b>`;
+
+  if (d.pierce > 0) chips.push(chip(`↷${d.pierce}`, `Passes through ${d.pierce} more`));
+  if (d.splashRadius > 0) {
+    chips.push(chip(`◎${d.splashRadius.toFixed(1)}`, `Blast ${d.splashRadius.toFixed(1)} tiles`));
+  }
   if (d.slowFactor < 1) {
-    // toFixed, because upgraded values are sums of floats and `1.2000000000002s`
-    // is not a stat, it is a bug report.
-    parts.push(`Slows to ${Math.round(d.slowFactor * 100)}% for ${d.slowSeconds.toFixed(1)}s`);
+    chips.push(chip(`↓${Math.round(d.slowFactor * 100)}%`, `Slows to ${Math.round(d.slowFactor * 100)}%`));
+    chips.push(chip(`${d.slowSeconds.toFixed(1)}s`, `for ${d.slowSeconds.toFixed(1)} seconds`));
   }
   if (d.chainJumps > 0) {
-    parts.push(`Jumps to ${d.chainJumps} more within ${d.chainRange.toFixed(1)} tiles`);
+    chips.push(chip(`⤳${d.chainJumps}`, `Jumps to ${d.chainJumps} more`));
+    chips.push(chip(`${d.chainRange.toFixed(1)}tl`, `within ${d.chainRange.toFixed(1)} tiles`));
   }
   if (d.rampPerSecond > 0) {
-    // Stated as the ceiling and the time to reach it, because those are the two
-    // numbers a placement decision turns on — "×3.5" alone says nothing about
-    // whether anything on this board stands still long enough to see it.
     const seconds = (d.rampMax - 1) / d.rampPerSecond;
-    parts.push(`Ramps to ×${Number(d.rampMax.toFixed(2))} over ${seconds.toFixed(1)}s on one target`);
+    chips.push(chip(`×${Number(d.rampMax.toFixed(2))}`, `Ramps to x${d.rampMax} on one target`));
+    chips.push(chip(`${seconds.toFixed(1)}s`, `over ${seconds.toFixed(1)} seconds`));
   }
-  return parts.join(' · ');
+
+  return `<span class="mech">${chips.join('')}</span>`;
 }
 
-function renderArmed(id: TowerId): string {
-  const d = TOWERS[id];
+/** Damage, rate and range — the three every station has, so always neutral. */
+function axisChips(d: TowerStats): string {
   return (
-    `<div class="head t-${id}">${stationIcon(id, 26)}<b>${d.name} — placing</b>` +
-    `<span class="blurb">${d.blurb}</span></div>` +
-    `<div class="cells">${stat('Dmg', String(d.damage))}${stat(
-      'Rate',
-      (1 / d.fireInterval).toFixed(1),
-    )}${stat('Rng', d.range.toFixed(1))}${stat('Cost', `$${d.cost}`, 'accent')}</div>` +
-    `<div class="special">${mechanics(d)}</div>` +
-    `<div class="hint">Click to place · <b>Esc</b> or right-click to cancel</div>`
+    `<span class="axes">` +
+    `<b title="Damage per shot">${formatDamage(d.damage)}</b>` +
+    `<b title="Shots per second">${(1 / d.fireInterval).toFixed(1)}/s</b>` +
+    `<b title="Reach in tiles">${d.range.toFixed(1)}tl</b>` +
+    `</span>`
   );
 }
 
-function renderInspector(w: World, t: Tower): string {
+
+/**
+ * The armed state — the moment the player is choosing *where*.
+ *
+ * It used to spend thirty-one words re-explaining *what*, including a hint the
+ * player has read every time they have ever armed a tower. The identity is a
+ * picture now: the station at 48px wearing its own mark, its numbers first and
+ * in tint, the shared axes after and in neutral.
+ *
+ * Cost stays visible, because it is the number the decision turns on. The
+ * cancel hint shrinks to a keycap. The board ghost's legal/illegal colouring
+ * remains the primary yes/no — this panel never becomes where placement
+ * validity is read.
+ */
+export function renderArmed(id: TowerId): string {
+  const d = TOWERS[id];
+  return (
+    `<div class="head t-${id}">${stationIcon(id, 48)}` +
+    `<div class="lede"><b>${d.name}</b>` +
+    `<span class="blurb" title="${d.blurb}">placing · ${d.cost}</span></div>` +
+    `<kbd>Esc</kbd></div>` +
+    `<div class="t-${id}">${mechanicChips(d)}</div>` +
+    axisChips(d)
+  );
+}
+
+export function renderInspector(w: World, t: Tower): string {
   const d = TOWERS[t.defId];
   const s = t.stats;
   const nextDamage = nextStats(t, 'damage')?.damage ?? null;
 
-  const modes = TARGET_MODES.map(
-    (m) =>
-      `<button data-act="target" data-mode="${m}" class="${t.targeting === m ? 'on' : ''}">${TARGET_LABEL[m]}</button>`,
-  ).join('');
+  // Iconic, with **the active mode labelled** — not labels-on-hover.
+  //
+  // Four unlabelled glyphs would be unguessable (Strong and Close especially),
+  // `title` never fires on touch, and this control mutates game state so a
+  // mis-click has a cost. Naming only the selected one costs exactly one word,
+  // is self-teaching — the player sees "First" beside its glyph and learns the
+  // glyph — and works without a pointer. `aria-label` on all four regardless.
+  const modes = TARGET_MODES.map((m) => {
+    const on = t.targeting === m;
+    return (
+      `<button data-act="target" data-mode="${m}" class="${on ? 'on' : ''}"` +
+      ` aria-label="${TARGET_LABEL[m]}" title="${TARGET_LABEL[m]}">${TARGET_GLYPH[m]}` +
+      (on ? `<span>${TARGET_LABEL[m]}</span>` : '') +
+      `</button>`
+    );
+  }).join('');
 
   return (
-    `<div class="head t-${t.defId}">${stationIcon(t.defId, 28)}` +
-    `<b>${d.name} · Mk ${'I'.repeat(visualTier(t))}</b>` +
-    `<span class="blurb">tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} dmg dealt</span>` +
-    `</div>` +
-    // Current values only — each path button carries its own `now → next`
-    // preview, so an arrow here would say the same thing twice.
-    `<div class="cells">${stat('Dmg', String(s.damage), 'accent')}${stat(
-      'Rate',
-      (1 / s.fireInterval).toFixed(1),
-    )}${stat('Rng', s.range.toFixed(1))}${stat('Kills', String(t.kills))}</div>` +
-    // Live stats, not the def: this line is where an effect purchase becomes
-    // visible in numbers, including the secondary dial the button omits.
-    `<div class="special">${mechanics(s)}</div>` +
+    `<div class="inspector">` +
+    // Portrait column: the station wearing its real collar at 64px, so the
+    // board's positional upgrade code is taught at full size rather than by a
+    // 24px afterthought on a button. The board only has to jog this memory.
+    `<div class="portrait t-${t.defId}">${stationIcon(t.defId, 44)}` +
+    `${collarDial(t.tiers, BALANCE.upgrade.maxTier)}` +
+    `<span class="mk">Mk ${'I'.repeat(visualTier(t))}</span></div>` +
+    `<div class="body">` +
+    `<div class="head t-${t.defId}"><b>${d.name}</b>` +
+    `<span class="blurb" title="tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} damage dealt">` +
+    `${t.kills} kills</span></div>` +
+    // Live stats, not the def: this is where an effect purchase becomes visible
+    // in numbers, including the secondary dial the upgrade card omits.
+    `<div class="t-${t.defId}">${mechanicChips(s)}</div>` +
+    axisChips(s) +
     renderArmourLine(w, t, nextDamage) +
-    `<div class="paths">${renderPathButtons(w, t)}</div>` +
+    `</div>` +
+    `<div class="upgrades">${renderPathButtons(w, t)}</div>` +
     `<div class="actions"><div class="seg targeting">${modes}</div>` +
-    `<button class="btn" data-act="sell">Sell +$${sellValue(t)}</button></div>`
+    `<button class="btn" data-act="sell">Sell ${sellValue(t)}</button></div>` +
+    `</div>`
   );
 }
 
@@ -678,11 +749,20 @@ function renderArmourLine(w: World, t: Tower, next: number | null): string {
   const cls = kept <= 0.5 ? ' class="bad"' : '';
   const name = ENEMIES[ref.defId].name;
 
+  // A proportional bar rather than a percentage: the sliver *is* the 16%, so
+  // the player reads how much of every hit survives instead of doing the
+  // subtraction. The contact glyph names which one, so the line costs no words
+  // — the sentence it replaced survives in `title`.
+  const label =
+    `${ref.inbound ? 'Inbound' : 'On the board'}: ${name} · ` +
+    `${formatDamage(now)} of ${formatDamage(t.stats.damage)} per hit · ` +
+    `armour eats ${Math.round((1 - kept) * 100)}%`;
+
   return (
-    `<div class="line armour">` +
-    `${ref.inbound ? 'Inbound' : 'On the board'}: <b>${name}</b> · ` +
-    `<b${cls}>${formatDamage(now)}${after === null ? '' : ` → ${formatDamage(after)}`}</b> per hit · ` +
-    `armour eats ${Math.round((1 - kept) * 100)}%` +
+    `<div class="line armour" title="${label}">` +
+    `${contactIcon(ref.defId, 18)}` +
+    `<span class="bar"><i style="width:${(kept * 100).toFixed(1)}%"></i></span>` +
+    `<b${cls}>${formatDamage(now)}${after === null ? '' : ` → ${formatDamage(after)}`}</b>` +
     `</div>`
   );
 }

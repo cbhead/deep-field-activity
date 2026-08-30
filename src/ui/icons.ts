@@ -99,6 +99,48 @@ function hexPath(c: number, r: number): string {
   return `M${pts.join(' L')} Z`;
 }
 
+/**
+ * The station's **live** collar, at the size the board's code deserves.
+ *
+ * `pathDial` teaches one sector at 13px on an upgrade button. This shows all
+ * three at once, filled to the tiers actually bought — so an upgraded station
+ * on the board is recognisable because the player has already seen this exact
+ * arrangement at full size, rather than having to reconstruct it from three
+ * tiny dials.
+ *
+ * Angles and span come from `COLLAR_SECTORS`, shared with the board. The fill
+ * fraction uses the same `(tier - 1) / (max - 1)` the board's collar does, so a
+ * Mk II reads half-filled in both places.
+ */
+export function collarDial(tiers: Readonly<Record<string, number>>, max: number, size = 64): string {
+  const c = size / 2;
+  const r = c * 0.86;
+
+  const arcs = COLLAR_SECTORS.map(({ path, from }) => {
+    const tier = tiers[path] ?? 1;
+    const fill = max <= 1 ? 0 : (tier - 1) / (max - 1);
+    const span = COLLAR_SPAN * fill;
+
+    const at = (deg: number): string => {
+      const a = (deg * Math.PI) / 180;
+      return `${(c + Math.cos(a) * r).toFixed(1)} ${(c + Math.sin(a) * r).toFixed(1)}`;
+    };
+    // The full sector, dim, always — so an untouched path still shows *where*
+    // it would appear. Then the bought portion over it, bright.
+    const track =
+      `<path d="M${at(from)} A${r} ${r} 0 0 1 ${at(from + COLLAR_SPAN)}" fill="none"` +
+      ` stroke="currentColor" stroke-opacity=".16" stroke-width="4" stroke-linecap="round"/>`;
+    if (span <= 0) return track;
+    return (
+      track +
+      `<path d="M${at(from)} A${r} ${r} 0 0 1 ${at(from + span)}" fill="none"` +
+      ` stroke="currentColor" stroke-width="4" stroke-linecap="round"/>`
+    );
+  }).join('');
+
+  return `<svg class="collar" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">${arcs}</svg>`;
+}
+
 /** The station's mechanic mark, scaled from unit space into the 40-unit box. */
 function markSvg(id: TowerId): string {
   const mark = STATION_MARKS[id];

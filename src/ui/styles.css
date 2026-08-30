@@ -373,7 +373,7 @@ kbd {
 /* The three upgrade tracks, side by side. Each button is a miniature cell —
    label, `now → next` preview, per-path pips, price — so the trade the player
    is weighing (deepen which axis?) sits in one row of like-for-like options. */
-.paths { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.upgrades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .path {
   display: flex;
   flex-direction: column;
@@ -616,3 +616,77 @@ button.path:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .ribbon i { transition: none; }
 }
+
+/* ------------------------------------------------- inspector (station selected) */
+
+/* The densest state in the game, and the one consulted while under attack.
+   Three columns: the station's identity, its figures, and what can be bought —
+   so nothing has to be read in sequence to be found. */
+.inspector {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The station wearing its REAL collar at full size. The board encodes which
+   upgrade path was taken by position, and a positional code has to be taught
+   somewhere — a 13px dial on a button was too small to be that somewhere. */
+.portrait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px; height: 64px;
+}
+.portrait .glyph { position: absolute; filter: drop-shadow(0 0 8px currentColor); }
+.portrait .collar { position: absolute; inset: 0; }
+.portrait .mk {
+  position: absolute;
+  bottom: -3px;
+  font-size: 8.5px;
+  letter-spacing: .1em;
+  color: var(--dim);
+}
+
+.inspector .body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+/* Numeral chips. Wordless by construction — the sentence lives in `title`,
+   where it costs nothing on screen. Station-specific first and in the station's
+   tint, shared axes after and neutral, so what distinguishes this station from
+   the other four leads. */
+.mech, .axes { display: flex; flex-wrap: wrap; gap: 4px; }
+.mech b, .axes b {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--slot) 70%, transparent);
+  white-space: nowrap;
+}
+.mech b { color: currentColor; }
+.axes b { color: var(--muted); }
+
+/* Armour as a proportional bar: the sliver IS the fraction that survives, so
+   the player reads it instead of doing the subtraction. The contact glyph names
+   which one, so the line costs no words at all. */
+.detail .line.armour { display: flex; align-items: center; gap: 7px; }
+.line.armour .bar {
+  position: relative;
+  width: 54px; height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--danger) 30%, transparent);
+  overflow: hidden;
+}
+.line.armour .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.line.armour b { font-size: 11px; font-weight: 600; color: var(--bright); }
+.line.armour b.bad { color: var(--danger); }
+
+/* Targeting: iconic, with only the ACTIVE mode labelled. Four unlabelled
+   glyphs would be unguessable (Strong and Close especially), `title` never
+   fires on touch, and this control mutates game state — so a mis-click has a
+   cost. Naming the selected one costs a single word and teaches the rest. */
+.targeting button { display: inline-flex; align-items: center; gap: 5px; }
+.targeting button span { font-size: 10.5px; }
+
+/* The armed state: identity as a picture, not a paragraph. */
+.detail .lede { display: flex; flex-direction: column; gap: 1px; }
