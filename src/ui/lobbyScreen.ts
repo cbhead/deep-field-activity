@@ -16,20 +16,21 @@
  */
 import { DEFAULT_PORT, type LobbyPlayer } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
+import { CAMPAIGN, levelById } from '../content/levels.ts';
+import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
 import { getWebhook, postToDiscord, saveWebhook } from './discord.ts';
 
 export interface LobbyScreen {
-  showRoster(room: string, players: LobbyPlayer[], myId: string): void;
+  /** level/diff are the room's pick, as re-dealt by the server. */
+  showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void;
   showCountdown(ms: number, seed: number): void;
   showError(reason: string): void;
   remove(): void;
 }
 
-export interface LobbyFacts {
-  /** Map name — "Switchback" — shown as the sector. */
-  sector: string;
-  waves: number;
-  lives: number;
+export interface RaceChoice {
+  level: string;
+  diff: string;
 }
 
 export interface LobbyOptions {
@@ -37,10 +38,15 @@ export interface LobbyOptions {
   prefillRoom?: string;
   /** Rematch rejoin: skip the form entirely and connect straight away. */
   autoJoin?: { name: string; room: string };
-  facts: LobbyFacts;
-  onSubmit(name: string, room?: string): void;
+  /** choice present only when creating — the server ignores it on joins. */
+  onSubmit(name: string, room?: string, choice?: RaceChoice): void;
   onReady(ready: boolean): void;
 }
+
+/** Room picks come off the wire unvalidated; fall back to the baseline. */
+const levelOr01 = (id: string) => levelById(id) ?? CAMPAIGN[0]!;
+const diffOrStd = (id: string): DifficultyId =>
+  Object.hasOwn(DIFFICULTIES, id) ? (id as DifficultyId) : DEFAULT_DIFFICULTY;
 
 const STYLE = `
 #lobby-screen{position:absolute;inset:0;z-index:10;overflow:hidden;background:#0b0c16;
@@ -118,6 +124,10 @@ const STYLE = `
 #lobby-screen .lb-vsline b i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:9px}
 #lobby-screen .lb-mono{font:400 11.5px/1 ui-monospace,Menlo,monospace;color:#9397ab}
 #lobby-screen .lb-hex{width:26px;height:26px;flex:none}
+#lobby-screen .lb-picks{display:flex;gap:8px;flex-wrap:wrap}
+#lobby-screen .lb-pick{padding:9px 13px;border-radius:7px;border:1px solid rgba(233,233,237,.16);
+  background:none;cursor:pointer;font:600 12px/1 Inter,sans-serif;color:#9397ab}
+#lobby-screen .lb-pick.on{border-color:#9184d9;color:#d2cefd;box-shadow:0 0 14px rgba(145,132,217,.18)}
 `;
 
 const hexSvg = (color: string, dim = false): string =>
@@ -146,6 +156,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   let lastPlayers: LobbyPlayer[] = [];
   let lastMyId = '';
   let lastRoom = '';
+  // The room's authoritative pick, as last re-dealt by the server.
+  let lastLevel = CAMPAIGN[0]!.id;
+  let lastDiff: string = DEFAULT_DIFFICULTY;
+  // The creator's form selection, remembered across visits.
+  let pickLevel = levelOr01(localStorage.getItem('race-level') ?? '').id;
+  let pickDiff: string = diffOrStd(localStorage.getItem('race-diff') ?? '');
 
   // The invite link must carry an address the FRIEND can reach. The server
   // knows its own Tailscale IP better than this page does (the host may have
@@ -157,7 +173,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     .then((info) => {
       if (info?.tailscaleIp) {
         inviteBase = `http://${info.tailscaleIp}:${info.port}`;
-        if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId);
+        if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId, lastLevel, lastDiff);
       }
     })
     .catch(() => undefined);
@@ -180,7 +196,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     }
     if (btn) btn.textContent = 'Sending…';
     void postToDiscord(
-      `Race me in ${opts.facts.sector} — room **${room}**\n${inviteLink(room)}\n(Needs Tailscale up; the link only works on our tailnet.)`,
+      `Race me in ${levelOr01(lastLevel).name} (${DIFFICULTIES[diffOrStd(lastDiff)].name}) — room **${room}**\n` +
+      `${inviteLink(room)}\n(Needs Tailscale up; the link only works on our tailnet.)`,
     ).then((ok) => {
       if (btn) btn.textContent = ok ? 'Sent to Discord ✓' : "Couldn't send — check the webhook";
     });
@@ -212,8 +229,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     `Match results post to the same channel — set this on one machine only, or they arrive twice.</span>` +
     `</div></div>`;
 
-  const bar = (sub: string, conn: string, bad = false): string =>
-    `<div class="lb-bar"><span class="lb-brand">${opts.facts.sector}</span><span class="lb-sep"></span>` +
+  const bar = (brand: string, sub: string, conn: string, bad = false): string =>
+    `<div class="lb-bar"><span class="lb-brand">${brand}</span><span class="lb-sep"></span>` +
     `<span class="lb-sub">${sub}</span>` +
     `<span class="lb-conn"><span class="lb-dot${bad ? ' bad' : ''}"></span>${conn}</span></div>`;
 
@@ -226,20 +243,33 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   function submit(room?: string): void {
     const name = (el.querySelector('#race-name') as HTMLInputElement | null)?.value.trim() || 'pilot';
     localStorage.setItem('race-name', name);
-    el.innerHTML = bar('Race relay', 'connecting…') +
+    el.innerHTML = bar('Race', 'Race relay', 'connecting…') +
       `<div class="lb-glow"></div><div class="lb-center"><span class="lb-lede">Raising the relay…</span></div>`;
-    if (room === undefined) opts.onSubmit(name);
+    if (room === undefined) opts.onSubmit(name, undefined, { level: pickLevel, diff: pickDiff });
     else opts.onSubmit(name, room);
   }
 
+  function pickFine(): string {
+    const lv = levelOr01(pickLevel);
+    const df = DIFFICULTIES[diffOrStd(pickDiff)];
+    return `${lv.waves.length} waves · ${df.startingLives} lives · ranked on waves cleared, then lives kept, then time.`;
+  }
+
   function showForm(): void {
-    const f = opts.facts;
-    el.innerHTML = bar('Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
+    const pills = (items: readonly { id: string; name: string }[], group: string, on: string): string =>
+      `<div class="lb-picks" id="${group}">` +
+      items.map((i) => `<button class="lb-pick${i.id === on ? ' on' : ''}" data-id="${i.id}">${i.name}</button>`).join('') +
+      `</div>`;
+    el.innerHTML = bar('Race', 'Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
       `<div class="lb-body"><div class="lb-col">` +
       `<div style="display:flex;flex-direction:column;gap:10px">` +
-      `<span class="lb-kicker">Sector 01</span><h1 class="lb-title">Race</h1>` +
+      `<span class="lb-kicker">Head to head</span><h1 class="lb-title">Race</h1>` +
       `<span class="lb-lede">Two pilots, one seed. Identical waves on separate skies — you're racing their run, not fighting it.</span></div>` +
       nameField() +
+      `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Sector</span>` +
+      pills(CAMPAIGN, 'pick-level', pickLevel) + `</div>` +
+      `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Difficulty</span>` +
+      pills(DIFFICULTY_ORDER.map((d) => DIFFICULTIES[d]), 'pick-diff', pickDiff) + `</div>` +
       `<div style="display:flex;flex-direction:column;gap:14px">` +
       `<button id="race-create" class="lb-btn">Create a room</button>` +
       `<div class="lb-or"><span></span><b>or join one</b><span></span></div>` +
@@ -255,8 +285,27 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       `<div class="lb-how-item"><span class="lb-how-n">03</span><span><span class="lb-how-t">Your seat is held</span>` +
       `<span class="lb-how-d">Lose the connection and you can reclaim the same seat and carry on. Walk away and it's a forfeit.</span></span></div>` +
       `<div class="lb-rule"></div>` +
-      `<span class="lb-fine">${f.waves} waves · ${f.lives} lives · ranked on waves cleared, then lives kept, then time.</span>` +
+      `<span class="lb-fine" id="pick-fine">${pickFine()}</span>` +
       `</div></div>`;
+    const wirePicks = (group: string, set: (id: string) => void): void => {
+      el.querySelector(`#${group}`)?.addEventListener('click', (ev) => {
+        const target = (ev.target as HTMLElement).closest('.lb-pick');
+        if (!(target instanceof HTMLElement) || target.dataset['id'] === undefined) return;
+        set(target.dataset['id']);
+        el.querySelectorAll(`#${group} .lb-pick`).forEach((p) =>
+          p.classList.toggle('on', p === target));
+        const fine = el.querySelector('#pick-fine');
+        if (fine) fine.textContent = pickFine();
+      });
+    };
+    wirePicks('pick-level', (id) => {
+      pickLevel = id;
+      localStorage.setItem('race-level', id);
+    });
+    wirePicks('pick-diff', (id) => {
+      pickDiff = id;
+      localStorage.setItem('race-diff', id);
+    });
     el.querySelector('#race-create')!.addEventListener('click', () => submit());
     const joinNow = (): void => {
       const code = (el.querySelector('#race-code') as HTMLInputElement).value.trim();
@@ -269,13 +318,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   }
 
   function showDeepLink(code: string): void {
-    const f = opts.facts;
-    el.innerHTML = bar('Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
+    el.innerHTML = bar('Race', 'Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
       `<div class="lb-body"><div class="lb-col" style="padding-top:40px">` +
       `<div style="display:flex;flex-direction:column;gap:12px">` +
       `<span class="lb-kicker">Invited to a race</span>` +
       `<h1 class="lb-title" style="font-size:44px">Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#d2cefd">${code.toUpperCase()}</span></h1>` +
-      `<span class="lb-lede">Sector 01 · ${f.sector} — ${f.waves} waves, ${f.lives} lives, one seed shared with your opponent.</span></div>` +
+      `<span class="lb-lede">The host picks the sector and difficulty — you'll see the loadout in the room. One seed, shared.</span></div>` +
       nameField() +
       `<div style="display:flex;align-items:center;gap:14px">` +
       `<button id="race-go" class="lb-btn" style="width:180px">Join room</button>` +
@@ -296,16 +344,21 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       : `<span class="lb-pill">Not ready</span>`) +
     `</div>`;
 
-  function showRoster(room: string, players: LobbyPlayer[], myId: string): void {
+  function showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void {
     lastPlayers = players;
     lastMyId = myId;
     lastRoom = room;
+    lastLevel = level;
+    lastDiff = diff;
     const me = players.find((p) => p.playerId === myId);
     const them = players.find((p) => p.playerId !== myId);
 
+    const lv = levelOr01(level);
+    const df = DIFFICULTIES[diffOrStd(diff)];
+
     if (players.length < 2) {
       // L3 — the code is the whole screen; passing it on is the only job.
-      el.innerHTML = bar('Race relay', 'connected') + `<div class="lb-glow"></div>` +
+      el.innerHTML = bar(lv.name, 'Race relay', 'connected') + `<div class="lb-glow"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(560px,90vw)">` +
         `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
         `<input class="lb-bigcode" readonly value="${room}" onclick="this.select()">` +
@@ -321,9 +374,10 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<span class="lb-seat-sub">waiting for someone to join…</span></span></div>` +
         `<div class="lb-rule" style="margin:6px 0"></div>` +
         `<div class="lb-facts">` +
-        `<div><span>Sector</span><span>01 · ${opts.facts.sector}</span></div>` +
-        `<div><span>Waves</span><span>${opts.facts.waves}</span></div>` +
-        `<div><span>Starting lives</span><span>${opts.facts.lives}</span></div>` +
+        `<div><span>Sector</span><span>${lv.kicker.replace('Sector ', '')} · ${lv.name}</span></div>` +
+        `<div><span>Difficulty</span><span>${df.name}</span></div>` +
+        `<div><span>Waves</span><span>${lv.waves.length}</span></div>` +
+        `<div><span>Starting lives</span><span>${df.startingLives}</span></div>` +
         `<div><span>Ranked by</span><span>waves · lives · time</span></div></div>` +
         `<button class="lb-leave" id="race-leave">Leave the room</button>` +
         `</div></div>`;
@@ -332,7 +386,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       const iAmReady = me?.ready === true;
       const kicker = iAmReady ? 'Standing by' : 'Room full';
       const title = iAmReady ? `Waiting on ${them?.name ?? 'them'}` : 'Two pilots on the line';
-      el.innerHTML = bar(`Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${room}</span>`, 'both connected') +
+      el.innerHTML = bar(lv.name, `${df.name} · room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${room}</span>`, 'both connected') +
         `<div class="lb-glow"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(1104px,92vw)">` +
         `<div style="display:flex;flex-direction:column;gap:10px">` +
@@ -359,7 +413,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   }
 
   if (opts.autoJoin !== undefined) {
-    el.innerHTML = bar('Race relay', 'rejoining…') + `<div class="lb-glow"></div>` +
+    el.innerHTML = bar('Race', 'Race relay', 'rejoining…') + `<div class="lb-glow"></div>` +
       `<div class="lb-center"><span class="lb-lede">Rejoining room <b style="color:#d2cefd">${opts.autoJoin.room}</b>…</span></div>`;
     // Deferred a tick so the caller has its handle before callbacks fire.
     const { name, room } = opts.autoJoin;
@@ -378,8 +432,9 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       const me = lastPlayers.find((p) => p.playerId === lastMyId);
       const them = lastPlayers.find((p) => p.playerId !== lastMyId);
       const endsAt = performance.now() + ms;
-      const f = opts.facts;
-      el.innerHTML = bar(`Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${lastRoom}</span>`, 'both ready') +
+      const lv = levelOr01(lastLevel);
+      const df = DIFFICULTIES[diffOrStd(lastDiff)];
+      el.innerHTML = bar(lv.name, `${df.name} · room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${lastRoom}</span>`, 'both ready') +
         `<div class="lb-glow"></div>` +
         `<div class="lb-center">` +
         `<span class="lb-kicker" style="letter-spacing:.3em">Both ready</span>` +
@@ -387,7 +442,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<div class="lb-vsline"><b><i style="background:${YOU};box-shadow:0 0 8px ${YOU}e6"></i>${me?.name ?? 'you'}</b>` +
         `<em>vs</em><b><i style="background:${THEM};box-shadow:0 0 8px ${THEM}e6"></i>${them?.name ?? 'opponent'}</b></div>` +
         `<div style="display:flex;flex-direction:column;align-items:center;gap:7px">` +
-        `<span class="lb-mono">seed 0x${formatSeed(seed)} · ${f.waves} waves · ${f.lives} lives</span>` +
+        `<span class="lb-mono">seed 0x${formatSeed(seed)} · ${lv.waves.length} waves · ${df.startingLives} lives</span>` +
         `<span class="lb-fine">Identical waves on both boards.</span></div></div>`;
       const count = el.querySelector('#race-count')!;
       const tick = (): void => {
@@ -411,7 +466,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         : noRoom ? 'That code has expired or was mistyped — codes are four characters, and rooms close a minute after both pilots leave.'
         : unreachable ? `Nothing is listening at ${location.host} — the relay isn't running, or the tunnel to it is down.`
         : reason;
-      el.innerHTML = bar('Race relay', 'refused', true) +
+      el.innerHTML = bar('Race', 'Race relay', 'refused', true) +
         `<div class="lb-glow" style="background:radial-gradient(circle at 50% 44%,rgba(224,109,109,.12),rgba(6,7,13,.7) 62%)"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(600px,90vw);padding-top:24px">` +
         `<div style="display:flex;flex-direction:column;gap:12px">` +

@@ -40,6 +40,10 @@ type Room = {
   code: string;
   players: Player[];
   started: boolean;
+  /** The creator's pick, re-dealt in every lobby and start. Unvalidated —
+   *  clients fall back to the baseline if they don't recognise it. */
+  level: string;
+  diff: string;
   /** Everyone who ever joined — a dropped player's seat, held for resume. */
   roster: Map<string, string>;
   /** Final figures per playerId — kept on the room, not the player, so a
@@ -61,7 +65,7 @@ function newRoom(): Room {
     code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
   } while (rooms.has(code));
   const room: Room = {
-    code, players: [], started: false,
+    code, players: [], started: false, level: 'level01', diff: 'standard',
     roster: new Map(), finals: new Map(), lastStatus: new Map(), forfeitTimer: null,
   };
   rooms.set(code, room);
@@ -81,6 +85,8 @@ const broadcastLobby = (room: Room): void =>
   broadcast(room, {
     t: 'lobby',
     players: room.players.map(({ id, name, ready }) => ({ playerId: id, name, ready })),
+    level: room.level,
+    diff: room.diff,
   });
 
 const standingFor = (room: Room, id: string): Standing =>
@@ -225,6 +231,8 @@ wss.on('connection', (ws: WebSocket, req) => {
           room = wanted;
         } else {
           room = newRoom();
+          if (msg.level !== undefined) room.level = msg.level;
+          if (msg.diff !== undefined) room.diff = msg.diff;
         }
         me = { id: `p${nextPlayer++}`, name: msg.name, ready: false, ws };
         room.players.push(me);
@@ -245,8 +253,8 @@ wss.on('connection', (ws: WebSocket, req) => {
           // A fresh match: only current seat-holders count toward the result.
           room.roster = new Map(room.players.map((p) => [p.id, p.name]));
           const seed = (Math.random() * 0x100000000) >>> 0;
-          console.log(`[start] room ${room.code} seed=${seed}`);
-          broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS });
+          console.log(`[start] room ${room.code} seed=${seed} ${room.level}/${room.diff}`);
+          broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS, level: room.level, diff: room.diff });
         }
         break;
       }
@@ -261,6 +269,7 @@ wss.on('connection', (ws: WebSocket, req) => {
           send(other.ws, {
             t: 'peer', wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs,
             ...(msg.hidden !== undefined ? { hidden: msg.hidden } : {}),
+            ...(msg.towers !== undefined ? { towers: msg.towers } : {}),
           });
         }
         break;

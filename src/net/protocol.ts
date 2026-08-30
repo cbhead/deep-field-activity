@@ -19,23 +19,28 @@ export const STATUS_INTERVAL_MS = 500;
 
 export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
 
+/** One placed station, for the opponent's minimap. Tile-aligned like the sim. */
+export type TowerPin = { c: number; r: number; k: string; tier: number };
+
 /** client → server. hello without a room creates one; with a room, joins it.
- *  `resume` is a prior playerId: reclaim that seat after a dropped socket. */
+ *  `resume` is a prior playerId: reclaim that seat after a dropped socket.
+ *  `level`/`diff` are the creator's pick; the server stores and re-deals them. */
 export type C2S =
-  | { t: 'hello'; v: number; name: string; room?: string; resume?: string }
+  | { t: 'hello'; v: number; name: string; room?: string; resume?: string; level?: string; diff?: string }
   /** ready:false un-readies — allowed until the countdown is dealt. */
   | { t: 'ready'; ready?: boolean }
-  /** `hidden` rides along on visibility changes: the sim freezes with the tab. */
-  | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean }
+  /** `hidden` rides along on visibility changes: the sim freezes with the tab.
+   *  `towers` rides along only when the layout changed since the last frame. */
+  | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }
   /** The run is over — defeat or full clear alike. lives>0 means a clear. */
   | { t: 'dead'; wave: number; lives: number; elapsedMs: number };
 
 /** server → client */
 export type S2C =
   | { t: 'joined'; playerId: string; room: string }
-  | { t: 'lobby'; players: LobbyPlayer[] }
-  | { t: 'start'; seed: number; countdownMs: number }
-  | { t: 'peer'; wave: number; lives: number; elapsedMs: number; hidden?: boolean }
+  | { t: 'lobby'; players: LobbyPlayer[]; level: string; diff: string }
+  | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string }
+  | { t: 'peer'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }
   | { t: 'peerConn'; connected: boolean }
   | { t: 'result'; winnerId: string | null; standings: Standing[]; reason?: 'forfeit' }
   | { t: 'error'; reason: string };

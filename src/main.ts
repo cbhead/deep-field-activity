@@ -20,8 +20,7 @@ import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
 import { createHud, type CampaignPorts } from './ui/hud.ts';
-import { planWave, waveCount } from './sim/wavePlan.ts';
-import { BALANCE } from './content/balance.ts';
+import { planWave } from './sim/wavePlan.ts';
 import { serverUrl } from './net/NetClient.ts';
 import { DEFAULT_PORT } from './net/protocol.ts';
 import { MatchController } from './net/MatchController.ts';
@@ -75,6 +74,7 @@ async function main(): Promise<void> {
   let currentRoom = '';
   let playerName = '';
   let matchSeed = 0;
+  let matchSector = CAMPAIGN[0]!.name;
 
   // A rematch reloads the page with {name, room} stashed, then rejoins and
   // readies up without touching the form. Cleared immediately so a plain
@@ -85,20 +85,20 @@ async function main(): Promise<void> {
 
   const lobby = createLobbyScreen(mount, {
     ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
-    facts: { sector: LEVEL01.name, waves: waveCount(), lives: BALANCE.startingLives },
     onReady: (ready) => controller.ready(ready),
-    onSubmit: (name, room) => {
+    onSubmit: (name, room, choice) => {
       playerName = name;
       controller = new MatchController({
         url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
+        ...(choice === undefined ? {} : { choice }),
         autoReady: rejoin !== null,
         hooks: {
-          onLobby: (roomCode, players) => {
+          onLobby: (roomCode, players, level, diff) => {
             currentRoom = roomCode;
             opponentName = players.find((p) => p.playerId !== controller.playerId)?.name ?? 'opponent';
-            lobby.showRoster(roomCode, players, controller.playerId);
+            lobby.showRoster(roomCode, players, controller.playerId, level, diff);
           },
           onCountdown: (ms, seed) => lobby.showCountdown(ms, seed),
           onError: (reason) => lobby.showError(reason),
@@ -121,17 +121,27 @@ async function main(): Promise<void> {
             // (normally just the host's), so results arrive once.
             if (getWebhook() !== null) {
               void postToDiscord(
-                matchReport(LEVEL01.name, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit'),
+                matchReport(matchSector, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit'),
               ).then((ok) => {
                 const log = document.getElementById('results-log');
                 if (log) log.textContent = ok ? 'match logged to Discord ✓' : "couldn't log to Discord — check the webhook";
               });
             }
           },
-          boot: (seed) => {
+          boot: (seed, levelId, diffId) => {
             matchSeed = seed;
+            // The room's pick arrives unvalidated; unknown values fall back to
+            // the baseline on BOTH clients, so a version-skewed pair still
+            // plays the same board.
+            const level = levelById(levelId) ?? CAMPAIGN[0]!;
+            const difficulty: DifficultyId =
+              Object.hasOwn(DIFFICULTIES, diffId) ? (diffId as DifficultyId) : DEFAULT_DIFFICULTY;
+            matchSector = `${level.name} · ${DIFFICULTIES[difficulty].name}`;
             lobby.remove();
-            void startGame(mount, hudRoot, seed).then(({ world }) => {
+            void startGame(mount, hudRoot, seed, {
+              level,
+              rules: resolveRules(level, difficulty),
+            }).then(({ world }) => {
               raceHud = createRaceHud(mount, opponentName, currentRoom);
               const bootAt = performance.now();
               const sample = (): Parameters<typeof controller.finish>[0] => ({
