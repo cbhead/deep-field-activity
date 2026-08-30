@@ -35,7 +35,7 @@ You'll need:
 Then:
 
 ```sh
-git clone https://github.com/chandlerhead/deep-field-td.git
+git clone https://github.com/cbhead/deep-field-td.git
 cd deep-field-td
 npm install
 caffeinate -i npm run play    # macOS: caffeinate keeps the machine awake mid-match
