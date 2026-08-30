@@ -69,9 +69,15 @@ async function main(): Promise<void> {
   }
 
   // Race mode: `?race` opens the lobby screen, `?race=CODE` deep-links into a
-  // room. Port is explicit because dev serves the page from Vite while the
-  // relay listens on DEFAULT_PORT; at N6 one process serves both and the two
-  // collapse to the same host:port.
+  // room. Where the relay lives depends on who served this page: under Vite the
+  // page comes from the dev server while the relay listens separately, so
+  // DEFAULT_PORT has to be named; in the `npm run play` build one process serves
+  // both, so the page's own origin IS the relay and location.host is the whole
+  // answer. Deriving it from location.host rather than the port /info reports
+  // is what keeps `PORT=` working and survives a tunnel, where the port the
+  // browser reached is not the port the server bound.
+  const relayHost = import.meta.env.DEV ? `${location.hostname}:${DEFAULT_PORT}` : location.host;
+
   let controller: MatchController;
   let raceHud: RaceHud | null = null;
   let opponentName = 'opponent';
@@ -92,11 +98,12 @@ async function main(): Promise<void> {
 
   const lobby = createLobbyScreen(mount, {
     ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
+    relayHost,
     onReady: (ready) => controller.ready(ready),
     onSubmit: (name, room, choice) => {
       playerName = name;
       controller = new MatchController({
-        url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
+        url: serverUrl(relayHost, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
         ...(choice === undefined ? {} : { choice }),

@@ -14,7 +14,7 @@
  * - Readiness is server truth: the button renders from the roster broadcast,
  *   not from a local flag, and un-ready is allowed until the seed is dealt.
  */
-import { DEFAULT_PORT, type LobbyPlayer } from '../net/protocol.ts';
+import type { LobbyPlayer } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
 import { CAMPAIGN, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
@@ -39,6 +39,14 @@ export interface LobbyOptions {
   prefillRoom?: string;
   /** Rematch rejoin: skip the form entirely and connect straight away. */
   autoJoin?: { name: string; room: string };
+  /**
+   * The host:port the client actually dials for the relay socket. Required, and
+   * passed in rather than re-derived here, because the two can differ: under a
+   * `PORT=` override the page's own origin is not DEFAULT_PORT. Naming the real
+   * target is the whole point — a failure that cites the wrong port sends you
+   * debugging a port nothing ever tried to reach.
+   */
+  relayHost: string;
   /** choice present only when creating — the server ignores it on joins. */
   onSubmit(name: string, room?: string, choice?: RaceChoice): void;
   onReady(ready: boolean): void;
@@ -58,6 +66,11 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   el.className = 'race-screen';
   parent.style.position = 'relative';
   parent.appendChild(el);
+
+  // The header chip names the port we really dial, not the compiled-in default.
+  // A bare hostname (relay behind a proxy on 80/443) has no port to show, so it
+  // stands in whole rather than rendering an empty `:`.
+  const relayChip = `relay · ${opts.relayHost.includes(':') ? `:${opts.relayHost.split(':').pop()}` : opts.relayHost}`;
 
   const savedName = localStorage.getItem('race-name') ?? '';
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -165,7 +178,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       `<div class="lb-picks" id="${group}">` +
       items.map((i) => `<button class="lb-pick${i.id === on ? ' on' : ''}" data-id="${i.id}">${i.name}</button>`).join('') +
       `</div>`;
-    el.innerHTML = bar('Race', 'Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
+    el.innerHTML = bar('Race', 'Race relay', relayChip) + `<div class="lb-glow"></div>` +
       `<div class="lb-body"><div class="lb-col">` +
       `<div style="display:flex;flex-direction:column;gap:10px">` +
       `<span class="lb-kicker">Head to head</span><h1 class="lb-title">Race</h1>` +
@@ -223,7 +236,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   }
 
   function showDeepLink(code: string): void {
-    el.innerHTML = bar('Race', 'Race relay', `relay · :${DEFAULT_PORT}`) + `<div class="lb-glow"></div>` +
+    el.innerHTML = bar('Race', 'Race relay', relayChip) + `<div class="lb-glow"></div>` +
       `<div class="lb-body"><div class="lb-col" style="padding-top:40px">` +
       `<div style="display:flex;flex-direction:column;gap:12px">` +
       `<span class="lb-kicker">Invited to a race</span>` +
@@ -369,7 +382,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         : 'The race hit a snag';
       const lede = fullRoom ? "A race is two seats and both are taken. Start your own room and send the code, or wait for theirs to finish."
         : noRoom ? 'That code has expired or was mistyped — codes are four characters, and rooms close a minute after both pilots leave.'
-        : unreachable ? `Nothing is listening at ${location.host} — the relay isn't running, or the tunnel to it is down.`
+        : unreachable ? `Nothing is listening at ${opts.relayHost} — the relay isn't running, or the tunnel to it is down.`
         : reason;
       el.innerHTML = bar('Race', 'Race relay', 'refused', true) +
         `<div class="lb-glow" style="background:radial-gradient(circle at 50% 44%,rgba(224,109,109,.12),rgba(6,7,13,.7) 62%)"></div>` +

@@ -161,13 +161,13 @@ the machine can sleep again.
 |---|---|---|
 | `does not provide an export named 'styleText'` during build | The old Node 16 at `/usr/local/bin/node` won the PATH race; `scripts/use-node.sh` failed to load nvm | `nvm install 22 && nvm use 22`, then re-run. Never call the JS bins directly — their `#!/usr/bin/env node` shebang re-resolves to Node 16 |
 | `error: Node >=20.19 required` | nvm not loaded in that shell | Same as above; the script already unsets `npm_config_prefix` for you |
-| Lobby says "Nothing is listening at …" | Relay isn't running, or Tailscale dropped | Check the `npm run play` terminal is alive; `tailscale status` on both ends |
+| Lobby says "Nothing is listening at …" | Relay isn't running, or Tailscale dropped | Check the `npm run play` terminal is alive; `tailscale status` on both ends. The host:port in the message is the one the client actually dialled, so it's safe to `curl http://<that>/info` directly |
 | Friend's browser times out on the link | They're not on the tailnet, or their Tailscale is disconnected | `tailscale status` on their machine; re-run Step 0 |
 | Invite link says `localhost` | `/info` returned `tailscaleIp: null` — Tailscale down on host | Bring Tailscale up, restart the server, reload the lobby |
 | `OFFLINE` badge on the opponent | Missed heartbeat (15s), or their tab is hidden | Usually self-heals — they have **90s** to come back before auto-forfeit. Tell them to reload; the seat is reclaimed via `hello.resume` |
 | Opponent forfeited too fast during debugging | Default `FORFEIT_MS` is 90000 | Restart with `FORFEIT_MS=600000 npm run play` |
 | Countdown too fast to inspect | Default `COUNTDOWN_MS` is 3000 | Restart with `COUNTDOWN_MS=15000 npm run play` |
-| `EADDRINUSE` on 8787 | An earlier server is still running | Kill it, or `PORT=8788 npm run play` — but then the friend's URL changes too |
+| `EADDRINUSE` on 8787 | An earlier server is still running | Kill it: `kill $(lsof -nP -tiTCP:8787 -sTCP:LISTEN)`, or move aside with `PORT=8790 npm run play` — the client follows the port it was served from, so Race still works. Remember the friend's link changes port too; use the one the lobby shows |
 
 ---
 
@@ -196,3 +196,5 @@ play` rebuilds `dist/` every time, so the previous good commit is one stash away
 |---|---|---|
 | 2026-08-30 | Chandler | Runbook written. |
 | 2026-08-30 | Chandler | First confirmed cross-internet match over Tailscale — full path verified, Step 0 through `[result]`. |
+| 2026-08-30 | Claude | Dry run of Steps 1–3 on localhost. Build + banner + `/info` + room `3C7A` + tailnet invite link all as documented. Found and fixed the `PORT=` troubleshooting row, which recommended something that silently breaks Race mode. Steps 4–6 still only ever exercised by hand. |
+| 2026-08-30 | Claude | Fixed the `PORT=` bug itself: the client derived its socket from the hardcoded `DEFAULT_PORT` instead of the port it was served from. Verified under `PORT=8790 npm run play` in headless Chrome — page on 8790 now dials `ws://localhost:8790/ws` and creates a room. `PORT=` is a supported workaround again, so the two rows warning against it are gone. |
