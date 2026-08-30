@@ -107,7 +107,10 @@ export class WorldView {
     // costs nothing.
     this.syncEntities(w.creeps, this.creeps, this.layers.creeps, (c) => {
       const def = ENEMIES[c.defId];
-      const sprite = new Sprite(this.textures.creep);
+      // Armour is a property of the type and never changes, so the silhouette
+      // is chosen once at creation — unlike a tower's tier, which has to be
+      // watched every frame for upgrades.
+      const sprite = new Sprite(def.armor > 0 ? this.textures.creepPlated : this.textures.creep);
       sprite.anchor.set(0.5);
       sprite.tint = THEME.enemies[c.defId];
       sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);

@@ -129,6 +129,14 @@ export interface Theme {
     readonly haloAlpha: number;
 
     /**
+     * The plated contact silhouette — see `drawCreep` for why armour is drawn
+     * as a shape and not as another ring. A heavier rim than the plain hull's
+     * 2px is most of what sells it; the seam sits at this fraction of the rim.
+     */
+    readonly plateWidth: number;
+    readonly plateSeam: number;
+
+    /**
      * Tier marks baked into the station, as fractions of the tile.
      *
      * A row of pips low on the hex, one per tier, plus a core that grows and
@@ -269,6 +277,8 @@ export const DEEP_FIELD: Theme = {
     glowAlpha: 0.22,
     haloRatio: 1.9,
     haloAlpha: 0.22,
+    plateWidth: 3.2,
+    plateSeam: 0.62,
     pipRadius: 0.045,
     pipRowY: 0.795,
     pipSpacing: 0.15,

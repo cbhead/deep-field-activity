@@ -66,6 +66,7 @@ interface FloatingNumber {
   text: Text;
   life: number;
   ttl: number;
+  vx: number;
   vy: number;
 }
 
@@ -156,7 +157,7 @@ export class Effects {
         const text = new Text({ text: label, style: NUMBER_STYLE });
         text.anchor.set(0.5, 1);
         this.numberLayer.addChild(text);
-        slot = { text, life: 0, ttl: 0.7, vy: -26 };
+        slot = { text, life: 0, ttl: 0.7, vx: 0, vy: -26 };
         this.numbers.push(slot);
       }
     }
@@ -165,7 +166,20 @@ export class Effects {
     slot.text.tint = tint;
     slot.text.alpha = 1;
     slot.text.visible = true;
-    slot.text.position.set(tileX * TILE_PX, tileY * TILE_PX - 8);
+    // Scattered, not stacked. Rapid fire on one contact used to drop every
+    // number on the same pixel column, which armour turned from untidy into
+    // wrong: the reading the player now has to make is "−3 here, −8 there", and
+    // a pile of overlapping glyphs is exactly the reading it prevents. An
+    // initial offset separates numbers that spawn on the same frame; the
+    // divergent drift keeps them apart as they rise.
+    //
+    // `Math.random` is correct here — see the file note. This is presentation
+    // scatter and must never touch the seeded stream.
+    slot.vx = (Math.random() - 0.5) * 34;
+    slot.text.position.set(
+      tileX * TILE_PX + (Math.random() - 0.5) * 14,
+      tileY * TILE_PX - 8 - Math.random() * 6,
+    );
     slot.life = 0;
     slot.ttl = 0.7;
   }
@@ -277,6 +291,7 @@ export class Effects {
       if (n.life >= n.ttl) continue;
       n.life += dt;
       const k = n.life / n.ttl;
+      n.text.x += n.vx * dt;
       n.text.y += n.vy * dt;
       n.text.alpha = 1 - k * k;
       if (n.life >= n.ttl) n.text.visible = false;

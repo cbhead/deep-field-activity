@@ -20,9 +20,18 @@ export interface Textures {
   blocked: Texture;
   /**
    * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
-   * GPU and keeps every creep on one texture, hence one draw call.
+   * GPU and keeps every unarmoured creep on one texture, hence one draw call.
    */
   creep: Texture;
+  /**
+   * The same contact with a plated hull, for any type carrying armour.
+   *
+   * Two textures means at most two batches for the contact layer however many
+   * are alive — the property that mattered was never "exactly one texture" but
+   * "not one per entity", and this keeps that. The towers layer already made
+   * the same trade for tiers.
+   */
+  creepPlated: Texture;
   /**
    * One bake per tier, indexed `tier - 1`. Baked neutral and tinted per tower
    * type; `towers[0]` doubles as the build ghost, since placement is always Mk I.
@@ -234,23 +243,86 @@ function drawTierPips(g: Graphics, tier: number): void {
   }
 }
 
-export function createTextures(renderer: Renderer): Textures {
-  const { board, shape } = THEME;
+/** A flat-top hexagon as the flat coordinate list `Graphics.poly` takes. */
+function hexagon(cx: number, cy: number, r: number): number[] {
+  const pts: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i;
+    pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  return pts;
+}
+
+/**
+ * A contact, plain or plated.
+ *
+ * **Armour is a silhouette rather than an overlay, and that is a decision.**
+ * The gravity slow already owns the ring and the overshield owns the band above
+ * the health bar — `THEME.fx.shield` says why in as many words: two cool rings
+ * around one contact is a puzzle, not a readout. Shape was the one axis no
+ * contact used, every type until now being the same circle at a different tint
+ * and scale.
+ *
+ * It is also right on the merits. Slow and shield are *states a contact is in*,
+ * which come and go and so belong to transient decoration; armour is a
+ * permanent property of the type. The player needs to read it before firing, in
+ * a crowd, at 4x — and a silhouette survives all three where a third ring
+ * would not.
+ *
+ * Both variants must bake to the same square frame: `worldView` scales every
+ * contact by `def.radius / CREEP_BAKE_RADIUS` against one assumed frame, so a
+ * plated texture that bounded differently would silently sit at the wrong size.
+ * The halo circle is what fixes that frame, which is why it is drawn even when
+ * a theme has turned it invisible — a hexagon's bounding box is not square, so
+ * something else has to set the bounds.
+ */
+function drawCreep(g: Graphics, plated: boolean): void {
+  const { shape } = THEME;
 
   // The creep texture is baked larger than the creep so the halo has somewhere
   // to live. The *core* stays at CREEP_BAKE_RADIUS, which is what worldView
   // scales against, so the glow spills outside the hitbox without enlarging it.
   const core = CREEP_BAKE_RADIUS * TILE_PX;
   const outer = core * Math.max(1, shape.glowRatio);
+  const r = core - 1;
+
+  // Drawn even when invisible: `generateTexture` measures geometry, not visible
+  // pixels, so a zero-alpha circle still fixes the frame.
+  const halo = shape.glowAlpha > 0 && shape.glowRatio > 1;
+  g.circle(outer, outer, outer).fill({
+    color: BAKE_NEUTRAL,
+    alpha: halo ? shape.glowAlpha : 0,
+  });
+
+  if (!plated) {
+    g.circle(outer, outer, r)
+      .fill(BAKE_NEUTRAL)
+      .stroke({ width: 2, color: shape.outline, alpha: shape.outlineAlpha });
+    return;
+  }
+
+  g.poly(hexagon(outer, outer, r))
+    .fill(BAKE_NEUTRAL)
+    .stroke({ width: shape.plateWidth, color: shape.outline, alpha: shape.outlineAlpha });
+  // A seam inside the rim, so the hull reads as plate laid over something
+  // rather than as a flat token that happens to have six sides.
+  g.poly(hexagon(outer, outer, r * shape.plateSeam)).stroke({
+    width: 1,
+    color: shape.outline,
+    alpha: shape.outlineAlpha * 0.8,
+  });
+}
+
+export function createTextures(renderer: Renderer): Textures {
+  const { board, shape } = THEME;
 
   return {
     creep: bake(renderer, (g) => {
-      if (shape.glowAlpha > 0 && shape.glowRatio > 1) {
-        g.circle(outer, outer, outer).fill({ color: BAKE_NEUTRAL, alpha: shape.glowAlpha });
-      }
-      g.circle(outer, outer, core - 1)
-        .fill(BAKE_NEUTRAL)
-        .stroke({ width: 2, color: shape.outline, alpha: shape.outlineAlpha });
+      drawCreep(g, false);
+    }),
+
+    creepPlated: bake(renderer, (g) => {
+      drawCreep(g, true);
     }),
 
     towers: Array.from({ length: BALANCE.upgrade.maxTier }, (_, i) =>
