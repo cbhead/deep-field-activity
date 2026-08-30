@@ -122,6 +122,25 @@ export interface TowerDef {
   /** Ceiling as a multiple of base damage. `1` means no ramp is possible. */
   readonly rampMax: number;
 
+  /**
+   * The effect upgrade path: what this station's third upgrade track improves,
+   * on top of the damage and range tracks every station shares.
+   *
+   * `perTier` is a set of additive deltas applied once per tier above Mk I, so
+   * the effect a station is *for* is the thing its effect path deepens — a
+   * Lance pierces further, a Singularity slows harder. Additive rather than
+   * multiplicative because most of these stats are counts and factors where
+   * "+1 jump" and "−6 points of slow factor" are the natural authoring units.
+   *
+   * The first key is the headline: the inspector's effect button previews it,
+   * so put the stat a player is buying first and any supporting tweak after.
+   */
+  readonly effectUpgrade: {
+    /** Short label on the effect-path button, e.g. 'Pierce'. */
+    readonly name: string;
+    readonly perTier: Readonly<Partial<TowerStats>>;
+  };
+
   /** Number key that selects this tower. */
   readonly hotkey: string;
   /**
@@ -131,6 +150,34 @@ export interface TowerDef {
    */
   readonly unlockWave: number;
 }
+
+/**
+ * The combat numbers a station actually fights with — every stat an upgrade
+ * can move, plus the ones that ride along unchanged.
+ *
+ * A `Pick` of the def rather than a new shape so the two can never disagree
+ * field-by-field. The sim stores one of these per tower (recomputed from the
+ * def and the tower's tiers on every upgrade) and snapshots it onto each
+ * projectile at fire time, so a shot in flight lands with the stats it was
+ * fired with even if the station is upgraded or sold before impact.
+ */
+export type TowerStats = Pick<
+  TowerDef,
+  | 'range'
+  | 'damage'
+  | 'fireInterval'
+  | 'projectileSpeed'
+  | 'pierce'
+  | 'splashRadius'
+  | 'splashFalloff'
+  | 'slowFactor'
+  | 'slowSeconds'
+  | 'chainJumps'
+  | 'chainRange'
+  | 'chainFalloff'
+  | 'rampPerSecond'
+  | 'rampMax'
+>;
 
 /** One burst of identical enemies inside a wave. */
 export interface WaveGroup {

@@ -83,7 +83,8 @@ export class Overlay {
     const inspected = inspecting === null ? undefined : towerById(w, inspecting);
     const key =
       `${selected}:${hover === null ? '' : `${hover[0]},${hover[1]}`}:${reason}` +
-      `:${inspected ? `${inspected.id}.${inspected.range}` : ''}`;
+      // Range is in the key so buying the range path redraws the circle live.
+      `:${inspected ? `${inspected.id}.${inspected.stats.range}` : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -95,7 +96,7 @@ export class Overlay {
       const ix = inspected.x * TILE_PX;
       const iy = inspected.y * TILE_PX;
       this.gfx
-        .circle(ix, iy, inspected.range * TILE_PX)
+        .circle(ix, iy, inspected.stats.range * TILE_PX)
         .fill({ color: THEME.feedback.selected, alpha: THEME.feedback.rangeFillAlpha })
         .stroke({
           width: THEME.shape.strokeWidth,

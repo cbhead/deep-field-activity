@@ -308,6 +308,37 @@ kbd {
 .cell b { font-size: 13px; font-weight: 600; color: var(--text); }
 .cell b.accent { color: var(--accent-soft); }
 
+/* The three upgrade tracks, side by side. Each button is a miniature cell —
+   label, `now → next` preview, per-path pips, price — so the trade the player
+   is weighing (deepen which axis?) sits in one row of like-for-like options. */
+.paths { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.path {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 7px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slot) 75%, transparent);
+  text-align: left;
+}
+.path label {
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: inherit;
+}
+.path b { font-size: 11.5px; font-weight: 600; color: var(--accent-soft); white-space: nowrap; }
+.path em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--accent-bright); }
+.path .pips { margin: 2px 0 1px; }
+button.path:hover { border-color: var(--accent); }
+.path.poor { opacity: .5; }
+.path.poor em { color: var(--danger); }
+.path.maxed { cursor: default; }
+.path.maxed em { color: var(--dim); }
+
 .actions { display: flex; gap: 7px; align-items: center; }
 .actions .targeting { flex: 1; min-width: 0; }
 /* min-width:0 matters: without it each label sets a flex floor and the four

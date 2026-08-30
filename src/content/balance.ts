@@ -13,21 +13,34 @@ export const BALANCE = {
   sellRefund: 0.7,
 
   upgrade: {
-    /** Mk I → Mk III. The inspector draws one pip per tier. */
+    /**
+     * Per-path ceiling: every station has three independent tracks — damage,
+     * range, and its own effect (`TowerDef.effectUpgrade`) — and each runs
+     * Mk I → Mk III on its own. Fully specialising one track is two purchases;
+     * maxing a station outright is six.
+     */
     maxTier: 3,
     /**
-     * Cost to reach the next tier is `baseCost * costFactor * currentTier`, so
-     * the second upgrade costs twice the first. Escalating rather than flat
-     * because otherwise stacking tiers on one good tile always beats spreading
-     * coverage, and coverage is the more interesting decision.
+     * Cost of the next tier *in a path* is `baseCost * costFactor * pathTier`,
+     * so the second tier of any path costs twice the first. Escalation is
+     * per-path rather than per-tower on purpose: deepening one track gets
+     * expensive, while the first tier of a different track stays cheap — which
+     * makes "broaden this station or specialise it" a real decision on top of
+     * the existing "stack this tile or spread coverage" one.
      */
     costFactor: 1.5,
-    /**
-     * Damage only. Range and fire rate stay put deliberately: an upgrade that
-     * grew reach would silently redraw the coverage map, and the whole appeal
-     * of upgrading a *specific* tower is that you already chose its position.
-     */
+    /** Damage multiplier per damage-path tier: ×1, ×1.5, ×2.25. */
     damageFactor: 1.5,
+    /**
+     * Range multiplier per range-path tier: ×1, ×1.15, ×1.32.
+     *
+     * Deliberately gentler than damage. Range used to be excluded from
+     * upgrades entirely because growing reach silently redraws the coverage
+     * map — now that it is buyable, the reach circle preview is what keeps it
+     * honest, and the factor is kept small because range compounds: it buys
+     * time on target *and* new route tiles at once. Sweep before raising it.
+     */
+    rangeFactor: 1.15,
   },
 
   /**

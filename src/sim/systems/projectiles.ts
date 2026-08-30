@@ -1,6 +1,5 @@
 import { ENEMIES } from '../../content/enemies.ts';
-import { TOWERS } from '../../content/towers.ts';
-import type { TowerDef } from '../../content/types.ts';
+import type { TowerStats } from '../../content/types.ts';
 import { damageCreep } from '../damage.ts';
 import type { Creep, EntityId, Projectile, Tower } from '../types.ts';
 import { towerById, type World } from '../world.ts';
@@ -43,9 +42,12 @@ export function stepProjectiles(w: World, dt: number): void {
       continue;
     }
 
-    const def = TOWERS[p.defId];
-    if (def.pierce > 0) stepPiercing(w, p, def, dt);
-    else stepHoming(w, p, def, dt);
+    // The snapshot taken at fire time, not the def and not the live station:
+    // effects are upgradeable now, and a shot already in the air lands with
+    // the behaviour it was fired with.
+    const s = p.stats;
+    if (s.pierce > 0) stepPiercing(w, p, s, dt);
+    else stepHoming(w, p, s, dt);
   }
 }
 
@@ -56,7 +58,7 @@ export function stepProjectiles(w: World, dt: number): void {
  * means a shot never vanishes mid-air — which reads as a rendering bug even
  * though the damage outcome is identical.
  */
-function stepHoming(w: World, p: Projectile, def: TowerDef, dt: number): void {
+function stepHoming(w: World, p: Projectile, s: TowerStats, dt: number): void {
   if (!p.target.dead) {
     p.tx = p.target.x;
     p.ty = p.target.y;
@@ -82,9 +84,9 @@ function stepHoming(w: World, p: Projectile, def: TowerDef, dt: number): void {
   // nothing and the damage still lands, which is the right outcome.
   const source = towerById(w, p.towerId);
   // damageCreep no-ops on an already-dead contact, so a wasted shot is free.
-  hit(w, p.target, p.damage, def, source);
-  if (def.splashRadius > 0) detonate(w, p, def, source);
-  if (def.chainJumps > 0) chain(w, p, def, source);
+  hit(w, p.target, p.damage, s, source);
+  if (s.splashRadius > 0) detonate(w, p, s, source);
+  if (s.chainJumps > 0) chain(w, p, s, source);
 }
 
 /**
@@ -94,7 +96,7 @@ function stepHoming(w: World, p: Projectile, def: TowerDef, dt: number): void {
  * shot crosses the station's whole reach rather than stopping where the first
  * contact happened to be standing.
  */
-function stepPiercing(w: World, p: Projectile, def: TowerDef, dt: number): void {
+function stepPiercing(w: World, p: Projectile, s: TowerStats, dt: number): void {
   const fromX = p.x;
   const fromY = p.y;
 
@@ -129,7 +131,7 @@ function stepPiercing(w: World, p: Projectile, def: TowerDef, dt: number): void 
     if (segmentDistanceSq(c.x, c.y, fromX, fromY, p.x, p.y) > r * r) continue;
 
     p.hits.push(c.id);
-    hit(w, c, p.damage, def, source);
+    hit(w, c, p.damage, s, source);
 
     if (p.pierce <= 0) {
       p.dead = true;
@@ -140,9 +142,9 @@ function stepPiercing(w: World, p: Projectile, def: TowerDef, dt: number): void 
 }
 
 /** Damage plus any on-hit status. The one place both are applied together. */
-function hit(w: World, c: Creep, amount: number, def: TowerDef, source: Tower | undefined): void {
+function hit(w: World, c: Creep, amount: number, s: TowerStats, source: Tower | undefined): void {
   damageCreep(w, c, amount, source);
-  applySlow(c, def);
+  applySlow(c, s);
 }
 
 /**
@@ -151,8 +153,8 @@ function hit(w: World, c: Creep, amount: number, def: TowerDef, source: Tower | 
  * `Math.sqrt` is fine here where it would not be in targeting: this runs once
  * per contact inside the blast at the instant of impact, not every tick.
  */
-function detonate(w: World, p: Projectile, def: TowerDef, source: Tower | undefined): void {
-  const r = def.splashRadius;
+function detonate(w: World, p: Projectile, s: TowerStats, source: Tower | undefined): void {
+  const r = s.splashRadius;
   const r2 = r * r;
 
   // Announced before the damage loop, and unconditionally: a detonation that
@@ -169,8 +171,8 @@ function detonate(w: World, p: Projectile, def: TowerDef, source: Tower | undefi
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
 
-    const falloff = 1 - (Math.sqrt(d2) / r) * (1 - def.splashFalloff);
-    hit(w, c, p.damage * falloff, def, source);
+    const falloff = 1 - (Math.sqrt(d2) / r) * (1 - s.splashFalloff);
+    hit(w, c, p.damage * falloff, s, source);
   }
 }
 
@@ -191,14 +193,14 @@ function detonate(w: World, p: Projectile, def: TowerDef, source: Tower | undefi
  * hundred contacts, a few times a second. `Math.sqrt` is avoided for the same
  * reason as everywhere else, by comparing squared distances.
  */
-function chain(w: World, p: Projectile, def: TowerDef, source: Tower | undefined): void {
+function chain(w: World, p: Projectile, s: TowerStats, source: Tower | undefined): void {
   const struck: EntityId[] = [p.target.id];
   let fromX = p.x;
   let fromY = p.y;
   let damage = p.damage;
-  const reach2 = def.chainRange * def.chainRange;
+  const reach2 = s.chainRange * s.chainRange;
 
-  for (let jump = 0; jump < def.chainJumps; jump++) {
+  for (let jump = 0; jump < s.chainJumps; jump++) {
     let best: Creep | undefined;
     let bestD2 = reach2;
 
@@ -218,8 +220,8 @@ function chain(w: World, p: Projectile, def: TowerDef, source: Tower | undefined
     // loop would just re-scan and re-fail `chainJumps` times.
     if (best === undefined) return;
 
-    damage *= def.chainFalloff;
-    hit(w, best, damage, def, source);
+    damage *= s.chainFalloff;
+    hit(w, best, damage, s, source);
     struck.push(best.id);
     fromX = best.x;
     fromY = best.y;
@@ -233,11 +235,11 @@ function chain(w: World, p: Projectile, def: TowerDef, source: Tower | undefined
  * pair of cheap stations into a permanent stop, which is the classic way a
  * tower defense accidentally solves itself.
  */
-function applySlow(c: Creep, def: TowerDef): void {
-  if (def.slowSeconds <= 0 || def.slowFactor >= 1) return;
+function applySlow(c: Creep, s: TowerStats): void {
+  if (s.slowSeconds <= 0 || s.slowFactor >= 1) return;
 
-  if (c.slowTimer <= 0 || def.slowFactor < c.slowFactor) c.slowFactor = def.slowFactor;
-  c.slowTimer = Math.max(c.slowTimer, def.slowSeconds);
+  if (c.slowTimer <= 0 || s.slowFactor < c.slowFactor) c.slowFactor = s.slowFactor;
+  c.slowTimer = Math.max(c.slowTimer, s.slowSeconds);
   // The ring reads `slowTimer / slowMax`, so the denominator has to grow with a
   // refresh that extended the slow — otherwise a re-hit would show an arc
   // stuck at full and the countdown would stop meaning anything.

@@ -14,6 +14,7 @@ import { hashSeed, formatSeed } from './sim/util/rng.ts';
 import { DEFAULT_RULES, resolveRules, type Rules } from './sim/rules.ts';
 import { createWorld, type World } from './sim/world.ts';
 import { grade } from './sim/analysis.ts';
+import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
 import { createMenuScreen } from './ui/menuScreen.ts';
 import { createLoop } from './app/loop.ts';
@@ -168,7 +169,7 @@ async function main(): Promise<void> {
                 };
                 // The layout rides along only when it changed — most frames
                 // carry three numbers, a build frame carries the board.
-                const pins = world.towers.map((t) => ({ c: t.col, r: t.row, k: t.defId, tier: t.tier }));
+                const pins = world.towers.map((t) => ({ c: t.col, r: t.row, k: t.defId, tier: visualTier(t) }));
                 const enc = JSON.stringify(pins);
                 if (enc !== sentPins) {
                   sentPins = enc;

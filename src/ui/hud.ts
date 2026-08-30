@@ -1,6 +1,6 @@
 import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
-import type { TowerDef } from '../content/types.ts';
+import type { TowerStats } from '../content/types.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import type { UiState } from '../app/uiState.ts';
 import {
@@ -12,9 +12,17 @@ import {
   toughestArmour,
   formatDamage,
 } from '../sim/analysis.ts';
-import { sellValue, upgradeCost, isUnlocked, damageAtTier } from '../sim/build.ts';
+import { sellValue, upgradeCost, isUnlocked, nextStats, visualTier } from '../sim/build.ts';
 import { planWave, waveCount } from '../sim/wavePlan.ts';
-import { TARGET_MODES, type Command, type SimEvent, type TargetMode, type Tower } from '../sim/types.ts';
+import {
+  TARGET_MODES,
+  UPGRADE_PATHS,
+  type Command,
+  type SimEvent,
+  type TargetMode,
+  type Tower,
+  type UpgradePath,
+} from '../sim/types.ts';
 import { effectiveDamage } from '../sim/damage.ts';
 import { towerById, type World } from '../sim/world.ts';
 import { stationIcon, tierPips } from './icons.ts';
@@ -147,7 +155,13 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
         ports.campaign?.next();
         break;
       case 'upgrade':
-        if (ui.inspecting !== null) ports.dispatch({ type: 'upgradeTower', id: ui.inspecting });
+        if (ui.inspecting !== null) {
+          ports.dispatch({
+            type: 'upgradeTower',
+            id: ui.inspecting,
+            path: data['path'] as UpgradePath,
+          });
+        }
         break;
       case 'sell':
         if (ui.inspecting !== null) {
@@ -289,7 +303,9 @@ function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
   return [
     ui.deckOpen ? 'o' : 'c',
     ui.selected ?? '-',
-    inspected ? `${inspected.id}:${inspected.tier}:${inspected.targeting}:${inspected.kills}` : '-',
+    inspected
+      ? `${inspected.id}:${inspected.tiers.damage}${inspected.tiers.range}${inspected.tiers.effect}:${inspected.targeting}:${inspected.kills}`
+      : '-',
     // Affordability of every slot, plus the two buttons the inspector prices.
     w.money,
     s.index,
@@ -382,12 +398,14 @@ function stat(label: string, value: string, cls = ''): string {
  * every station shares and are worth comparing side by side, where the special
  * is exactly the thing that has no counterpart to compare against.
  */
-function mechanics(d: TowerDef): string {
+function mechanics(d: TowerStats): string {
   const parts: string[] = [];
   if (d.pierce > 0) parts.push(`Passes through ${d.pierce} more`);
   if (d.splashRadius > 0) parts.push(`Blast ${d.splashRadius.toFixed(1)} tiles`);
   if (d.slowFactor < 1) {
-    parts.push(`Slows to ${Math.round(d.slowFactor * 100)}% for ${d.slowSeconds}s`);
+    // toFixed, because upgraded values are sums of floats and `1.2000000000002s`
+    // is not a stat, it is a bug report.
+    parts.push(`Slows to ${Math.round(d.slowFactor * 100)}% for ${d.slowSeconds.toFixed(1)}s`);
   }
   if (d.chainJumps > 0) {
     parts.push(`Jumps to ${d.chainJumps} more within ${d.chainRange.toFixed(1)} tiles`);
@@ -397,7 +415,7 @@ function mechanics(d: TowerDef): string {
     // numbers a placement decision turns on — "×3.5" alone says nothing about
     // whether anything on this board stands still long enough to see it.
     const seconds = (d.rampMax - 1) / d.rampPerSecond;
-    parts.push(`Ramps to ×${d.rampMax} over ${seconds.toFixed(1)}s on one target`);
+    parts.push(`Ramps to ×${Number(d.rampMax.toFixed(2))} over ${seconds.toFixed(1)}s on one target`);
   }
   return parts.join(' · ');
 }
@@ -418,37 +436,106 @@ function renderArmed(id: TowerId): string {
 
 function renderInspector(w: World, t: Tower): string {
   const d = TOWERS[t.defId];
-  const cost = upgradeCost(t);
-  const next = cost === null ? null : damageAtTier(t.defId, t.tier + 1);
+  const s = t.stats;
+  const nextDamage = nextStats(t, 'damage')?.damage ?? null;
 
   const modes = TARGET_MODES.map(
     (m) =>
       `<button data-act="target" data-mode="${m}" class="${t.targeting === m ? 'on' : ''}">${TARGET_LABEL[m]}</button>`,
   ).join('');
 
-  const upgrade =
-    cost === null
-      ? `<span class="btn flat">Max tier</span>`
-      : `<button class="btn primary${w.money < cost ? ' poor' : ''}" data-act="upgrade">Upgrade $${cost}</button>`;
-
   return (
     `<div class="head t-${t.defId}">${stationIcon(28)}` +
-    `<b>${d.name} · Mk ${'I'.repeat(t.tier)}</b>` +
+    `<b>${d.name} · Mk ${'I'.repeat(visualTier(t))}</b>` +
     `<span class="blurb">tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} dmg dealt</span>` +
-    tierPips(t.tier, BALANCE.upgrade.maxTier) +
     `</div>` +
-    `<div class="cells">${stat(
-      'Dmg',
-      next === null ? String(t.damage) : `${t.damage} → ${next}`,
-      'accent',
-    )}${stat('Rate', (1 / t.fireInterval).toFixed(1))}${stat(
-      'Rng',
-      t.range.toFixed(1),
-    )}${stat('Kills', String(t.kills))}</div>` +
-    renderArmourLine(w, t, next) +
+    // Current values only — each path button carries its own `now → next`
+    // preview, so an arrow here would say the same thing twice.
+    `<div class="cells">${stat('Dmg', String(s.damage), 'accent')}${stat(
+      'Rate',
+      (1 / s.fireInterval).toFixed(1),
+    )}${stat('Rng', s.range.toFixed(1))}${stat('Kills', String(t.kills))}</div>` +
+    // Live stats, not the def: this line is where an effect purchase becomes
+    // visible in numbers, including the secondary dial the button omits.
+    `<div class="special">${mechanics(s)}</div>` +
+    renderArmourLine(w, t, nextDamage) +
+    `<div class="paths">${renderPathButtons(w, t)}</div>` +
     `<div class="actions"><div class="seg targeting">${modes}</div>` +
-    `${upgrade}<button class="btn" data-act="sell">Sell +$${sellValue(t)}</button></div>`
+    `<button class="btn" data-act="sell">Sell +$${sellValue(t)}</button></div>`
   );
+}
+
+/**
+ * The three upgrade tracks, one button each: damage and range are shared
+ * axes, the third is whatever `effectUpgrade` says this station deepens.
+ * Every preview is computed by `nextStats` — the same function the purchase
+ * runs — so the button can never promise a number the sim won't deliver.
+ */
+function renderPathButtons(w: World, t: Tower): string {
+  return UPGRADE_PATHS.map((path) => {
+    const cost = upgradeCost(t, path);
+    const next = nextStats(t, path);
+    const { label, value } = pathPreview(t, path, next);
+    const pips = tierPips(t.tiers[path], BALANCE.upgrade.maxTier);
+
+    if (cost === null) {
+      return `<span class="path maxed"><label>${label}</label><b>${value}</b>${pips}<em>Max</em></span>`;
+    }
+    return (
+      `<button class="path${w.money < cost ? ' poor' : ''}" data-act="upgrade" data-path="${path}">` +
+      `<label>${label}</label><b>${value}</b>${pips}<em>$${cost}</em></button>`
+    );
+  }).join('');
+}
+
+function pathPreview(
+  t: Tower,
+  path: UpgradePath,
+  next: TowerStats | null,
+): { label: string; value: string } {
+  const s = t.stats;
+  if (path === 'damage') {
+    return {
+      label: 'Damage',
+      value: next === null ? String(s.damage) : `${s.damage} → ${next.damage}`,
+    };
+  }
+  if (path === 'range') {
+    return {
+      label: 'Range',
+      value: next === null ? s.range.toFixed(1) : `${s.range.toFixed(1)} → ${next.range.toFixed(1)}`,
+    };
+  }
+
+  // The effect button previews the *headline* stat — the first key in
+  // `perTier`. A secondary dial (Singularity's duration, Filament's spin-up)
+  // shows up in the mechanics line instead; two arrows on one small button
+  // read as noise.
+  const d = TOWERS[t.defId];
+  const key = Object.keys(d.effectUpgrade.perTier)[0] as keyof TowerStats;
+  return {
+    label: d.effectUpgrade.name,
+    value:
+      next === null
+        ? effectValue(key, s[key])
+        : `${effectValue(key, s[key])} → ${effectValue(key, next[key])}`,
+  };
+}
+
+/** Compact display for an effect path's headline stat. */
+function effectValue(key: keyof TowerStats, v: number): string {
+  switch (key) {
+    case 'slowFactor':
+      return `${Math.round(v * 100)}%`;
+    case 'splashRadius':
+    case 'chainRange':
+      return v.toFixed(1);
+    case 'rampMax':
+      return `×${Number(v.toFixed(2))}`;
+    default:
+      // Counts (pierce, chain jumps): sums of integers, safe to print raw.
+      return String(v);
+  }
 }
 
 /**
@@ -468,9 +555,9 @@ function renderArmourLine(w: World, t: Tower, next: number | null): string {
   const ref = toughestArmour(w);
   if (ref === null) return '';
 
-  const now = effectiveDamage(t.damage, ref.armor);
+  const now = effectiveDamage(t.stats.damage, ref.armor);
   const after = next === null ? null : effectiveDamage(next, ref.armor);
-  const kept = now / t.damage;
+  const kept = now / t.stats.damage;
 
   // Flagged past half, so "this is the wrong tool for that" reads without the
   // player doing the division.

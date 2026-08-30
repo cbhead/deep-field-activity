@@ -15,7 +15,7 @@ import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
-import { damageAtTier, placementError, upgradeCost } from '../src/sim/build.ts';
+import { damageAtTier, placementError, upgradeCost, visualTier } from '../src/sim/build.ts';
 import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
 import type { TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
@@ -816,38 +816,91 @@ section('stations — upgrade, sell, targeting');
 
   const t = w.towers[0]!;
   const base = TOWERS.lance;
-  check(t.tier === 1, 'a new station is Mk I');
+  check(
+    t.tiers.damage === 1 && t.tiers.range === 1 && t.tiers.effect === 1,
+    'a new station is Mk I on all three paths',
+  );
   check(t.spent === base.cost, 'and has its cost recorded', `$${t.spent}`);
   check(t.targeting === 'first', 'and targets the leader by default');
 
   const before = w.money;
-  const cost = upgradeCost(t)!;
-  w.commands.push({ type: 'upgradeTower', id: t.id });
+  const cost = upgradeCost(t, 'damage')!;
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
   stepWorld(w, DT);
-  check(t.tier === 2, 'upgrading raises the tier');
-  check(t.damage === damageAtTier('lance', 2), 'and the damage', `${base.damage} → ${t.damage}`);
+  check(t.tiers.damage === 2, 'upgrading a path raises that path');
+  check(
+    t.stats.damage === damageAtTier('lance', 2),
+    'and the damage',
+    `${base.damage} → ${t.stats.damage}`,
+  );
   check(w.money === before - cost, 'and charges exactly once', `−$${cost}`);
   check(t.spent === base.cost + cost, 'and adds to the sunk total', `$${t.spent}`);
 
-  // The escalating curve is what stops stacking one tile from dominating, so
+  // The escalating curve is what stops stacking one path from dominating, so
   // it is worth asserting rather than trusting the formula.
   check(
-    upgradeCost(t)! > cost,
-    'the next tier costs more than the last',
-    `$${cost} → $${upgradeCost(t)!}`,
+    upgradeCost(t, 'damage')! > cost,
+    'the next tier of a path costs more than the last',
+    `$${cost} → $${upgradeCost(t, 'damage')!}`,
   );
 
-  while (upgradeCost(t) !== null) {
+  // The paths are independent: buying one must not move the others' stats,
+  // costs, or tiers. This is the property the whole redesign is for.
+  check(
+    t.stats.range === base.range && t.stats.pierce === base.pierce,
+    'a damage purchase leaves range and effect untouched',
+  );
+  check(
+    upgradeCost(t, 'range')! === Math.round(base.cost * BALANCE.upgrade.costFactor),
+    'and the other paths still price from their own tier',
+    `$${upgradeCost(t, 'range')!}`,
+  );
+
+  const beforeRange = t.stats.range;
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'range' });
+  stepWorld(w, DT);
+  check(
+    t.stats.range > beforeRange && t.tiers.range === 2,
+    'a range purchase grows reach',
+    `${beforeRange.toFixed(2)} → ${t.stats.range.toFixed(2)}`,
+  );
+  check(t.stats.damage === damageAtTier('lance', 2), 'without touching damage');
+
+  const beforePierce = t.stats.pierce;
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'effect' });
+  stepWorld(w, DT);
+  check(
+    t.stats.pierce === beforePierce + TOWERS.lance.effectUpgrade.perTier.pierce!,
+    "an effect purchase deepens the station's mechanic",
+    `pierce ${beforePierce} → ${t.stats.pierce}`,
+  );
+  check(t.stats.damage === damageAtTier('lance', 2), 'and also leaves damage alone');
+
+  while (upgradeCost(t, 'damage') !== null) {
     w.money = 10_000;
-    w.commands.push({ type: 'upgradeTower', id: t.id });
+    w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
     stepWorld(w, DT);
   }
-  check(t.tier === BALANCE.upgrade.maxTier, 'tiers stop at the ceiling', `Mk ${t.tier}`);
+  check(
+    t.tiers.damage === BALANCE.upgrade.maxTier,
+    'a path stops at the ceiling',
+    `damage Mk ${t.tiers.damage}`,
+  );
+  check(
+    upgradeCost(t, 'effect') !== null,
+    'while the other paths remain buyable',
+    `effect next: $${upgradeCost(t, 'effect')!}`,
+  );
+  check(
+    visualTier(t) === BALANCE.upgrade.maxTier,
+    'and the art tier is capped at the baked set',
+    `Mk ${visualTier(t)}`,
+  );
 
   const moneyAtMax = w.money;
-  w.commands.push({ type: 'upgradeTower', id: t.id });
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
   stepWorld(w, DT);
-  check(w.money === moneyAtMax, 'and a further upgrade is refused, not charged');
+  check(w.money === moneyAtMax, 'a purchase past the ceiling is refused, not charged');
   check(
     w.events.some((e) => e.type === 'towerActionRejected' && e.reason === 'maxTier'),
     'with a reason, not silence',
@@ -862,7 +915,7 @@ section('stations — upgrade, sell, targeting');
   stepWorld(w, DT);
   const t = w.towers[0]!;
   w.money = 1000;
-  w.commands.push({ type: 'upgradeTower', id: t.id });
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
   stepWorld(w, DT);
 
   const expected = Math.floor(t.spent * BALANCE.sellRefund);

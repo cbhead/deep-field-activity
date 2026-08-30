@@ -1,5 +1,4 @@
-import { TOWERS } from '../../content/towers.ts';
-import type { TowerDef } from '../../content/types.ts';
+import type { TowerStats } from '../../content/types.ts';
 import type { Creep, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
@@ -38,7 +37,7 @@ export function fireTowers(w: World, dt: number): void {
       continue;
     }
 
-    const def = TOWERS[t.defId];
+    const s = t.stats;
 
     // Focus advances here rather than every tick, and that is deliberate.
     // Re-targeting every tick is affordable; doing it for every station
@@ -47,18 +46,22 @@ export function fireTowers(w: World, dt: number): void {
     // next one. Adding the interval that just elapsed gives the same answer
     // sampling continuously would, for a fraction of the work.
     if (t.focusId === best.id) {
-      t.focusTime = Math.min(t.focusTime + def.fireInterval, rampSeconds(def));
+      t.focusTime = Math.min(t.focusTime + s.fireInterval, rampSeconds(s));
     } else {
       t.focusId = best.id;
       t.focusTime = 0;
     }
 
-    const aim = aimPoint(t, best, def.pierce > 0);
+    const aim = aimPoint(t, best, s.pierce > 0);
 
     w.projectiles.push({
       id: w.nextId++,
       defId: t.defId,
       towerId: t.id,
+      // The station's current stats, carried whole: impact behaviour reads the
+      // shot's snapshot, not the def, which is what lets the effect path change
+      // what a station *does* rather than only how hard it hits.
+      stats: s,
       x: t.x,
       y: t.y,
       ox: t.x,
@@ -66,15 +69,12 @@ export function fireTowers(w: World, dt: number): void {
       target: best,
       tx: aim.x,
       ty: aim.y,
-      speed: t.projectileSpeed,
+      speed: s.projectileSpeed,
       // The ramp multiplies the tier's damage rather than replacing it, so an
       // upgraded Filament ramps from a higher floor to a higher ceiling and the
       // two systems stay independent.
-      damage: t.damage * rampFactor(t, def),
-      // Pierce is a property of the station type, not of the tier: upgrading
-      // raises damage only, so a Mk III Lance passes through the same number
-      // of contacts as a Mk I and simply hurts each of them more.
-      pierce: def.pierce,
+      damage: s.damage * rampFactor(t),
+      pierce: s.pierce,
       hits: [],
       age: 0,
       dead: false,
@@ -83,17 +83,18 @@ export function fireTowers(w: World, dt: number): void {
     // `+=`, not `=`. Assigning would round every tower's fire rate up to a
     // multiple of the tick, so a 0.5s interval would silently become 0.5167s
     // and every balance number would be quietly wrong.
-    t.cooldown += t.fireInterval;
+    t.cooldown += s.fireInterval;
   }
 }
 
 /**
  * Seconds of held focus needed to reach the ceiling. `0` for a station that
  * does not ramp, which is what keeps `focusTime` from drifting upward forever
- * on the four stations that never read it.
+ * on the four stations that never read it. Takes stats, not the def, because
+ * the effect path moves both ramp dials.
  */
-export const rampSeconds = (def: TowerDef): number =>
-  def.rampPerSecond > 0 ? (def.rampMax - 1) / def.rampPerSecond : 0;
+export const rampSeconds = (s: TowerStats): number =>
+  s.rampPerSecond > 0 ? (s.rampMax - 1) / s.rampPerSecond : 0;
 
 /**
  * Damage multiplier from held focus, `1` for everything that does not ramp.
@@ -103,8 +104,10 @@ export const rampSeconds = (def: TowerDef): number =>
  * HUD computing its own copy of this would drift from the simulation at exactly
  * the moment money is being spent. Same discipline as `effectiveDamage`.
  */
-export const rampFactor = (t: Tower, def: TowerDef): number =>
-  def.rampPerSecond > 0 ? Math.min(def.rampMax, 1 + t.focusTime * def.rampPerSecond) : 1;
+export const rampFactor = (t: Tower): number =>
+  t.stats.rampPerSecond > 0
+    ? Math.min(t.stats.rampMax, 1 + t.focusTime * t.stats.rampPerSecond)
+    : 1;
 
 /**
  * Where the shot is headed.
@@ -127,7 +130,7 @@ function aimPoint(t: Tower, target: Creep, piercing: boolean): { x: number; y: n
   // A contact standing exactly on the station has no bearing to extend along.
   if (d === 0) return { x: target.x, y: target.y };
 
-  return { x: t.x + (dx / d) * t.range, y: t.y + (dy / d) * t.range };
+  return { x: t.x + (dx / d) * t.stats.range, y: t.y + (dy / d) * t.stats.range };
 }
 
 /**
@@ -151,7 +154,7 @@ function score(mode: TargetMode, c: Creep, d2: number): number {
 }
 
 function pickTarget(w: World, t: Tower): Creep | undefined {
-  const r2 = t.range * t.range;
+  const r2 = t.stats.range * t.stats.range;
 
   /**
    * A ramping station holds its target while that target is alive and in reach.
@@ -167,7 +170,7 @@ function pickTarget(w: World, t: Tower): Creep | undefined {
    * scoped: only stations that actually ramp are sticky, so the default
    * behaviour of the other four is untouched.
    */
-  if (TOWERS[t.defId].rampPerSecond > 0 && t.focusId !== null) {
+  if (t.stats.rampPerSecond > 0 && t.focusId !== null) {
     for (const c of w.creeps) {
       if (c.dead || c.id !== t.focusId) continue;
       const dx = c.x - t.x;

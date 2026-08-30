@@ -65,7 +65,7 @@ export function coverage(w: World): Coverage {
     for (const t of w.towers) {
       const dx = c.x - t.x;
       const dy = c.y - t.y;
-      if (dx * dx + dy * dy <= t.range * t.range) return;
+      if (dx * dx + dy * dy <= t.stats.range * t.stats.range) return;
     }
     gaps.push(tile);
     positionSum += tiles.length > 1 ? i / (tiles.length - 1) : 0;

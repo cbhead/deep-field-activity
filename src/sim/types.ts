@@ -9,6 +9,7 @@
 
 import type { EnemyId } from '../content/enemies.ts';
 import type { TowerId } from '../content/towers.ts';
+import type { TowerStats } from '../content/types.ts';
 
 export interface Vec2 {
   x: number;
@@ -133,6 +134,22 @@ export type TargetMode = 'first' | 'last' | 'strong' | 'close';
 
 export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', 'close'];
 
+/**
+ * The three upgrade tracks every station carries, each tiered independently.
+ *
+ * `damage` and `range` are shared dials (`BALANCE.upgrade`); `effect` deepens
+ * whatever the station's identity is, per `TowerDef.effectUpgrade`. Three
+ * separate tracks rather than one ladder because "hit harder", "reach further"
+ * and "do the thing more" answer different problems, and a single ladder
+ * collapses them into one spend button.
+ */
+export type UpgradePath = 'damage' | 'range' | 'effect';
+
+export const UPGRADE_PATHS: readonly UpgradePath[] = ['damage', 'range', 'effect'];
+
+/** Per-path tier, all 1-based like the old single tier. Mk I is 1 everywhere. */
+export type TowerTiers = Record<UpgradePath, number>;
+
 export interface Tower {
   readonly id: EntityId;
   readonly defId: TowerId;
@@ -144,13 +161,19 @@ export interface Tower {
   readonly x: number;
   readonly y: number;
 
-  /** 1-based. Mk I is tier 1; `BALANCE.upgrade.maxTier` is the ceiling. */
-  tier: number;
+  /** Tier per upgrade path; `BALANCE.upgrade.maxTier` caps each independently. */
+  tiers: TowerTiers;
 
-  range: number;
-  damage: number;
-  fireInterval: number;
-  projectileSpeed: number;
+  /**
+   * Effective combat numbers for the current tiers.
+   *
+   * Recomputed and **replaced wholesale** by `upgradeTower` — never mutated in
+   * place. Projectiles hold a reference to the object they were fired with, so
+   * replacement is what makes that reference a true snapshot: a shot in flight
+   * lands with the stats of the station that fired it, even if the station is
+   * upgraded or sold before impact.
+   */
+  stats: TowerStats;
 
   targeting: TargetMode;
 
@@ -189,6 +212,15 @@ export interface Projectile {
    * find nothing rather than resurrect it.
    */
   readonly towerId: EntityId;
+
+  /**
+   * The firing station's stats at the moment of firing. Impact behaviour
+   * (splash, chain, slow, pierce budget) reads these rather than the static
+   * def, which is what lets upgrades change a station's effects — and because
+   * `upgradeTower` replaces the station's stats object instead of mutating it,
+   * this reference is a snapshot that survives the station being sold.
+   */
+  readonly stats: TowerStats;
 
   x: number;
   y: number;
@@ -244,7 +276,7 @@ export type Command =
   /** Send the next wave now, forfeiting the rest of the intermission. */
   | { type: 'startWave' }
   | { type: 'placeTower'; defId: TowerId; col: number; row: number }
-  | { type: 'upgradeTower'; id: EntityId }
+  | { type: 'upgradeTower'; id: EntityId; path: UpgradePath }
   | { type: 'sellTower'; id: EntityId }
   | { type: 'setTargeting'; id: EntityId; mode: TargetMode }
   /** Debug scaffolding: drop a single creep on the path. */
@@ -335,7 +367,8 @@ export type SimEvent =
   | { type: 'waveCleared'; wave: number; kills: number; bounty: number; leaked: number; reward: number }
   | { type: 'towerPlaced'; id: EntityId; col: number; row: number }
   | { type: 'buildRejected'; reason: PlacementError }
-  | { type: 'towerUpgraded'; id: EntityId; tier: number; cost: number }
+  /** `tier` is the new tier of the path that was bought. */
+  | { type: 'towerUpgraded'; id: EntityId; path: UpgradePath; tier: number; cost: number }
   | { type: 'towerSold'; id: EntityId; col: number; row: number; refund: number }
   | { type: 'towerActionRejected'; reason: TowerActionError }
   | { type: 'gameOver'; won: boolean };

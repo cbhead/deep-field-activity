@@ -37,13 +37,19 @@ export function applyCommands(w: World): void {
 
       case 'upgradeTower': {
         const t = towerById(w, cmd.id);
-        const reason = upgradeError(w, t);
+        const reason = upgradeError(w, t, cmd.path);
         if (reason !== null || t === undefined) {
           w.events.push({ type: 'towerActionRejected', reason: reason ?? 'noSuchTower' });
           break;
         }
-        const cost = upgradeTower(w, t);
-        w.events.push({ type: 'towerUpgraded', id: t.id, tier: t.tier, cost });
+        const cost = upgradeTower(w, t, cmd.path);
+        w.events.push({
+          type: 'towerUpgraded',
+          id: t.id,
+          path: cmd.path,
+          tier: t.tiers[cmd.path],
+          cost,
+        });
         break;
       }
 

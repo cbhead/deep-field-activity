@@ -1,5 +1,6 @@
 import { Sprite, type Container, type Texture } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
+import { visualTier } from '../sim/build.ts';
 import type { EntityId, SimEvent } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
@@ -78,20 +79,23 @@ export class WorldView {
     this.frame++;
 
     for (const t of w.towers) {
+      // Three independent upgrade paths collapse to one number for the art —
+      // `visualTier` is the mapping, shared with the Race-mode pins.
+      const tier = visualTier(t);
       let view = this.towers.get(t.id);
       if (view === undefined) {
-        const sprite = new Sprite(this.tierTexture(t.tier));
+        const sprite = new Sprite(this.tierTexture(tier));
         sprite.tint = THEME.towers[t.defId];
         sprite.position.set(t.col * TILE_PX, t.row * TILE_PX);
         this.layers.towers.addChild(sprite);
-        view = { sprite, seen: 0, tier: t.tier };
+        view = { sprite, seen: 0, tier };
         this.towers.set(t.id, view);
-      } else if (view.tier !== t.tier) {
+      } else if (view.tier !== tier) {
         // Swap the texture rather than rebuild the sprite: position, tint and
         // parent are all still correct, and every tier bakes to the same 40x40
         // frame so the silhouette does not move.
-        view.sprite.texture = this.tierTexture(t.tier);
-        view.tier = t.tier;
+        view.sprite.texture = this.tierTexture(tier);
+        view.tier = tier;
       }
       view.seen = this.frame;
     }

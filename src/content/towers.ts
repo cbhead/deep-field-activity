@@ -52,6 +52,9 @@ export const TOWERS = {
     chainFalloff: 1,
     rampPerSecond: 0,
     rampMax: 1,
+    // 2 → 3 → 4 contacts passed through. Pierce is the identity, so the effect
+    // path buys more of it — each tier makes a well-placed straight pay more.
+    effectUpgrade: { name: 'Pierce', perTier: { pierce: 1 } },
     hotkey: '1',
     unlockWave: 0,
   },
@@ -74,6 +77,10 @@ export const TOWERS = {
     chainFalloff: 1,
     rampPerSecond: 0,
     rampMax: 1,
+    // 0.8 → 1.05 → 1.3 tile blast. Radius rather than falloff because a wider
+    // ring is legible on the board — the blast event carries the real radius,
+    // so the drawn circle grows with the purchase.
+    effectUpgrade: { name: 'Blast', perTier: { splashRadius: 0.25 } },
     hotkey: '2',
     unlockWave: 0,
   },
@@ -98,6 +105,12 @@ export const TOWERS = {
     chainFalloff: 1,
     rampPerSecond: 0,
     rampMax: 1,
+    // 80% → 74% → 68% speed, held 0.9s → 1.2s → 1.5s. Both dials move a little
+    // rather than one a lot: a much lower factor alone approaches a stop (the
+    // classic way a slow breaks a tower defense), and duration alone is
+    // invisible under constant re-hits. slowFactor leads because it is the
+    // number the inspector previews.
+    effectUpgrade: { name: 'Slow', perTier: { slowFactor: -0.06, slowSeconds: 0.3 } },
     hotkey: '3',
     unlockWave: 0,
   },
@@ -130,6 +143,10 @@ export const TOWERS = {
     chainFalloff: 0.55,
     rampPerSecond: 0,
     rampMax: 1,
+    // 3 → 4 → 5 jumps. Jumps, not falloff: extra hops keep the "worse than
+    // Lance into a line, better into a scatter" identity, where softer falloff
+    // would creep toward beating Lance at its own condition.
+    effectUpgrade: { name: 'Chain', perTier: { chainJumps: 1 } },
     hotkey: '4',
     // Opens on the wave Motes first arrive. Every station unlocks alongside the
     // problem it answers, so the deck teaches the roster instead of the player
@@ -166,6 +183,11 @@ export const TOWERS = {
     // is the one outcome the roster must not have.
     rampPerSecond: 0.8,
     rampMax: 3,
+    // Ceiling ×3 → ×3.75 → ×4.5, spin-up 0.8 → 1.0 → 1.2/s. Both rise so time
+    // to the ceiling stays near 2.5s — a higher ceiling alone would mean a burn
+    // that never finishes charging against anything that dies. rampMax leads
+    // because the ceiling is the number the inspector previews.
+    effectUpgrade: { name: 'Ramp', perTier: { rampMax: 0.75, rampPerSecond: 0.2 } },
     hotkey: '5',
     /** Opens on the wave the first Monolith walks in. */
     unlockWave: 4,

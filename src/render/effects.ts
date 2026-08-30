@@ -1,5 +1,4 @@
 import { Container, Graphics, Text, type TextStyleOptions } from 'pixi.js';
-import { TOWERS } from '../content/towers.ts';
 import type { UiPrefs } from '../app/uiState.ts';
 import { formatDamage } from '../sim/analysis.ts';
 import type { SimEvent } from '../sim/types.ts';
@@ -294,7 +293,8 @@ export class Effects {
       // contacts or missed everything. The full line is the mechanic — it lies
       // across the contacts it hit, so "line them up" stops being folklore and
       // becomes something the board shows you.
-      if (TOWERS[p.defId].pierce > 0) {
+      // The shot's own snapshot, matching the flight branch in the sim.
+      if (p.stats.pierce > 0) {
         g.moveTo(p.ox * TILE_PX, p.oy * TILE_PX)
           .lineTo(p.x * TILE_PX, p.y * TILE_PX)
           .stroke({ width: 2, color: THEME.towers[p.defId], alpha: 0.42 });
@@ -387,9 +387,10 @@ export class Effects {
       // just switch targets and lose everything" — not about any single shot.
       // Putting it here also keeps the ramp out of the projectile, so the sim
       // carries no field that exists only to be drawn.
-      const def = TOWERS[t.defId];
-      if (def.rampPerSecond > 0 && t.focusTime > 0) {
-        const ceiling = (def.rampMax - 1) / def.rampPerSecond;
+      // Live stats, not the def: the effect path moves the ramp dials, and the
+      // arc must fill against the ceiling the station actually has.
+      if (t.stats.rampPerSecond > 0 && t.focusTime > 0) {
+        const ceiling = (t.stats.rampMax - 1) / t.stats.rampPerSecond;
         const charge = Math.min(1, t.focusTime / ceiling);
         const r = TILE_PX * 0.42;
         const start = -Math.PI / 2;
@@ -402,7 +403,7 @@ export class Effects {
 
       // Reach circles for every placed station, when the player asked for them.
       if (prefs.reachCircles === 'always') {
-        g.circle(t.x * TILE_PX, t.y * TILE_PX, t.range * TILE_PX).stroke({
+        g.circle(t.x * TILE_PX, t.y * TILE_PX, t.stats.range * TILE_PX).stroke({
           width: 1,
           color: THEME.towers[t.defId],
           alpha: 0.16,
