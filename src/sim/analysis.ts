@@ -124,7 +124,7 @@ export function toughestArmour(w: World): ArmourReference | null {
   }
   if (best !== null) return best;
 
-  for (const spawn of planWave(w.seed, w.wave.index)) {
+  for (const spawn of planWave(w.seed, w.wave.index, w.rules)) {
     const armor = ENEMIES[spawn.enemy].armor;
     if (armor > 0 && (best === null || armor > best.armor)) {
       best = { defId: spawn.enemy, armor, inbound: true };
@@ -145,7 +145,7 @@ export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 export function grade(w: World): Grade {
   if (w.phase !== 'won') return 'D';
   if (w.stats.leaks === 0 && w.time <= BALANCE.grade.perfectSeconds) return 'S';
-  const kept = w.lives / BALANCE.startingLives;
+  const kept = w.lives / w.rules.startingLives;
   // 0.85 rather than 0.9 so that losing three of twenty still reads as an A —
   // a clean run with one bad wave should not drop two grades.
   if (kept >= 0.85) return 'A';
@@ -166,7 +166,7 @@ export function nextGradeHint(w: World): string | null {
   const clock = formatClock(BALANCE.grade.perfectSeconds);
   const gap =
     w.stats.leaks === 0
-      ? `Hold all ${BALANCE.startingLives} lives and finish under ${clock}.`
+      ? `Hold all ${w.rules.startingLives} lives and finish under ${clock}.`
       : `Let nothing through — you leaked ${w.stats.leaks} this run — and finish under ${clock}.`;
   return `${gap} Sending waves early does both at once.`;
 }

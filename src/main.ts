@@ -7,13 +7,19 @@ import { Effects } from './render/effects.ts';
 import { tilesToPx } from './render/constants.ts';
 import { applyHudTheme } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
+import { CAMPAIGN, levelById, levelIndex, type LevelDef } from './content/levels.ts';
+import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from './content/difficulty.ts';
 import { parseMap } from './sim/util/grid.ts';
 import { hashSeed, formatSeed } from './sim/util/rng.ts';
+import { DEFAULT_RULES, resolveRules, type Rules } from './sim/rules.ts';
 import { createWorld, type World } from './sim/world.ts';
+import { grade } from './sim/analysis.ts';
+import { recordRun } from './app/progress.ts';
+import { createMenuScreen } from './ui/menuScreen.ts';
 import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
-import { createHud } from './ui/hud.ts';
+import { createHud, type CampaignPorts } from './ui/hud.ts';
 import { planWave, waveCount } from './sim/wavePlan.ts';
 import { BALANCE } from './content/balance.ts';
 import { serverUrl } from './net/NetClient.ts';
@@ -55,7 +61,7 @@ async function main(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const race = params.get('race');
   if (race === null) {
-    await startGame(mount, hudRoot, resolveSeed());
+    await startSinglePlayer(mount, hudRoot, params);
     return;
   }
 
@@ -156,9 +162,102 @@ async function main(): Promise<void> {
   });
 }
 
-async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number): Promise<{ world: World }> {
-  const map = parseMap(LEVEL01);
-  const world = createWorld(map, seed);
+/**
+ * The single-player front door.
+ *
+ * Three entries, and the order matters. `?level=` plays a named campaign level;
+ * `?seed=` alone still means "level 1 on this seed", which is what the plan
+ * documented and what the fairness gate and every bug report already use — a
+ * front door is not a reason to break a URL that works. Anything else opens the
+ * menu.
+ *
+ * Navigation between levels goes through the URL rather than tearing the game
+ * down in place, for the reason `restart` already reloads: a reload rebuilds the
+ * world and every renderer pool with no chance of a stale reference surviving,
+ * and it makes each run linkable for free.
+ */
+async function startSinglePlayer(
+  mount: HTMLElement,
+  hudRoot: HTMLElement,
+  params: URLSearchParams,
+): Promise<void> {
+  const named = params.get('level');
+  const level = named !== null ? levelById(named) : params.has('seed') ? CAMPAIGN[0] : undefined;
+
+  if (level === undefined) {
+    createMenuScreen(mount, {
+      onLaunch: (chosen, difficulty, seed) => {
+        location.search = runQuery(chosen, difficulty, seed);
+      },
+      onRace: () => {
+        location.search = '?race';
+      },
+    });
+    return;
+  }
+
+  const raw = params.get('difficulty');
+  const difficulty: DifficultyId =
+    raw !== null && Object.hasOwn(DIFFICULTIES, raw) ? (raw as DifficultyId) : DEFAULT_DIFFICULTY;
+
+  const index = levelIndex(level.id);
+  const nextLevel = CAMPAIGN[index + 1];
+
+  await startGame(mount, hudRoot, resolveSeed(), {
+    level,
+    rules: resolveRules(level, difficulty),
+    campaign: {
+      nextName: nextLevel?.name ?? null,
+      menu: () => {
+        location.search = '';
+      },
+      next: () => {
+        // Carrying the difficulty and dropping the seed is the useful default:
+        // the next sector should be as hard as the last one, on a fresh board.
+        if (nextLevel !== undefined) location.search = runQuery(nextLevel, difficulty, '');
+      },
+    },
+    onEnd: (w) => {
+      recordRun(
+        level.id,
+        difficulty,
+        {
+          grade: grade(w),
+          lives: w.lives,
+          startingLives: w.rules.startingLives,
+          seconds: w.time,
+          waves: w.wave.clearedThrough + 1,
+        },
+        w.phase === 'won',
+      );
+    },
+  });
+}
+
+function runQuery(level: LevelDef, difficulty: DifficultyId, seed: string): string {
+  const q = new URLSearchParams({ level: level.id, difficulty });
+  if (seed !== '') q.set('seed', seed);
+  return `?${q.toString()}`;
+}
+
+interface StartOptions {
+  level?: LevelDef;
+  rules?: Rules;
+  campaign?: CampaignPorts;
+  /** Fired once, the first frame the run is no longer playing. */
+  onEnd?: (w: World) => void;
+}
+
+async function startGame(
+  mount: HTMLElement,
+  hudRoot: HTMLElement,
+  seed: number,
+  opts: StartOptions = {},
+): Promise<{ world: World }> {
+  // Race mode passes neither, and gets the baseline game it has always played.
+  const map = parseMap(opts.level?.map ?? LEVEL01);
+  const rules = opts.rules ?? DEFAULT_RULES;
+  const world = createWorld(map, seed, rules);
   const ui = createUiState();
 
   const boardW = tilesToPx(map.cols);
@@ -194,12 +293,14 @@ async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number)
     restart: () => {
       location.reload();
     },
+    ...(opts.campaign === undefined ? {} : { campaign: opts.campaign }),
   });
 
   // main.ts is the only place that knows about both halves. The sim has no
   // reference to the view; the view only ever reads the world.
   let hudDue = 0;
   let lastRenderMs = performance.now();
+  let ended = false;
 
   const loop = createLoop(world, () => {
     const now = performance.now();
@@ -227,6 +328,14 @@ async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number)
       hudDue = now + HUD_INTERVAL_MS;
     }
 
+    // Once, on the frame the run settles. Reading it here rather than polling
+    // means the record is written from the same world state the victory card is
+    // about to describe, so the two can never disagree.
+    if (!ended && world.phase !== 'playing') {
+      ended = true;
+      opts.onEnd?.(world);
+    }
+
     app.render();
   });
 
@@ -249,7 +358,7 @@ async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number)
       // The N2 fairness gate: run this in two tabs of the same room and diff.
       // Byte-identical or the race is not fair.
       dumpWaves: (n = 20) =>
-        JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i))),
+        JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules))),
     };
   }
 

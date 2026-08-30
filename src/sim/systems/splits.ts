@@ -22,7 +22,7 @@ const SPREAD_TILES = 0.22;
 export function resolveSplits(w: World): void {
   for (const split of w.pendingSplits) {
     const parent = split.parent;
-    const stats = scaledStats(split.into, parent.wave);
+    const stats = scaledStats(split.into, parent.wave, w.rules);
 
     for (let i = 0; i < split.count; i++) {
       // Spread along the route rather than across it, so children stay on the

@@ -1,5 +1,6 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
+import { DEFAULT_RULES, type Rules } from './rules.ts';
 import type { PlannedSpawn } from './wavePlan.ts';
 import type {
   Command,
@@ -75,6 +76,12 @@ export interface WaveStats {
 export interface World {
   readonly seed: number;
   readonly map: MapDef;
+  /**
+   * Which arc this run is playing and how hard. Read by the spawner, the
+   * splitter and every screen that reports progress — carried on the World so
+   * none of them has to be told separately and then disagree.
+   */
+  readonly rules: Rules;
 
   /** Ticks elapsed. Integer, and the sim's only clock alongside `time`. */
   tick: number;
@@ -108,15 +115,16 @@ export interface World {
   nextId: EntityId;
 }
 
-export function createWorld(map: MapDef, seed: number): World {
+export function createWorld(map: MapDef, seed: number, rules: Rules = DEFAULT_RULES): World {
   return {
     seed,
     map,
+    rules,
     tick: 0,
     time: 0,
     phase: 'playing',
-    lives: BALANCE.startingLives,
-    money: BALANCE.startingMoney,
+    lives: rules.startingLives,
+    money: rules.startingMoney,
     wave: {
       index: 0,
       phase: 'intermission',

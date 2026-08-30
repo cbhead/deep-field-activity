@@ -16,7 +16,8 @@
     "check": "zsh scripts/check.sh",
     "server": "zsh scripts/server.sh",
     "play": "zsh scripts/play.sh",
-    "sweep": "zsh scripts/sweep.sh"
+    "sweep": "zsh scripts/sweep.sh",
+    "campaign": "zsh scripts/campaign.sh"
   },
   "dependencies": {
     "pixi.js": "^8.20.1",

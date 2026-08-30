@@ -46,6 +46,24 @@ export interface HudPorts {
   speed: { get(): number; set(v: number): void };
   togglePause(): void;
   restart(): void;
+
+  /**
+   * Campaign navigation, absent in Race mode.
+   *
+   * Optional because the end-of-run cards are shared: Race reaches the same
+   * defeat and victory screens, and there is no campaign to go back to from
+   * one. When this is absent the cards render exactly as they always did.
+   */
+  campaign?: CampaignPorts;
+}
+
+export interface CampaignPorts {
+  /** Back to the level select. */
+  menu(): void;
+  /** The following level's name, or null when this one ends the campaign. */
+  nextName: string | null;
+  /** Start the following level at the same difficulty. */
+  next(): void;
 }
 
 export interface Hud {
@@ -121,6 +139,12 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       case 'restart':
         ports.restart();
         break;
+      case 'menu':
+        ports.campaign?.menu();
+        break;
+      case 'next':
+        ports.campaign?.next();
+        break;
       case 'upgrade':
         if (ui.inspecting !== null) ports.dispatch({ type: 'upgradeTower', id: ui.inspecting });
         break;
@@ -182,7 +206,7 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
           breachLive ? `b${breachLives}` : ''
         }`,
         () =>
-          renderOverlay(w, ui, toastLive ? clearToast : null, breachLive ? breachLives : null),
+          renderOverlay(w, ui, toastLive ? clearToast : null, breachLive ? breachLives : null, ports.campaign),
       );
     },
   };
@@ -217,7 +241,7 @@ function topKey(w: World, speed: number, paused: boolean): string {
 
 function renderTop(w: World, speed: number, paused: boolean): string {
   const s = w.wave;
-  const total = waveCount();
+  const total = waveCount(w.rules);
   const cleared = Math.min(s.clearedThrough + 1, total);
 
   let label: string;
@@ -440,7 +464,7 @@ function renderNextContact(w: World): string {
     return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
   }
 
-  const plan = planWave(w.seed, s.index);
+  const plan = planWave(w.seed, s.index, w.rules);
   if (plan.length === 0) {
     return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
   }
@@ -493,9 +517,10 @@ function renderOverlay(
   ui: UiState,
   toast: Extract<SimEvent, { type: 'waveCleared' }> | null,
   breachLives: number | null,
+  campaign: CampaignPorts | undefined,
 ): string {
-  if (w.phase === 'lost') return renderDefeat(w);
-  if (w.phase === 'won') return renderVictory(w);
+  if (w.phase === 'lost') return renderDefeat(w, campaign);
+  if (w.phase === 'won') return renderVictory(w, campaign);
   if (ui.paused) return renderPaused(w, ui);
   // A breach outranks a clear: they can overlap when the last creep of a wave
   // is the one that got through, and the bad news is the news.
@@ -576,40 +601,68 @@ function renderPaused(w: World, ui: UiState): string {
   );
 }
 
-function renderDefeat(w: World): string {
+function renderDefeat(w: World, campaign: CampaignPorts | undefined): string {
   const cov = coverage(w);
   return (
     `<div class="scrim lost"></div><div class="card lost">` +
     `<span class="eyebrow danger">Sector lost</span>` +
     `<h2>The core went dark on wave ${w.wave.index + 1}</h2>` +
     `<div class="grid3">` +
-    `${bigStat('Waves held', `${Math.max(0, w.wave.clearedThrough + 1)} / ${waveCount()}`)}` +
+    `${bigStat('Waves held', `${Math.max(0, w.wave.clearedThrough + 1)} / ${waveCount(w.rules)}`)}` +
     `${bigStat('Contacts killed', String(w.stats.kills))}` +
     `${bigStat('Leaks', String(w.stats.leaks), 'danger')}` +
     `</div>` +
     `<div class="note danger"><span class="eyebrow danger">What broke</span>` +
     `<p>${describeGaps(cov)}</p></div>` +
-    `<button class="btn primary wide" data-act="restart">Retry sector</button>`
+    `<button class="btn primary wide" data-act="restart">Retry sector</button>` +
+    (campaign === undefined ? '' : `<button class="btn wide" data-act="menu">Choose another sector</button>`)
   );
 }
 
-function renderVictory(w: World): string {
+function renderVictory(w: World, campaign: CampaignPorts | undefined): string {
   const g = grade(w);
   const hint = nextGradeHint(w);
   return (
     `<div class="scrim won"></div><div class="card won">` +
     `<div class="head-row"><div><span class="eyebrow accent">Sector held</span>` +
-    `<h2>All ${waveCount()} waves turned back</h2></div>` +
+    `<h2>All ${waveCount(w.rules)} waves turned back</h2></div>` +
     `<span class="grade">${g}</span></div>` +
     `<div class="grid3">` +
-    `${bigStat('Lives kept', `${w.lives} / ${BALANCE.startingLives}`)}` +
+    `${bigStat('Lives kept', `${w.lives} / ${w.rules.startingLives}`)}` +
     `${bigStat('Contacts killed', String(w.stats.kills))}` +
     `${bigStat('Time', formatClock(w.time))}` +
     `</div>` +
     (hint === null
       ? ''
       : `<div class="note accent"><span class="eyebrow accent">Next grade up</span><p>${hint}</p></div>`) +
-    `<button class="btn primary wide" data-act="restart">Play again</button>`
+    victoryActions(campaign)
+  );
+}
+
+/**
+ * The buttons under a win.
+ *
+ * Whatever the player is most likely to want next is the primary, and that
+ * differs by where they are: mid-campaign it is the level they just unlocked,
+ * at the end of the campaign there is nothing to unlock and replaying for a
+ * better grade is the only thing left, and in Race mode none of this exists.
+ */
+function victoryActions(campaign: CampaignPorts | undefined): string {
+  if (campaign === undefined) {
+    return `<button class="btn primary wide" data-act="restart">Play again</button>`;
+  }
+  if (campaign.nextName === null) {
+    return (
+      `<div class="note accent"><span class="eyebrow accent">Campaign complete</span>` +
+      `<p>Every sector held. The grades are still there to beat — and Blackout is still waiting.</p></div>` +
+      `<button class="btn primary wide" data-act="menu">Choose a sector</button>` +
+      `<button class="btn wide" data-act="restart">Play again</button>`
+    );
+  }
+  return (
+    `<button class="btn primary wide" data-act="next">Next sector: ${campaign.nextName}</button>` +
+    `<button class="btn wide" data-act="restart">Play again</button>` +
+    `<button class="btn wide" data-act="menu">Choose another sector</button>`
   );
 }
 

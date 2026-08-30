@@ -32,7 +32,7 @@ export function beginWave(w: World): void {
   // strictly payment for time the player chose to give up.
   const secondsSaved = Math.max(0, s.timer);
 
-  s.plan = planWave(w.seed, s.index);
+  s.plan = planWave(w.seed, s.index, w.rules);
   s.spawned = 0;
   s.timer = 0;
   s.phase = 'spawning';
@@ -73,7 +73,7 @@ export function updateWaves(w: World, dt: number): void {
         s.dispatchedThrough = s.index;
         // The intermission starts now, not when the board empties. This is what
         // makes waves overlap.
-        if (s.index + 1 >= waveCount()) {
+        if (s.index + 1 >= waveCount(w.rules)) {
           s.phase = 'done';
         } else {
           s.index++;
@@ -138,7 +138,7 @@ function settleClearedWaves(w: World): void {
     });
   }
 
-  if (s.clearedThrough >= waveCount() - 1 && w.phase === 'playing') {
+  if (s.clearedThrough >= waveCount(w.rules) - 1 && w.phase === 'playing') {
     w.phase = 'won';
     w.events.push({ type: 'gameOver', won: true });
   }

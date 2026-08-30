@@ -1,6 +1,6 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
-import { WAVES } from '../content/waves.ts';
+import { DEFAULT_RULES, type Rules } from './rules.ts';
 import { randRange, streamFor, STREAM } from './util/rng.ts';
 
 export interface PlannedSpawn {
@@ -27,17 +27,18 @@ export interface PlannedSpawn {
 export function scaledStats(
   enemy: EnemyId,
   waveIndex: number,
+  rules: Rules = DEFAULT_RULES,
 ): { hp: number; bounty: number; shield: number } {
   const base = ENEMIES[enemy];
-  const hpScale = Math.pow(BALANCE.hpGrowth, waveIndex);
+  const hpScale = Math.pow(BALANCE.hpGrowth, waveIndex) * rules.hpFactor;
   return {
     hp: Math.round(base.hp * hpScale),
-    bounty: Math.round(base.bounty * Math.pow(BALANCE.bountyGrowth, waveIndex)),
+    bounty: Math.round(base.bounty * Math.pow(BALANCE.bountyGrowth, waveIndex) * rules.bountyFactor),
     shield: Math.round(base.shield * hpScale),
   };
 }
 
-export const waveCount = (): number => WAVES.length;
+export const waveCount = (rules: Rules = DEFAULT_RULES): number => rules.waves.length;
 
 /**
  * The complete content of one wave, as a pure function of (seed, waveIndex).
@@ -52,8 +53,12 @@ export const waveCount = (): number => WAVES.length;
  * It also means the N2 fairness gate is trivial: call this for 20 waves on two
  * machines, JSON.stringify, diff.
  */
-export function planWave(seed: number, waveIndex: number): PlannedSpawn[] {
-  const def = WAVES[waveIndex];
+export function planWave(
+  seed: number,
+  waveIndex: number,
+  rules: Rules = DEFAULT_RULES,
+): PlannedSpawn[] {
+  const def = rules.waves[waveIndex];
   if (def === undefined) return [];
 
   const rng = streamFor(seed, STREAM.WAVE, waveIndex);
@@ -61,7 +66,7 @@ export function planWave(seed: number, waveIndex: number): PlannedSpawn[] {
   const plan: PlannedSpawn[] = [];
   for (const group of def.groups) {
     const enemy = group.enemy as EnemyId;
-    const stats = scaledStats(enemy, waveIndex);
+    const stats = scaledStats(enemy, waveIndex, rules);
     const jitter = group.every * BALANCE.spawnJitter;
 
     for (let i = 0; i < group.count; i++) {
