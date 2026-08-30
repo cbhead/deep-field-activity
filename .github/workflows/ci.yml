@@ -9,6 +9,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
+      # The npm scripts all shell through zsh, which current ubuntu runners no
+      # longer preinstall.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
