@@ -16,23 +16,32 @@ const g = (count: number, every: number, after = 0, enemy: EnemyId = 'drifter'):
 const wave = (...groups: WaveGroup[]): WaveDef => ({ groups });
 
 /**
- * The v1 arc. One enemy type, so the shape of a wave comes entirely from count
- * and spacing: steady pressure, then a rush that punishes thin single-tower
- * coverage, then overlapping groups that punish a single choke point.
+ * The ten-wave arc.
  *
- * HP and bounty scale per wave from BALANCE — this table is pacing only.
- * These numbers are a first guess; M9's headless harness is what actually
- * tunes them.
+ * Each new contact type is introduced alone, in small numbers, one wave before
+ * it appears in anger — so the wave that teaches it is survivable and the wave
+ * that tests it is not a surprise. After wave 6 the table mixes types, which is
+ * where a defence built around one answer starts to fail.
+ *
+ * HP, shield and bounty all scale per wave from BALANCE; this table is pacing
+ * and composition only. Numbers here are pacing guesses — `tools/sweep.ts` is
+ * what tunes the arc.
  */
 export const WAVES: readonly WaveDef[] = [
-  wave(g(6, 1.2)),
+  wave(g(6, 1.2)), //                                    baseline
   wave(g(8, 1.0)),
-  wave(g(11, 0.9)),
-  wave(g(8, 0.45)), //                      first rush — tests burst coverage
-  wave(g(13, 0.85)),
-  wave(g(8, 0.8), g(8, 0.8, 7)), //         two clusters, one breath between
-  wave(g(16, 0.75)),
-  wave(g(12, 0.4)), //                      sustained rush
-  wave(g(14, 0.7), g(6, 0.35, 11)), //      long wave with a sting in the tail
-  wave(g(24, 0.55)), //                     finale
+  wave(g(6, 1.0), g(5, 0.35, 6, 'mote')), //             motes arrive, as a taste
+  wave(g(6, 0.9), g(14, 0.28, 4, 'mote')), //            first real swarm
+  wave(g(8, 0.85), g(1, 1, 5, 'monolith')), //           one monolith to learn on
+  wave(g(6, 0.8), g(2, 3, 4, 'monolith'), g(10, 0.3, 12, 'mote')),
+  wave(g(6, 0.9), g(3, 2.2, 3, 'warden')), //            shields, with room to fail
+  wave(g(10, 0.4), g(2, 2, 6, 'cluster')), //            splitters under a rush
+  wave(g(4, 1.0, 0, 'warden'), g(2, 3, 2, 'monolith'), g(4, 1.6, 8, 'cluster')),
+  wave(
+    g(12, 0.5), //                                       finale: all five at once
+    g(4, 1.4, 3, 'warden'),
+    g(3, 2.4, 6, 'monolith'),
+    g(5, 1.3, 9, 'cluster'),
+    g(16, 0.25, 16, 'mote'),
+  ),
 ];

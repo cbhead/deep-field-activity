@@ -106,7 +106,20 @@ export class Effects {
       }
       case 'creepKilled':
         this.spawnedThisFrame++;
-        this.addBurst(ev.x, ev.y, THEME.enemies.drifter);
+        // The contact's own colour, not a fixed one. This was hardcoded to
+        // drifter back when drifter was the only type, which would have made
+        // every Monolith and Mote burst in the wrong colour.
+        this.addBurst(ev.x, ev.y, THEME.enemies[ev.defId]);
+        break;
+      case 'creepSplit':
+        this.spawnedThisFrame++;
+        // Tinted as the *children*, so the burst reads as "these are what you
+        // now have to deal with" rather than as an ordinary kill.
+        this.addBurst(ev.x, ev.y, THEME.enemies[ev.into]);
+        break;
+      case 'shieldBroke':
+        this.spawnedThisFrame++;
+        this.addBurst(ev.x, ev.y, THEME.fx.shield);
         break;
       case 'creepLeaked':
         this.spawnedThisFrame++;
@@ -207,15 +220,29 @@ export class Effects {
       }
 
       const frac = c.hp / c.maxHp;
+      const shieldFrac = c.maxShield > 0 ? c.shield / c.maxShield : 0;
       // Undamaged creeps get no bar: a board of full bars is noise, and the
       // bar appearing is itself the signal that something is being worked on.
-      if (frac >= 0.999) continue;
+      // A shielded contact is exempt — its shield regenerating back to full is
+      // exactly the thing the player needs to see, and hiding the bar the
+      // moment it recovered would hide the whole mechanic.
+      if (frac >= 0.999 && shieldFrac >= 0.999) continue;
 
       const wpx = 32;
       const x = c.x * TILE_PX - wpx / 2;
       const y = c.y * TILE_PX - TILE_PX * 0.42;
       g.rect(x, y, wpx, 4).fill({ color: THEME.fx.hpTrack, alpha: 0.8 });
       g.rect(x, y, wpx * frac, 4).fill(frac < 0.3 ? THEME.fx.hpLow : THEME.fx.hpFull);
+
+      // The shield sits as its own band *above* the hull bar rather than as a
+      // segment within it, so a full shield over a hurt hull reads as two
+      // separate quantities instead of one confusingly long bar.
+      if (c.maxShield > 0) {
+        g.rect(x, y - 3.5, wpx, 2.5).fill({ color: THEME.fx.hpTrack, alpha: 0.8 });
+        if (shieldFrac > 0) {
+          g.rect(x, y - 3.5, wpx * shieldFrac, 2.5).fill(THEME.fx.shield);
+        }
+      }
     }
 
     // Reach circles for every placed station, when the player asked for them.

@@ -14,11 +14,12 @@ import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, type TowerId } from '../src/content/towers.ts';
-import { ENEMIES } from '../src/content/enemies.ts';
+import { ENEMIES, ENEMY_IDS } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost } from '../src/sim/build.ts';
 import { coverage } from '../src/sim/analysis.ts';
 import type { TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
+import { damageCreep } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
@@ -591,7 +592,7 @@ section('combat — the loop closes');
   // measure many intervals rather than the three or four a normal-speed creep
   // allows. Timestamping every shot is the only way to see drift; a shot
   // *count* would pass even if the rate were wrong by a tick each time.
-  const c = spawnCreep(w, 'drifter', 1e9, 0);
+  const c = spawnCreep(w, 'drifter', { hp: 1e9, bounty: 0 });
   c.speed = 0.15;
 
   const shotTicks: number[] = [];
@@ -630,7 +631,7 @@ section('combat — the loop closes');
   const t = w.towers[0]!;
   check(t.cooldown === 0, 'an idle tower clamps its cooldown at zero', `cooldown=${t.cooldown}`);
 
-  spawnCreep(w, 'drifter', 1e9, 0);
+  spawnCreep(w, 'drifter', { hp: 1e9, bounty: 0 });
   let shotsInFirstSecond = 0;
   for (let i = 0; i < 60; i++) {
     const before = w.projectiles.length;
@@ -673,7 +674,7 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
   // damage all three, and each exactly once.
   const { w, t } = stationWorld('lance', 3, 3);
   const line = [0.8, 1.5, 2.2].map((d) => {
-    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    const c = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
     c.x = t.x + d;
     c.y = t.y;
     return c;
@@ -697,7 +698,7 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
   // by a shot that has already spent its two passes.
   const { w, t } = stationWorld('lance', 3, 3, 910);
   const line = [0.6, 1.1, 1.6, 2.1].map((d) => {
-    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    const c = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
     c.x = t.x + d;
     c.y = t.y;
     return c;
@@ -717,13 +718,13 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
   // Nova detonates. A cluster off to one side of the target must still take
   // damage, and less of it than the direct hit.
   const { w, t } = stationWorld('nova', 3, 3, 911);
-  const direct = spawnCreep(w, 'drifter', 1e6, 0);
+  const direct = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
   direct.x = t.x + 1.5;
   direct.y = t.y;
-  const near = spawnCreep(w, 'drifter', 1e6, 0);
+  const near = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
   near.x = t.x + 1.5;
   near.y = t.y + 0.9;
-  const far = spawnCreep(w, 'drifter', 1e6, 0);
+  const far = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
   far.x = t.x + 1.5;
   far.y = t.y + 4;
 
@@ -750,7 +751,7 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
       w.commands.push({ type: 'placeTower', defId: 'singularity', col: 3, row: 3 });
     }
     stepWorld(w, DT);
-    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    const c = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
     for (let i = 0; i < 60 * 4; i++) stepWorld(w, DT);
     return c.progress;
   };
@@ -771,7 +772,7 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
   w.commands.push({ type: 'placeTower', defId: 'singularity', col: 3, row: 5 });
   stepWorld(w, DT);
 
-  const c = spawnCreep(w, 'drifter', 1e6, 0);
+  const c = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
   c.x = t.x + 1;
   c.y = t.y + 1;
   for (let i = 0; i < 60; i++) stepWorld(w, DT);
@@ -781,13 +782,13 @@ function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
     'two wells do not compound below a single one',
     `x${c.slowFactor.toFixed(2)}`,
   );
-  check(c.speed === ENEMIES.drifter.speed, 'and base speed is never mutated', `${c.speed}`);
+  check(c.speed === ENEMIES[c.defId].speed, 'and base speed is never mutated', `${c.speed}`);
 }
 
 {
   // The slow must expire, or one hit would hold a contact forever.
   const { w, t } = stationWorld('singularity', 3, 3, 914);
-  const c = spawnCreep(w, 'drifter', 1e6, 0);
+  const c = spawnCreep(w, 'drifter', { hp: 1e6, bounty: 0 });
   c.x = t.x + 1;
   c.y = t.y;
   t.cooldown = 0;
@@ -964,6 +965,199 @@ section('stations — upgrade, sell, targeting');
   );
 }
 
+/**
+ * Rank buildable tiles by how much road they cover. A competent player finds
+ * these tiles by eye; ranking them here means a gate or a probe measures the
+ * design rather than my ability to guess coordinates.
+ *
+ * Module scope because both the determinism gate and the balance probe want a
+ * plausible defence, and two copies of this heuristic would be two things to
+ * keep in step.
+ */
+function rankedSpots(range: number): [number, number][] {
+  const scored: { col: number; row: number; covered: number }[] = [];
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      if (map.tiles[row * map.cols + col] !== 'ground') continue;
+      let covered = 0;
+      for (let r = 0; r < map.rows; r++) {
+        for (let c = 0; c < map.cols; c++) {
+          if (map.tiles[r * map.cols + c] !== 'path') continue;
+          const dx = c - col;
+          const dy = r - row;
+          if (dx * dx + dy * dy <= range * range) covered++;
+        }
+      }
+      scored.push({ col, row, covered });
+    }
+  }
+  scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
+  return scored.map((s) => [s.col, s.row]);
+}
+
+// ---------------------------------------------------------------------------
+section('contacts — content');
+
+{
+  const used = new Set<string>();
+  for (const wv of WAVES) for (const gr of wv.groups) used.add(gr.enemy);
+  const missing = ENEMY_IDS.filter((id) => !used.has(id));
+  check(
+    missing.length === 0,
+    'every contact type appears in the wave table',
+    missing.length ? `unused: ${missing.join(', ')}` : `${ENEMY_IDS.length} types`,
+  );
+
+  const unknown = [...used].filter((id) => !(ENEMY_IDS as string[]).includes(id));
+  check(unknown.length === 0, 'and no wave references a type that does not exist');
+
+  // The one property that makes runaway splitting impossible rather than
+  // merely unlikely: whatever a type splits into must not itself split.
+  const recursive = ENEMY_IDS.filter((id) => {
+    const s = ENEMIES[id].splitInto;
+    return s !== null && ENEMIES[s.enemy as typeof id].splitInto !== null;
+  });
+  check(recursive.length === 0, 'nothing splits into something that splits', recursive.join(', '));
+}
+
+// ---------------------------------------------------------------------------
+// A Warden is a test of *coverage*, not of damage: sustained fire holds its
+// shield down, a gap hands it back. These gates pin both halves.
+section('contacts — shields');
+
+{
+  const w = soloWorld();
+  const c = spawnCreep(w, 'warden');
+  const base = ENEMIES.warden;
+  check(c.shield === base.shield && c.maxShield === base.shield, 'a warden spawns shielded', `${c.shield}`);
+
+  // Absorbed by the shield, not the hull.
+  damageCreep(w, c, 10);
+  check(c.hp === c.maxHp && c.shield === base.shield - 10, 'the shield absorbs first', `hull ${c.hp}, shield ${c.shield}`);
+
+  // Overflow carries through rather than being wasted on a thin shield.
+  const before = c.hp;
+  damageCreep(w, c, base.shield - 10 + 7);
+  check(c.shield === 0 && c.hp === before - 7, 'overflow carries into the hull', `hull ${c.hp}, shield ${c.shield}`);
+}
+
+{
+  const w = soloWorld();
+  const c = spawnCreep(w, 'warden');
+  const base = ENEMIES.warden;
+  damageCreep(w, c, 10);
+  const dented = c.shield;
+
+  // Nothing comes back while the delay is still running.
+  for (let i = 0; i < Math.floor((base.shieldRegenDelay - 0.2) * 60); i++) stepWorld(w, DT);
+  check(c.shield === dented, 'no regen during the delay', `${c.shield}`);
+
+  for (let i = 0; i < 60 * 6; i++) stepWorld(w, DT);
+  check(c.shield === c.maxShield, 'and it returns to full, never past it', `${c.shield}/${c.maxShield}`);
+}
+
+{
+  // The property that matters in play: a shield is extra effective health.
+  const kill = (defId: 'drifter' | 'warden'): number => {
+    const w = soloWorld();
+    const c = spawnCreep(w, defId, { hp: 30, shield: defId === 'warden' ? 30 : 0 });
+    let ticks = 0;
+    // Steady chip, faster than regen, so the shield only ever delays the kill.
+    while (!c.dead && ticks < 60 * 120) {
+      damageCreep(w, c, 1);
+      stepWorld(w, DT);
+      ticks++;
+    }
+    return ticks;
+  };
+  const plain = kill('drifter');
+  const shielded = kill('warden');
+  check(shielded > plain, 'a shielded contact takes longer to kill', `${shielded} vs ${plain} ticks`);
+}
+
+// ---------------------------------------------------------------------------
+section('contacts — splits');
+
+{
+  const w = soloWorld();
+  const parent = spawnCreep(w, 'cluster', { wave: 4 });
+  // Walk it onto the board so the children have a real position to inherit.
+  for (let i = 0; i < 120; i++) stepWorld(w, DT);
+  const px = parent.x;
+  const pProgress = parent.progress;
+
+  damageCreep(w, parent, 1e6);
+  check(w.creeps.includes(parent), 'the parent is still in the array before cleanup');
+  check(w.pendingSplits.length === 1, 'the split is queued, not spawned inline');
+
+  stepWorld(w, DT);
+  const kids = w.creeps.filter((c) => c.defId === 'mote');
+  const expected = ENEMIES.cluster.splitInto!.count;
+  check(kids.length === expected, 'a cluster yields exactly its child count', `${kids.length}`);
+  check(kids.every((k) => k.wave === 4), "children carry the PARENT's wave tag", `${kids.map((k) => k.wave).join(',')}`);
+  check(
+    kids.every((k) => Math.abs(k.x - px) < 1 && k.progress > 0 && k.progress <= pProgress + 1),
+    'and appear where the parent died, not back at the entry',
+    `progress ${kids.map((k) => k.progress.toFixed(1)).join(', ')} vs parent ${pProgress.toFixed(1)}`,
+  );
+
+  // Kill the children too; nothing further may appear.
+  for (const k of kids) damageCreep(w, k, 1e6);
+  stepWorld(w, DT);
+  check(w.creeps.length === 0, 'children do not split again', `${w.creeps.length} left`);
+}
+
+{
+  // The sharpest one. Splits are the obvious way to break wave settlement:
+  // a child tagged with the wrong wave would let its parent's wave settle
+  // early, paying the reward while contacts were still walking — and at the
+  // end of a run, declaring victory with the board occupied.
+  const w = createWorld(map, 4242);
+  w.lives = 1_000_000;
+  let cleared = 0;
+  let splits = 0;
+
+  for (let i = 0; i < 400_000 && w.phase === 'playing'; i++) {
+    // Kill everything the moment it is fully spawned, so every wave settles.
+    if (w.wave.phase !== 'spawning') for (const c of w.creeps) damageCreep(w, c, 1e6);
+    w.commands.push({ type: 'startWave' });
+    stepWorld(w, DT);
+    for (const ev of w.events) {
+      if (ev.type === 'waveCleared') cleared++;
+      if (ev.type === 'creepSplit') splits++;
+    }
+    w.events.length = 0;
+  }
+
+  check(splits > 0, 'the run actually produced splits', `${splits}`);
+  check(w.phase === 'won', 'a run full of splits still reaches victory');
+  check(cleared === waveCount(), 'and every wave settles exactly once', `${cleared}/${waveCount()}`);
+  check(w.creeps.length === 0, 'with nothing left on the board');
+}
+
+{
+  // Splits draw no random numbers, so a whole match must replay identically.
+  const run = (): string => {
+    const w = createWorld(map, 8888);
+    w.money = 100_000;
+    for (const [col, row] of rankedSpots(3).slice(0, 14)) {
+      w.commands.push({ type: 'placeTower', defId: 'nova', col, row });
+    }
+    const log: string[] = [];
+    for (let i = 0; i < 60 * 400 && w.phase === 'playing'; i++) {
+      stepWorld(w, DT);
+      for (const ev of w.events) {
+        if (ev.type === 'creepSplit') log.push(`${w.tick}:${ev.into}x${ev.count}@${ev.x.toFixed(3)},${ev.y.toFixed(3)}`);
+      }
+      w.events.length = 0;
+    }
+    return log.join('|');
+  };
+  const a = run();
+  check(a.length > 0, 'the determinism run produced splits', `${a.split('|').length} events`);
+  check(a === run(), 'one seed replays split-for-split identically');
+}
+
 // ---------------------------------------------------------------------------
 // Not assertions — a readout. The plan calls M5 the point where we find out
 // whether the game is fun, and this is the cheapest way to see whether the
@@ -971,32 +1165,6 @@ section('stations — upgrade, sell, targeting');
 section('balance probe (informational)');
 
 {
-  /**
-   * Rank buildable tiles by how much road they cover. A competent player finds
-   * these tiles by eye; ranking them here means the probe measures the design
-   * rather than my ability to guess coordinates.
-   */
-  const rankedSpots = (range: number): [number, number][] => {
-    const scored: { col: number; row: number; covered: number }[] = [];
-    for (let row = 0; row < map.rows; row++) {
-      for (let col = 0; col < map.cols; col++) {
-        if (map.tiles[row * map.cols + col] !== 'ground') continue;
-        let covered = 0;
-        for (let r = 0; r < map.rows; r++) {
-          for (let c = 0; c < map.cols; c++) {
-            if (map.tiles[r * map.cols + c] !== 'path') continue;
-            const dx = c - col;
-            const dy = r - row;
-            if (dx * dx + dy * dy <= range * range) covered++;
-          }
-        }
-        scored.push({ col, row, covered });
-      }
-    }
-    scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
-    return scored.map((s) => [s.col, s.row]);
-  };
-
   /**
    * Play a real economy: start with the real budget and buy the best remaining
    * tile whenever it becomes affordable. Handing the probe unlimited money

@@ -90,6 +90,12 @@ export interface World {
   towers: Tower[];
   projectiles: Projectile[];
 
+  /**
+   * Deaths that owe children, drained by `resolveSplits` once the systems that
+   * iterate `w.creeps` have finished for the tick. See `damageCreep`.
+   */
+  pendingSplits: PendingSplit[];
+
   stats: RunStats;
   /** Indexed by wave. Grown lazily by `waveStats()`. */
   perWave: WaveStats[];
@@ -123,6 +129,7 @@ export function createWorld(map: MapDef, seed: number): World {
     creeps: [],
     towers: [],
     projectiles: [],
+    pendingSplits: [],
     stats: { kills: 0, leaks: 0, bounty: 0, spent: 0 },
     perWave: [],
     commands: [],
@@ -146,16 +153,37 @@ export function towerById(w: World, id: EntityId): Tower | undefined {
   return undefined;
 }
 
-export function spawnCreep(
-  w: World,
-  defId: EnemyId,
-  hp?: number,
-  bounty?: number,
-  wave = w.wave.index,
-): Creep {
+export interface PendingSplit {
+  readonly parent: Creep;
+  readonly into: EnemyId;
+  readonly count: number;
+}
+
+/**
+ * Everything a spawn may override. An options bag rather than five positional
+ * arguments, because `spawnCreep(w, 'mote', 7, 2, 3, 0, at)` is unreadable and
+ * one transposed pair would be a silent balance bug.
+ */
+export interface SpawnOptions {
+  hp?: number;
+  bounty?: number;
+  shield?: number;
+  wave?: number;
+  /**
+   * Start partway along the route instead of at the entry.
+   *
+   * Used by splits: children appear where the parent died, not back at the
+   * spawn. Without this a Cluster killed at the goal would hand the player
+   * three fresh Motes with the whole route to walk, which is a reward.
+   */
+  at?: { x: number; y: number; leg: number; progress: number };
+}
+
+export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): Creep {
   const def = ENEMIES[defId];
-  const start = w.map.spawn;
-  const health = hp ?? def.hp;
+  const start = opts.at ?? { ...w.map.spawn, leg: 1, progress: 0 };
+  const health = opts.hp ?? def.hp;
+  const shield = opts.shield ?? def.shield;
 
   const creep: Creep = {
     id: w.nextId++,
@@ -164,15 +192,18 @@ export function spawnCreep(
     y: start.y,
     // waypoints[0] is the off-board entry the creep is standing on, so the
     // first leg is walking toward waypoints[1].
-    leg: 1,
-    progress: 0,
+    leg: start.leg,
+    progress: start.progress,
     speed: def.speed,
     slowTimer: 0,
     slowFactor: 1,
     hp: health,
     maxHp: health,
-    bounty: bounty ?? def.bounty,
-    wave,
+    shield,
+    maxShield: shield,
+    shieldTimer: 0,
+    bounty: opts.bounty ?? def.bounty,
+    wave: opts.wave ?? w.wave.index,
     dead: false,
   };
   w.creeps.push(creep);

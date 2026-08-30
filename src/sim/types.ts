@@ -86,6 +86,17 @@ export interface Creep {
   slowFactor: number;
   hp: number;
   maxHp: number;
+
+  /**
+   * Overshield, absorbed before hull, and the countdown until it regenerates.
+   *
+   * `shieldTimer` counts *down* from the def's delay and is reset by any hit,
+   * so sustained fire holds a shield at zero while a lull hands it back. That
+   * is what makes a Warden a test of coverage rather than of raw damage.
+   */
+  shield: number;
+  maxShield: number;
+  shieldTimer: number;
   /** Money paid on kill. Baked in at spawn, since it scales per wave. */
   bounty: number;
 
@@ -259,7 +270,10 @@ export type SimEvent =
       amount: number;
       defId: TowerId | null;
     }
-  | { type: 'creepKilled'; x: number; y: number; bounty: number }
+  | { type: 'creepKilled'; x: number; y: number; bounty: number; defId: EnemyId }
+  /** A contact broke apart. Carries the children's type so the burst matches. */
+  | { type: 'creepSplit'; x: number; y: number; into: EnemyId; count: number }
+  | { type: 'shieldBroke'; x: number; y: number }
   | { type: 'waveRushed'; wave: number; bonus: number; secondsSaved: number }
   /** A startWave that could not be honoured. Silence would read as a bug. */
   | { type: 'waveRejected'; reason: 'spawning' | 'done' }

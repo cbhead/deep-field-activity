@@ -85,6 +85,15 @@ export interface Theme {
     readonly leakBright: number;
     /** Ring drawn around a contact held in a gravity well. */
     readonly slowRing: number;
+    /**
+     * Overshield, drawn as a band above the hull bar.
+     *
+     * Deliberately *not* a ring: the gravity slow already owns that shape, and
+     * two cool rings around one contact would be a puzzle rather than a
+     * readout. A band over the bar says "there is a layer before the hull"
+     * with no ambiguity, and reads at a glance in a crowd.
+     */
+    readonly shield: number;
   };
 
   /**
@@ -195,8 +204,20 @@ export const DEEP_FIELD: Theme = {
     singularity: 0xa5eefb,
   },
 
+  // Contacts share one warm family so "something is coming" reads before "what
+  // is coming" does — they are the only warm thing on a blue-black board, and
+  // that is the contrast hierarchy's whole job. Type is carried by variation
+  // *within* the family, plus the size differences the defs already give them.
   enemies: {
     drifter: 0xf472b6,
+    /** Palest and smallest — a swarm should read as spray, not as individuals. */
+    mote: 0xfbcfe8,
+    /** Deepest, to sit with its bulk. */
+    monolith: 0xc2557f,
+    /** Coolest of the family, so the shield's cyan ring belongs to it. */
+    warden: 0xe879c9,
+    /** Pushed toward red: the one whose death makes things worse. */
+    cluster: 0xfb7185,
   },
 
   feedback: {
@@ -216,6 +237,7 @@ export const DEEP_FIELD: Theme = {
     leak: 0xe06d6d,
     leakBright: 0xffb4b4,
     slowRing: 0xa5eefb,
+    shield: 0x9fbcff,
   },
 
   shape: {

@@ -19,6 +19,28 @@ export interface EnemyDef {
   readonly bounty: number;
   /** Draw and hit radius, in tiles. */
   readonly radius: number;
+
+  /**
+   * Overshield absorbed before hull. 0 for everything that has none.
+   *
+   * Shields punish *thin* coverage rather than low damage: they regenerate
+   * after a lull, so a contact that slips past a gap arrives whole. Scales with
+   * the wave exactly as hp does.
+   */
+  readonly shield: number;
+  /** Seconds without taking damage before the shield starts coming back. */
+  readonly shieldRegenDelay: number;
+  /** Shield points per second once regen has started. */
+  readonly shieldRegenRate: number;
+
+  /**
+   * What this breaks into when killed, or null.
+   *
+   * The named type must itself have `splitInto: null`. That is what makes
+   * runaway splitting structurally impossible rather than merely avoided by
+   * choosing sensible content — a gate asserts it.
+   */
+  readonly splitInto: { readonly enemy: string; readonly count: number } | null;
 }
 
 export interface TowerDef {

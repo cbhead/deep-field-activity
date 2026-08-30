@@ -60,7 +60,12 @@ export function updateWaves(w: World, dt: number): void {
       // than one spawn can come due in a single 16ms tick.
       while (s.spawned < s.plan.length && s.plan[s.spawned]!.at <= s.timer) {
         const next = s.plan[s.spawned]!;
-        spawnCreep(w, next.enemy, next.hp, next.bounty, s.index);
+        spawnCreep(w, next.enemy, {
+          hp: next.hp,
+          bounty: next.bounty,
+          shield: next.shield,
+          wave: s.index,
+        });
         s.spawned++;
       }
 
@@ -102,6 +107,18 @@ function settleClearedWaves(w: World): void {
   let lowestLive = Infinity;
   for (const c of w.creeps) {
     if (!c.dead && c.wave < lowestLive) lowestLive = c.wave;
+  }
+
+  // A queued split is a promise of live contacts in the parent's wave, so it
+  // counts as one. Today's phase order drains the queue in the same tick it is
+  // filled, so this window never opens in play — but settlement would then be
+  // relying on `resolveSplits` happening to sit between the systems that fill
+  // the queue and the next `updateWaves`. Reading the queue directly makes the
+  // rule true regardless of order, and the alternative failure is the worst
+  // kind: a wave paying out, or a run declaring victory, with contacts about
+  // to appear on the board.
+  for (const s of w.pendingSplits) {
+    if (s.parent.wave < lowestLive) lowestLive = s.parent.wave;
   }
 
   // Only waves that are both fully spawned and entirely gone from the board.

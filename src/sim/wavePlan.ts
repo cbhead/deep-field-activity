@@ -9,6 +9,32 @@ export interface PlannedSpawn {
   enemy: EnemyId;
   hp: number;
   bounty: number;
+  shield: number;
+}
+
+/**
+ * A contact's stats at a given wave.
+ *
+ * Split children go through this too, so a Mote from a wave-9 Cluster is worth
+ * exactly what a wave-9 Mote is worth. Having one function rather than two
+ * copies of the same arithmetic is what stops the spawner and the splitter
+ * quietly disagreeing after a balance change.
+ *
+ * Shield scales with hp rather than on a dial of its own: a shield is a second
+ * pool of effective health, and letting the two curves diverge would make
+ * Wardens either irrelevant or unkillable at the ends of the arc.
+ */
+export function scaledStats(
+  enemy: EnemyId,
+  waveIndex: number,
+): { hp: number; bounty: number; shield: number } {
+  const base = ENEMIES[enemy];
+  const hpScale = Math.pow(BALANCE.hpGrowth, waveIndex);
+  return {
+    hp: Math.round(base.hp * hpScale),
+    bounty: Math.round(base.bounty * Math.pow(BALANCE.bountyGrowth, waveIndex)),
+    shield: Math.round(base.shield * hpScale),
+  };
 }
 
 export const waveCount = (): number => WAVES.length;
@@ -31,13 +57,11 @@ export function planWave(seed: number, waveIndex: number): PlannedSpawn[] {
   if (def === undefined) return [];
 
   const rng = streamFor(seed, STREAM.WAVE, waveIndex);
-  const hpScale = Math.pow(BALANCE.hpGrowth, waveIndex);
-  const bountyScale = Math.pow(BALANCE.bountyGrowth, waveIndex);
 
   const plan: PlannedSpawn[] = [];
   for (const group of def.groups) {
     const enemy = group.enemy as EnemyId;
-    const base = ENEMIES[enemy];
+    const stats = scaledStats(enemy, waveIndex);
     const jitter = group.every * BALANCE.spawnJitter;
 
     for (let i = 0; i < group.count; i++) {
@@ -46,8 +70,7 @@ export function planWave(seed: number, waveIndex: number): PlannedSpawn[] {
         // the group is meant to begin.
         at: Math.max(0, group.after + i * group.every + randRange(rng, -jitter, jitter)),
         enemy,
-        hp: Math.round(base.hp * hpScale),
-        bounty: Math.round(base.bounty * bountyScale),
+        ...stats,
       });
     }
   }
