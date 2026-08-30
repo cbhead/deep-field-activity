@@ -75,6 +75,9 @@ async function main(): Promise<void> {
   let playerName = '';
   let matchSeed = 0;
   let matchSector = CAMPAIGN[0]!.name;
+  // Serialized last-sent tower layout; '' forces a resend (fresh boot, or a
+  // reconnect where the opponent may have missed frames).
+  let sentPins = '';
 
   // A rematch reloads the page with {name, room} stashed, then rejoins and
   // readies up without touching the form. Cleared immediately so a plain
@@ -104,7 +107,10 @@ async function main(): Promise<void> {
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),
           onPeerConn: (connected) => raceHud?.peerConn(connected),
-          onSelfConn: (connected) => raceHud?.selfConn(connected),
+          onSelfConn: (connected) => {
+            if (connected) sentPins = '';
+            raceHud?.selfConn(connected);
+          },
           onResult: (winnerId, standings, reason) => {
             showResults(mount, {
               myId: controller.playerId,
@@ -142,14 +148,26 @@ async function main(): Promise<void> {
               level,
               rules: resolveRules(level, difficulty),
             }).then(({ world }) => {
-              raceHud = createRaceHud(mount, opponentName, currentRoom);
+              raceHud = createRaceHud(mount, opponentName, currentRoom, world.map);
               const bootAt = performance.now();
-              const sample = (): Parameters<typeof controller.finish>[0] => ({
-                wave: world.wave.clearedThrough + 1,
-                lives: world.lives,
-                elapsedMs: Math.round(performance.now() - bootAt),
-                ...(document.hidden ? { hidden: true } : {}),
-              });
+              sentPins = '';
+              const sample = (): Parameters<typeof controller.finish>[0] => {
+                const status: Parameters<typeof controller.finish>[0] = {
+                  wave: world.wave.clearedThrough + 1,
+                  lives: world.lives,
+                  elapsedMs: Math.round(performance.now() - bootAt),
+                  ...(document.hidden ? { hidden: true } : {}),
+                };
+                // The layout rides along only when it changed — most frames
+                // carry three numbers, a build frame carries the board.
+                const pins = world.towers.map((t) => ({ c: t.col, r: t.row, k: t.defId, tier: t.tier }));
+                const enc = JSON.stringify(pins);
+                if (enc !== sentPins) {
+                  sentPins = enc;
+                  status.towers = pins;
+                }
+                return status;
+              };
               controller.startStatusPump(() => {
                 const status = sample();
                 raceHud?.own(status);

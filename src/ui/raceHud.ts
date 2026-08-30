@@ -8,6 +8,9 @@
  * renders network state, and the two update on different clocks.
  */
 import type { RaceStatus } from '../net/MatchController.ts';
+import type { TowerPin } from '../net/protocol.ts';
+import type { MapDef } from '../sim/types.ts';
+import { tileAt } from '../sim/util/grid.ts';
 
 export interface RaceHud {
   /** Our own sampled status — called by the same pump that reports upstream. */
@@ -23,7 +26,17 @@ export interface RaceHud {
 
 const TOAST_MS = 3000;
 
-export function createRaceHud(parent: HTMLElement, opponentName: string, room: string): RaceHud {
+/** Minimap pixels per tile. */
+const TILE_PX = 5;
+
+/** Station colours, matching the build deck's hexagons closely enough to read. */
+const PIN_COLORS: Record<string, string> = {
+  lance: '#8fc4fa',
+  nova: '#fcc08a',
+  singularity: '#b5abfc',
+};
+
+export function createRaceHud(parent: HTMLElement, opponentName: string, room: string, map: MapDef): RaceHud {
   const el = document.createElement('div');
   el.id = 'race-hud';
   el.style.cssText =
@@ -49,6 +62,51 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let peerOnline = true;
   let selfOnline = true;
+
+  // The opponent's board, in miniature: local map data draws the road (both
+  // players are on the same sector, so nothing about the board itself needs
+  // to cross the wire), TowerPins draw what they've built on it. Static by
+  // design — "what is he building?" is the question, not "where are his
+  // creeps" — and a lost frame costs staleness, not correctness.
+  const mini = document.createElement('div');
+  mini.id = 'race-minimap';
+  mini.style.cssText =
+    'position:absolute;top:8px;right:10px;z-index:5;display:flex;flex-direction:column;gap:3px;' +
+    'padding:7px 8px;border-radius:6px;background:rgba(4,6,12,0.8);' +
+    'border:1px solid rgba(255,255,255,0.2);pointer-events:none';
+  const miniLabel = document.createElement('span');
+  miniLabel.style.cssText =
+    'font:10px/1 var(--hud-font,ui-monospace,monospace);color:#75798c;letter-spacing:0.08em';
+  miniLabel.textContent = `${opponentName}'s board`;
+  const miniCanvas = document.createElement('canvas');
+  miniCanvas.width = map.cols * TILE_PX;
+  miniCanvas.height = map.rows * TILE_PX;
+  mini.append(miniLabel, miniCanvas);
+  parent.appendChild(mini);
+
+  let pins: TowerPin[] = [];
+
+  function drawMini(): void {
+    const g = miniCanvas.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
+    for (let r = 0; r < map.rows; r++) {
+      for (let c = 0; c < map.cols; c++) {
+        if (tileAt(map, c, r) === 'path') {
+          g.fillStyle = 'rgba(233,233,237,0.14)';
+          g.fillRect(c * TILE_PX, r * TILE_PX, TILE_PX, TILE_PX);
+        }
+      }
+    }
+    for (const p of pins) {
+      g.fillStyle = PIN_COLORS[p.k] ?? '#e9e9ed';
+      // Tier reads as size: Mk I is a dot, upgrades grow toward the full tile.
+      const px = Math.min(TILE_PX, 2 + p.tier);
+      const off = (TILE_PX - px) / 2;
+      g.fillRect(p.c * TILE_PX + off, p.r * TILE_PX + off, px, px);
+    }
+  }
+  drawMini();
 
   // Reconnect banner, from the Race Lobby design's mid-race variant. One copy
   // correction vs the spec: the local sim keeps running through a drop — only
@@ -102,6 +160,10 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
         lastPeerWave = status.wave;
         toast(`${opponentName} cleared wave ${status.wave}`);
       }
+      if (status.towers !== undefined) {
+        pins = status.towers;
+        drawMini();
+      }
       theirs = status;
       render();
     },
@@ -120,6 +182,7 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
       el.remove();
       toastEl.remove();
       bannerEl.remove();
+      mini.remove();
     },
   };
 }
