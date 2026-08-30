@@ -5,13 +5,15 @@
       "name": "game",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "port": 5173,
+      "autoPort": true
     },
     {
       "name": "play",
-      "runtimeExecutable": "env",
-      "runtimeArgs": ["PORT=8790", "npm", "run", "play"],
-      "port": 8790
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "play"],
+      "port": 8790,
+      "autoPort": true
     }
   ]
 }

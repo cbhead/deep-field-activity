@@ -68,6 +68,16 @@ export interface Progress {
    * simply has no last-played sector, which is true.
    */
   lastLevel?: string;
+  /**
+   * The seed last launched with, so "replay the board that beat you" is a
+   * button rather than something you had to have written down.
+   *
+   * That sentence is the entire use case the seed field's thirty-one words of
+   * explanation were describing — and it needs no explanation at all when it is
+   * one click. Absent means the last run was on a random board, which is the
+   * common case and correctly offers nothing.
+   */
+  lastSeed?: string;
 }
 
 const empty = (): Progress => ({ version: VERSION, levels: {}, lastDifficulty: DEFAULT_DIFFICULTY });
@@ -96,6 +106,7 @@ function read(): Progress {
       // A level that has since been removed would otherwise leave Continue
       // pointing at nothing; the caller resolves it and hides the button.
       ...(p.lastLevel === undefined ? {} : { lastLevel: p.lastLevel }),
+      ...(p.lastSeed === undefined || p.lastSeed === '' ? {} : { lastSeed: p.lastSeed }),
     };
   } catch {
     return empty();
@@ -160,6 +171,22 @@ export function recordRun(
 export function rememberDifficulty(difficulty: DifficultyId): void {
   const p = read();
   p.lastDifficulty = difficulty;
+  write(p);
+}
+
+/**
+ * Remember what a launch was configured with, at the moment of launching.
+ *
+ * Written here rather than in `recordRun` because a run that is abandoned
+ * mid-wave never records — and the board you rage-quit is exactly the one you
+ * want to replay. An empty seed clears the stored one, so "random" does not
+ * silently inherit the last fixed board.
+ */
+export function rememberLaunch(difficulty: DifficultyId, seed: string): void {
+  const p = read();
+  p.lastDifficulty = difficulty;
+  if (seed === '') delete p.lastSeed;
+  else p.lastSeed = seed;
   write(p);
 }
 

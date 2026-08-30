@@ -13,14 +13,14 @@
  */
 
 import { CAMPAIGN, type LevelDef } from '../content/levels.ts';
+import { boardFacts, boardThumb } from './boardThumb.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../content/difficulty.ts';
-import { parseMap } from '../sim/util/grid.ts';
 import {
   furthestUnlocked,
   isUnlocked,
   levelRecord,
   loadProgress,
-  rememberDifficulty,
+  rememberLaunch,
   resetProgress,
   type Progress,
 } from '../app/progress.ts';
@@ -102,13 +102,44 @@ const STYLE = `
 #menu-screen .mn-row{display:flex;gap:12px}
 #menu-screen .mn-row .mn-btn{flex:1}
 #menu-screen .mn-hex{width:26px;height:26px;flex:none}
+
+/* The board itself, at the top of its own card. A locked sector shows it
+   dimmed rather than hidden: you can see what you are working toward. */
+#menu-screen .mn-thumb{margin:-6px -6px 2px;border-radius:8px;overflow:hidden;line-height:0}
+#menu-screen .mn-thumb svg{width:100%;height:auto;display:block}
+#menu-screen .mn-card.locked .mn-thumb{opacity:.55}
+
+/* Best grade as ONE badge. Three per-difficulty pills were a table pretending
+   to be a chip set; the breakdown lives in the tooltip, where you look it up
+   rather than scan it. */
+#menu-screen .mn-grade{margin-left:auto;display:grid;place-items:center;width:28px;height:28px;
+  border-radius:7px;background:rgba(145,132,217,.14);
+  font:600 14px/1 ui-monospace,Menlo,monospace;color:#d2cefd;flex:none}
+#menu-screen .mn-grade.none{background:rgba(35,37,50,.7);color:#4b4e5e}
+
+/* Difficulty on the card, so it is the same click as the launch — it used to
+   cost a whole second screen to choose the option almost always chosen the
+   same way. Numerals, not blurbs; the blurb is the tooltip. */
+#menu-screen .mn-seg.tight{flex-direction:row;gap:6px;width:auto}
+#menu-screen .mn-diff{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:7px 4px;border-radius:7px;border:none;cursor:pointer;
+  background:rgba(35,37,50,.7);color:#9397ab;font:600 11px/1 Inter,sans-serif}
+#menu-screen .mn-diff em{font:400 9.5px/1 Inter,sans-serif;font-style:normal;color:#5d6070}
+#menu-screen .mn-diff:hover{color:#e9e9ed}
+#menu-screen .mn-diff.on{background:rgba(145,132,217,.2);color:#e9e9ed;
+  box-shadow:inset 0 0 0 1px rgba(145,132,217,.6)}
+#menu-screen .mn-diff.on em{color:#b5abfc}
+
+#menu-screen .mn-card .mn-btn{height:38px;font-size:13px}
+#menu-screen .mn-seedrow{display:flex;align-items:center;gap:14px}
+#menu-screen .mn-seedbox{width:min(452px,90vw)}
 `;
 
-const hexSvg = (color: string, dim = false): string =>
-  `<svg class="mn-hex" viewBox="0 0 40 40" aria-hidden="true" style="filter:drop-shadow(0 0 6px ${color}73)">` +
-  `<path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="${color}" fill-opacity="${dim ? '.12' : '.2'}" ` +
-  `stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/>` +
-  `<circle cx="20" cy="20" r="5.5" fill="${color}"${dim ? ' fill-opacity=".5"' : ''}/></svg>`;
+/**
+ * `hexSvg` is gone: a generic hexagon was standing in for a board nobody could
+ * see. The card draws the actual route now, which is both more specific and the
+ * thing the player is choosing between.
+ */
 
 const lockSvg = (): string =>
   `<svg class="mn-hex" viewBox="0 0 40 40" aria-hidden="true">` +
@@ -141,63 +172,123 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
   let chosen = 0;
   let difficulty: DifficultyId = progress.lastDifficulty;
 
-  // Road length is a genuine fact about a board and the honest way to get it is
-  // to parse it. Cached because parseMap walks every tile and the level list
-  // re-renders on every navigation.
-  const roadCache = new Map<string, number>();
-  const roadLength = (level: LevelDef): number => {
-    let hit = roadCache.get(level.id);
-    if (hit === undefined) {
-      hit = Math.round(parseMap(level.map).pathLength);
-      roadCache.set(level.id, hit);
-    }
-    return hit;
-  };
+
+  /** Two clicks, deliberately — see `wireBar`. */
+  let resetArmed = false;
 
   const bar = (sub: string): string =>
     `<div class="mn-bar"><span class="mn-brand">Deep Field</span>` +
     `<span class="mn-sep"></span><span class="mn-sub">${esc(sub)}</span>` +
-    `<span class="mn-right"><button class="mn-btn ghost" id="mn-race">Race a friend →</button></span></div>`;
+    `<span class="mn-right">` +
+    `<button class="mn-btn ghost" id="mn-reset">${resetArmed ? 'Erase everything?' : 'Reset progress'}</button>` +
+    `<button class="mn-btn ghost" id="mn-race">Race a friend →</button></span></div>`;
 
   function wireBar(): void {
     el.querySelector('#mn-race')?.addEventListener('click', () => opts.onRace());
-  }
 
-  function bestsFor(level: LevelDef): string {
-    const rec = levelRecord(progress, level.id);
-    const pills = DIFFICULTY_ORDER.filter((d) => rec.best[d] !== undefined).map((d) => {
-      const b = rec.best[d]!;
-      return (
-        `<span class="mn-best">${esc(DIFFICULTIES[d].name)} <b>${esc(b.grade)}</b> ` +
-        `${b.lives}/${b.startingLives} · ${clock(b.seconds)}</span>`
-      );
+    // A destructive action does not belong one mis-click from Launch, and this
+    // screen now has a Launch button on every card. It moves to the bar and
+    // takes two clicks — the second one asking rather than telling. Settings is
+    // its proper home; this is the interim that keeps the capability without
+    // keeping the hazard.
+    el.querySelector('#mn-reset')?.addEventListener('click', () => {
+      if (!resetArmed) {
+        resetArmed = true;
+        showLevels();
+        return;
+      }
+      resetProgress();
+      progress = loadProgress();
+      difficulty = progress.lastDifficulty;
+      resetArmed = false;
+      showLevels();
     });
-    return pills.length > 0
-      ? pills.join('')
-      : `<span class="mn-none">No clear recorded</span>`;
   }
 
+
+  /**
+   * The best grade across every difficulty, as **one** badge.
+   *
+   * It used to be a pill per difficulty — "Standard A 14/20 · 4:38" — three of
+   * them stacking. Three pills is a table pretending to be a chip set: it costs
+   * a 62px block to say something a single letter says, and the per-difficulty
+   * breakdown is a thing you look up, not a thing you scan.
+   */
+  function bestBadge(level: LevelDef): string {
+    const rec = levelRecord(progress, level.id);
+    const order: Record<string, number> = { S: 0, A: 1, B: 2, C: 3, D: 4 };
+    let best: string | null = null;
+    const detail: string[] = [];
+
+    for (const d of DIFFICULTY_ORDER) {
+      const b = rec.best[d];
+      if (b === undefined) continue;
+      detail.push(`${DIFFICULTIES[d].name} ${b.grade} · ${b.lives}/${b.startingLives} · ${clock(b.seconds)}`);
+      if (best === null || (order[b.grade] ?? 9) < (order[best] ?? 9)) best = b.grade;
+    }
+
+    return best === null
+      ? `<span class="mn-grade none" title="No clear recorded">—</span>`
+      : `<span class="mn-grade" title="${esc(detail.join('\n'))}">${esc(best)}</span>`;
+  }
+
+  /**
+   * One screen: every sector, its board, and the difficulty in the same click
+   * as the launch.
+   *
+   * The picker used to spend a 62px block of prose per card describing a shape,
+   * then send the player to a *second* screen to choose a difficulty they
+   * almost always choose the same way. The board is drawn now, the blurb is a
+   * tooltip, and Launch is on the card.
+   *
+   * A locked sector shows its board **dimmed rather than hidden** — you can see
+   * what you are working toward, which is the point of having it on screen at
+   * all — and says "Hold X to open", because the game says *held* everywhere
+   * else ("Sector held", "Waves held"). One verb.
+   */
   function showLevels(): void {
     const cleared = CAMPAIGN.filter((l) => levelRecord(progress, l.id).cleared).length;
 
     const cards = CAMPAIGN.map((level, i) => {
       const open = isUnlocked(progress, i);
       const prev = CAMPAIGN[i - 1];
-      const body = open
-        ? `<div class="mn-bests">${bestsFor(level)}</div>`
-        : `<div class="mn-lock">${lockSvg()}<span>Clear ${esc(prev?.name ?? '')} to open this sector</span></div>`;
+      const facts = boardFacts(level.map);
+
+      const diffs = DIFFICULTY_ORDER.map((id) => {
+        const d = DIFFICULTIES[id];
+        return (
+          `<button class="mn-diff${id === difficulty ? ' on' : ''}" data-d="${id}" data-i="${i}"` +
+          ` title="${esc(d.blurb)}">${esc(d.name)}` +
+          `<em>${d.startingLives} lives</em></button>`
+        );
+      }).join('');
 
       return (
-        `<button class="mn-card${open ? '' : ' locked'}" data-i="${i}"${open ? '' : ' disabled'}>` +
-        `<div class="mn-card-top">${open ? hexSvg('#9184d9') : lockSvg()}` +
-        `<div><div class="mn-kicker">${esc(level.kicker)}</div>` +
-        `<h2 class="mn-card-name">${esc(level.name)}</h2></div></div>` +
-        `<p class="mn-card-blurb">${esc(level.blurb)}</p>` +
+        `<div class="mn-card${open ? '' : ' locked'}">` +
+        `<div class="mn-thumb">${boardThumb(level.map, 256, !open)}</div>` +
+        `<div class="mn-card-top"><div><div class="mn-kicker">${esc(level.kicker)}</div>` +
+        // The blurb moves to a tooltip: good writing about a shape the player
+        // can now simply see.
+        `<h2 class="mn-card-name" title="${esc(level.blurb)}">${esc(level.name)}</h2></div>` +
+        `${open ? bestBadge(level) : lockSvg()}</div>` +
         `<div class="mn-facts"><span><b>${level.waves.length}</b> waves</span>` +
-        `<span><b>${roadLength(level)}</b> tiles of road</span></div>` +
-        `<div class="mn-rule"></div>${body}</button>`
+        `<span><b>${facts.road}</b> road</span>` +
+        `<span><b>${facts.turns}</b> turns</span></div>` +
+        (open
+          ? `<div class="mn-seg tight">${diffs}</div>` +
+            `<button class="mn-btn" data-launch="${i}">Launch →</button>`
+          : `<div class="mn-lock">Hold ${esc(prev?.name ?? '')} to open</div>`) +
+        `</div>`
       );
     }).join('');
+
+    const seedRow =
+      progress.lastSeed === undefined
+        ? `<button class="mn-btn ghost" id="mn-seed-open">Set a seed</button>` +
+          `<span class="mn-fine">same seed, same waves</span>`
+        : `<button class="mn-btn ghost" id="mn-seed-open">Set a seed</button>` +
+          `<button class="mn-btn ghost" id="mn-replay" title="Replay ${esc(progress.lastSeed)}">` +
+          `Replay last board</button>`;
 
     el.innerHTML =
       `<div class="mn-glow"></div>` +
@@ -205,79 +296,49 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
       `<div class="mn-body"><div class="mn-head">` +
       `<span class="mn-kicker">Single player</span>` +
       `<h1 class="mn-title">Choose a sector</h1>` +
-      `<p class="mn-lede">Three boards, each asking a different question of the same three stations. ` +
-      `Clear one to open the next — ${cleared} of ${CAMPAIGN.length} held so far.</p></div>` +
+      `<p class="mn-lede">Three boards, each asking a different question of the same five stations. ` +
+      `${cleared} of ${CAMPAIGN.length} held.</p></div>` +
       `<div class="mn-cards">${cards}</div>` +
-      (cleared > 0 ? `<button class="mn-btn ghost" id="mn-reset">Reset campaign progress</button>` : '') +
+      // Collapsed by default. An advanced field had permanent primary space and
+      // thirty-one words of justification, in the path of every launch.
+      `<div class="mn-seedrow">${seedRow}</div>` +
+      `<div class="mn-seedbox" id="mn-seedbox" hidden>` +
+      `<input class="mn-field" id="mn-seed" placeholder="blank for a random board" ` +
+      `autocomplete="off" spellcheck="false"/></div>` +
       `</div>`;
 
     wireBar();
-    for (const card of el.querySelectorAll<HTMLElement>('.mn-card:not(.locked)')) {
-      card.addEventListener('click', () => {
-        chosen = Number(card.dataset['i']);
-        showLaunch();
+
+    for (const b of el.querySelectorAll<HTMLElement>('.mn-diff')) {
+      b.addEventListener('click', () => {
+        difficulty = b.dataset['d'] as DifficultyId;
+        showLevels();
       });
     }
-    el.querySelector('#mn-reset')?.addEventListener('click', () => {
-      resetProgress();
-      progress = loadProgress();
-      showLevels();
+    for (const b of el.querySelectorAll<HTMLElement>('[data-launch]')) {
+      b.addEventListener('click', () => launch(Number(b.dataset['launch'])));
+    }
+    el.querySelector('#mn-seed-open')?.addEventListener('click', () => {
+      const box = el.querySelector<HTMLElement>('#mn-seedbox');
+      if (box === null) return;
+      box.hidden = !box.hidden;
+      if (!box.hidden) el.querySelector<HTMLInputElement>('#mn-seed')?.focus();
+    });
+    el.querySelector('#mn-replay')?.addEventListener('click', () => {
+      launch(chosen, progress.lastSeed ?? '');
     });
   }
 
-  function showLaunch(): void {
-    const level = CAMPAIGN[chosen]!;
-    const rec = levelRecord(progress, level.id);
-
-    const options = DIFFICULTY_ORDER.map((id) => {
-      const d = DIFFICULTIES[id];
-      const b = rec.best[id];
-      return (
-        `<button class="mn-opt${id === difficulty ? ' on' : ''}" data-d="${id}">` +
-        `<div class="mn-opt-top"><span class="mn-opt-name">${esc(d.name)}</span>` +
-        `<span class="mn-opt-meta">${d.startingLives} lives${b !== undefined ? ` · best ${esc(b.grade)}` : ''}</span></div>` +
-        `<p class="mn-opt-blurb">${esc(d.blurb)}</p></button>`
-      );
-    }).join('');
-
-    el.innerHTML =
-      `<div class="mn-glow"></div>` +
-      bar(level.kicker) +
-      `<div class="mn-body"><div class="mn-head">` +
-      `<span class="mn-kicker">${esc(level.kicker)}</span>` +
-      `<h1 class="mn-title">${esc(level.name)}</h1>` +
-      `<p class="mn-lede">${esc(level.blurb)}</p></div>` +
-      `<div class="mn-col"><span class="mn-label">Difficulty</span>` +
-      `<div class="mn-seg">${options}</div>` +
-      `<div><span class="mn-label">Seed</span>` +
-      `<input class="mn-field" id="mn-seed" placeholder="leave blank for a random board" ` +
-      `autocomplete="off" spellcheck="false" style="margin-top:9px"/>` +
-      `<p class="mn-fine">The same seed always produces the same waves — worth setting if you want ` +
-      `to retry a run you just lost, or hand a friend the exact board that beat you.</p></div>` +
-      `<div class="mn-row"><button class="mn-btn dim" id="mn-back">Back</button>` +
-      `<button class="mn-btn" id="mn-launch">Launch</button></div>` +
-      `</div></div>`;
-
-    wireBar();
-
-    const launch = (): void => {
-      const seed = el.querySelector<HTMLInputElement>('#mn-seed')?.value.trim() ?? '';
-      rememberDifficulty(difficulty);
-      opts.onLaunch(level, difficulty, seed);
-    };
-
-    for (const opt of el.querySelectorAll<HTMLElement>('.mn-opt')) {
-      opt.addEventListener('click', () => {
-        difficulty = opt.dataset['d'] as DifficultyId;
-        showLaunch();
-      });
-    }
-    el.querySelector('#mn-back')!.addEventListener('click', () => showLevels());
-    el.querySelector('#mn-launch')!.addEventListener('click', launch);
-    el.querySelector('#mn-seed')!.addEventListener('keydown', (ev) => {
-      if ((ev as KeyboardEvent).key === 'Enter') launch();
-    });
+  /** Blank still means random, and a typed seed still reproduces exactly. */
+  function launch(index: number, forced?: string): void {
+    const level = CAMPAIGN[index];
+    if (level === undefined) return;
+    const seed = forced ?? el.querySelector<HTMLInputElement>('#mn-seed')?.value.trim() ?? '';
+    chosen = index;
+    rememberLaunch(difficulty, seed);
+    opts.onLaunch(level, difficulty, seed);
   }
+
 
   chosen = furthestUnlocked(progress);
   showLevels();
