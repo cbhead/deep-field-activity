@@ -15,6 +15,7 @@
     "lint": "zsh scripts/lint.sh .",
     "check": "zsh scripts/check.sh",
     "server": "zsh scripts/server.sh",
+    "play": "zsh scripts/play.sh",
     "sweep": "zsh scripts/sweep.sh"
   },
   "dependencies": {

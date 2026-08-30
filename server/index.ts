@@ -18,6 +18,9 @@
  */
 import http from 'node:http';
 import process from 'node:process';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } from '../src/net/protocol.ts';
 
@@ -111,9 +114,34 @@ function settle(room: Room, forfeitWinner?: string): void {
   });
 }
 
-const httpServer = http.createServer((_req, res) => {
-  res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end('tower-defense race server is up\n');
+// N6: the same process serves the built client, so one URL on one port is the
+// whole deployment: http://<tailscale-ip>:8787/?race for both players, and the
+// ws URL derives from the page's own host. No CDN, no second process, and both
+// clients always run the same build because it comes from here.
+const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
+const MIME: Record<string, string> = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.map': 'application/json', '.woff2': 'font/woff2', '.json': 'application/json',
+};
+
+const httpServer = http.createServer((req, res) => {
+  void (async () => {
+    // Strip the query and any traversal; everything must resolve inside dist/.
+    const rawPath = (req.url ?? '/').split('?')[0] ?? '/';
+    let path = normalize(decodeURIComponent(rawPath)).replace(/^(\.\.[/\\])+|^[/\\]+/, '');
+    if (path === '' || path === '.') path = 'index.html';
+    try {
+      const body = await readFile(join(DIST, path));
+      res.writeHead(200, { 'content-type': MIME[extname(path)] ?? 'application/octet-stream' });
+      res.end(body);
+    } catch {
+      // Before the first build (or for a stray path) keep the N0 sanity line:
+      // reachability over Tailscale must be checkable with zero client built.
+      res.writeHead(path === 'index.html' ? 200 : 404, { 'content-type': 'text/plain' });
+      res.end(path === 'index.html' ? 'tower-defense race server is up — run `npm run play` to serve the game\n' : 'not found\n');
+    }
+  })();
 });
 
 const wss = new WebSocketServer({ server: httpServer, path: WS_PATH });
