@@ -335,7 +335,34 @@ export function applyHudTheme(theme: Theme = THEME): void {
     // panelEdge → --panel-edge
     style.setProperty(`--${key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`, css(value));
   }
-  for (const [id, value] of Object.entries(theme.towers)) {
-    style.setProperty(`--tower-${id}`, css(value));
+
+  const ids = Object.keys(theme.towers);
+  for (const id of ids) {
+    style.setProperty(`--tower-${id}`, css(theme.towers[id as keyof typeof theme.towers]));
   }
+
+  /**
+   * The `.t-<id>` rules are generated here rather than written in `styles.css`,
+   * and that is the point.
+   *
+   * The variables above were already derived from the roster, but the rules that
+   * *consume* them were three hand-written lines — so adding Arc and Filament
+   * produced two perfectly good custom properties that nothing referenced, and
+   * both stations rendered in the deck's default grey. Nothing caught it:
+   * TypeScript does not read CSS, and the stylesheet is not wrong, merely
+   * incomplete. `towers.ts` even warns about exactly this class of drift.
+   *
+   * Deriving both ends from the same loop makes a new station one content edit
+   * again, which is what it was supposed to be.
+   */
+  const RULES_ID = 'tower-tints';
+  let sheet = document.getElementById(RULES_ID);
+  if (sheet === null) {
+    sheet = document.createElement('style');
+    sheet.id = RULES_ID;
+    // Appended to head, so it lands after the linked stylesheet and wins ties
+    // at equal specificity.
+    document.head.appendChild(sheet);
+  }
+  sheet.textContent = ids.map((id) => `.t-${id}{color:var(--tower-${id})}`).join('');
 }
