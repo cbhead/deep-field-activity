@@ -14,6 +14,11 @@ import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
 import { createHud } from './ui/hud.ts';
+import { planWave } from './sim/wavePlan.ts';
+import { serverUrl } from './net/NetClient.ts';
+import { DEFAULT_PORT } from './net/protocol.ts';
+import { MatchController } from './net/MatchController.ts';
+import { createRaceOverlay } from './ui/raceOverlay.ts';
 
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
@@ -43,7 +48,37 @@ async function main(): Promise<void> {
   const hudRoot = document.getElementById('hud');
   if (!mount || !hudRoot) throw new Error('#game-root or #hud missing from index.html');
 
-  const seed = resolveSeed();
+  const params = new URLSearchParams(location.search);
+  const race = params.get('race');
+  if (race === null) {
+    await startGame(mount, hudRoot, resolveSeed());
+    return;
+  }
+
+  // Race mode, N2 dev-grade entry: `?race` creates a room, `?race=CODE` joins.
+  // The real lobby screen replaces this at N3. Port is explicit because dev
+  // serves the page from Vite while the relay listens on DEFAULT_PORT; at N6
+  // one process serves both and the two collapse to the same host:port.
+  const overlay = createRaceOverlay(mount);
+  const name = params.get('name') ?? `pilot-${Math.floor(Math.random() * 1000)}`;
+  const controller = new MatchController({
+    url: serverUrl(`${location.hostname}:${DEFAULT_PORT}`, location.protocol === 'https:'),
+    name,
+    ...(race === '' ? {} : { room: race }),
+    hooks: {
+      onLobby: (room, players) => overlay.lobby(room, players),
+      onCountdown: (ms) => overlay.countdown(ms),
+      onError: (reason) => overlay.error(reason),
+      boot: (seed) => {
+        overlay.remove();
+        void startGame(mount, hudRoot, seed);
+      },
+    },
+  });
+  void controller.run();
+}
+
+async function startGame(mount: HTMLElement, hudRoot: HTMLElement, seed: number): Promise<void> {
   const map = parseMap(LEVEL01);
   const world = createWorld(map, seed);
   const ui = createUiState();
@@ -133,6 +168,10 @@ async function main(): Promise<void> {
   if (import.meta.env.DEV) {
     (globalThis as Record<string, unknown>)['td'] = {
       world, loop, view, overlay, effects, ui, map, app, layers,
+      // The N2 fairness gate: run this in two tabs of the same room and diff.
+      // Byte-identical or the race is not fair.
+      dumpWaves: (n = 20) =>
+        JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i))),
     };
   }
 }

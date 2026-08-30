@@ -1,0 +1,49 @@
+/**
+ * The wire contract shared by server/ and src/net/ — the one file both sides
+ * import, so the two ends of the socket cannot drift apart silently.
+ *
+ * JSON text frames, discriminated on `t`. Cheating is an explicit non-goal:
+ * the server relays what clients report and validates nothing, so decode()
+ * checks shape only as far as "has a t field" and trusts the rest.
+ *
+ * `start.countdownMs` is deliberately relative, never an absolute timestamp —
+ * clocks are never compared across machines. Each client measures its own
+ * elapsedMs from its local start.
+ */
+export const PROTOCOL_VERSION = 1;
+export const DEFAULT_PORT = 8787;
+export const WS_PATH = '/ws';
+
+export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
+
+/** client → server. hello without a room creates one; with a room, joins it. */
+export type C2S =
+  | { t: 'hello'; v: number; name: string; room?: string }
+  | { t: 'ready' }
+  | { t: 'status'; wave: number; lives: number; elapsedMs: number }
+  | { t: 'dead'; wave: number; elapsedMs: number };
+
+/** server → client */
+export type S2C =
+  | { t: 'joined'; playerId: string; room: string }
+  | { t: 'lobby'; players: LobbyPlayer[] }
+  | { t: 'start'; seed: number; countdownMs: number }
+  | { t: 'peer'; wave: number; lives: number; elapsedMs: number }
+  | { t: 'peerConn'; connected: boolean }
+  | { t: 'result'; winnerId: string | null }
+  | { t: 'error'; reason: string };
+
+export const encode = (msg: C2S | S2C): string => JSON.stringify(msg);
+
+function decode(raw: string): unknown | null {
+  try {
+    const msg: unknown = JSON.parse(raw);
+    if (typeof msg === 'object' && msg !== null && typeof (msg as { t?: unknown }).t === 'string') return msg;
+  } catch {
+    /* not JSON — drop the frame */
+  }
+  return null;
+}
+
+export const decodeC2S = (raw: string): C2S | null => decode(raw) as C2S | null;
+export const decodeS2C = (raw: string): S2C | null => decode(raw) as S2C | null;

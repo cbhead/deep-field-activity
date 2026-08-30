@@ -22,5 +22,5 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "tools", "vite.config.ts"]
+  "include": ["src", "tools", "server", "vite.config.ts"]
 }
