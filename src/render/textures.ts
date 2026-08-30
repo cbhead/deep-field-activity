@@ -41,6 +41,15 @@ export interface Textures {
    */
   falloff: Texture;
   /**
+   * One soft streak, tiled along each straight run of the route to make the
+   * road read as a current rather than as a road.
+   *
+   * The **only** thing on the board layer that moves, and the only thing that
+   * costs anything per frame — one `tilePosition` write per run. See
+   * `buildStream`.
+   */
+  stream: Texture;
+  /**
    * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
    * GPU and keeps every unarmoured creep on one texture, hence one draw call.
    */
@@ -86,6 +95,10 @@ function bake(renderer: Renderer, draw: (g: Graphics) => void, resolution?: numb
   g.destroy();
   return texture;
 }
+
+/** One streak's length and thickness in the bake; tiled at draw time. */
+const STREAM_PX = 56;
+const STREAM_H = 6;
 
 /** Baked once and stretched, so its own pixel size only sets the smoothness. */
 const FALLOFF_PX = 256;
@@ -368,6 +381,16 @@ export function createTextures(renderer: Renderer): Textures {
     }),
 
     falloff: bake(renderer, drawFalloff, 1),
+
+    stream: bake(renderer, (g) => {
+      // A soft streak that fades to nothing at both ends, so tiling it end to
+      // end gives a repeating current with no seam to find. `sin²` rather than
+      // a linear ramp: linear leaves a visible crease where two copies meet.
+      for (let x = 0; x < STREAM_PX; x++) {
+        const a = Math.sin((x / STREAM_PX) * Math.PI) ** 2;
+        if (a > 0.01) g.rect(x, 0, 1, STREAM_H).fill({ color: BAKE_NEUTRAL, alpha: a });
+      }
+    }, 1),
 
     // The base sits at `groundAlpha` like open ground rather than staying
     // opaque. An opaque base would punch a starless rectangle out of the sky,

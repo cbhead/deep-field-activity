@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite } from 'pixi.js';
+import { Container, Graphics, Sprite, TilingSprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
 import { TILE_PX, gridMaskAt } from './constants.ts';
@@ -16,7 +16,23 @@ import type { Textures } from './textures.ts';
  * zero running cost into a per-frame one, and it would put motion in the
  * background of a game where motion is how you spot a contact.
  */
-export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): Container {
+/**
+ * The board, plus the one thing on it that moves.
+ *
+ * `step` exists only for the stream. Everything else here is built once and
+ * never touched again — which was true of the *whole* layer until the design
+ * asked for a current, and is the reason that ask needed arguing rather than
+ * assuming. It is a handful of `tilePosition` writes per frame and no
+ * tessellation, which is the cheap way to do it; the expensive way is a shader
+ * or a per-tile animation, and writing the cheap one down is most of what stops
+ * someone reaching for those.
+ */
+export interface MapLayer {
+  readonly view: Container;
+  step(dt: number): void;
+}
+
+export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): MapLayer {
   const layer = new Container();
 
   // Beneath the tiles, which are baked translucent so it shows through.
@@ -42,10 +58,92 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
   layer.addChild(buildNebula(map, field));
 
   layer.addChild(buildLattice(map, field));
+
+  const stream = buildStream(map, tex, field);
+  for (const run of stream) layer.addChild(run);
+
   layer.addChild(buildRouteLine(map, field));
   layer.addChild(buildEndMarkers(map, field));
 
-  return layer;
+  return {
+    view: layer,
+    step(dt) {
+      // Constant, and deliberately **not** scaled by the 1x/2x/4x multiplier.
+      // A current that sped up with the game would read as the board reacting
+      // to the speed control rather than as something the road is doing.
+      for (const run of stream) run.tilePosition.x -= STREAM_TILES_PER_SEC * TILE_PX * dt;
+    },
+  };
+}
+
+/** Alpha and speed. Both ceilings — see the budget note in `buildStream`. */
+const STREAM_ALPHA = 0.1;
+const STREAM_TILES_PER_SEC = 0.35;
+
+/** How thick the current is across the road, in tiles. */
+const STREAM_WIDTH = 0.44;
+
+/**
+ * One `TilingSprite` per straight run of the route, scrolling toward the pulsar.
+ *
+ * Runs rather than segments: consecutive collinear waypoints merge, so
+ * Switchback's forty-three tiles become seven scrolling strips. **No run has to
+ * turn** — a corner is where one strip ends and the next begins, which is what
+ * keeps this to a rotation and a scalar per run instead of a curved mesh.
+ *
+ * The budget that matters is not CPU, it is attention: *at 4x on Switchback, a
+ * single Mote must still be the first thing the eye finds.* If it is not, halve
+ * the alpha before touching the speed — a dim fast crawl reads as current, a
+ * bright slow one reads as an object, and an object is what a contact is.
+ */
+function buildStream(map: MapDef, tex: Textures, field: SectorField): TilingSprite[] {
+  const runs: TilingSprite[] = [];
+  const wp = map.waypoints;
+  if (wp.length < 2) return runs;
+
+  let start = wp[0]!;
+  for (let i = 1; i < wp.length; i++) {
+    const here = wp[i]!;
+    const next = wp[i + 1];
+
+    // Keep extending while the heading does not change.
+    if (
+      next !== undefined &&
+      Math.sign(here.x - start.x) === Math.sign(next.x - here.x) &&
+      Math.sign(here.y - start.y) === Math.sign(next.y - here.y)
+    ) {
+      continue;
+    }
+
+    const dx = here.x - start.x;
+    const dy = here.y - start.y;
+    const len = Math.hypot(dx, dy) * TILE_PX;
+    if (len > 0) runs.push(strip(tex, field, start.x, start.y, Math.atan2(dy, dx), len));
+
+    start = here;
+  }
+
+  return runs;
+}
+
+function strip(
+  tex: Textures,
+  field: SectorField,
+  tileX: number,
+  tileY: number,
+  rotation: number,
+  length: number,
+): TilingSprite {
+  const s = new TilingSprite({ texture: tex.stream, width: length, height: STREAM_WIDTH * TILE_PX });
+
+  // Pivot on the strip's own centre line so a run rotates about the road rather
+  // than about its edge.
+  s.pivot.set(0, (STREAM_WIDTH * TILE_PX) / 2);
+  s.position.set(tileX * TILE_PX, tileY * TILE_PX);
+  s.rotation = rotation;
+  s.tint = field.lineFar;
+  s.alpha = STREAM_ALPHA;
+  return s;
 }
 
 /**
@@ -425,14 +523,15 @@ function buildLattice(map: MapDef, field: SectorField): Graphics {
 }
 
 /**
- * Across the whole 26x15 board, so roughly one star every two tiles. Dense
- * enough that no tile is conspicuously empty, sparse enough that the field never
- * resolves into texture the eye has to look past.
+ * Star count and bright-chance moved onto `SectorField`.
+ *
+ * They were 300 and 0.12 for every board, which is the right density for
+ * Switchback — roughly one star every two tiles, enough that no tile is
+ * conspicuously empty and sparse enough that the field never resolves into
+ * texture the eye has to look past. But density is exactly what a sector has to
+ * be able to vary: Cascade's open board should feel emptier, and rarity is what
+ * makes the bright ones read as depth rather than as noise.
  */
-const STAR_COUNT = 300;
-
-/** Rarity is what makes the bright ones read as depth rather than as noise. */
-const BRIGHT_STAR_CHANCE = 0.12;
 
 /**
  * A literal, and deliberately not the match seed. The sky is set dressing, not
@@ -455,27 +554,54 @@ const SKY_SEED = 0x5c1f;
  */
 function buildStarfield(width: number, height: number, field: SectorField): Graphics {
   const g = new Graphics();
-  const rand = mulberry32(SKY_SEED);
 
-  for (let i = 0; i < STAR_COUNT; i++) {
+  // Two passes into one node: a near field, then a dimmer, smaller far field
+  // behind it. Depth comes from the two populations differing, not from either
+  // one moving — the sky stays static because motion in the background means
+  // "a contact", and that is the one thing it may never say.
+  //
+  // Separate seeds, or the far pass would land a companion beside every near
+  // star and read as astigmatism rather than as distance.
+  drawStarPass(g, width, height, field, mulberry32(SKY_SEED), field.starCount, 1);
+  drawStarPass(
+    g,
+    width,
+    height,
+    field,
+    mulberry32(SKY_SEED ^ 0x9e37),
+    Math.round(field.starCount * 0.7),
+    field.starFarAlpha,
+  );
+
+  return g;
+}
+
+function drawStarPass(
+  g: Graphics,
+  width: number,
+  height: number,
+  field: SectorField,
+  rand: () => number,
+  count: number,
+  depth: number,
+): void {
+  for (let i = 0; i < count; i++) {
     const x = rand() * width;
     const y = rand() * height;
-    const bright = rand() < BRIGHT_STAR_CHANCE;
+    const bright = rand() < field.starBrightChance;
 
     // The ceilings matter more than the exact numbers. Even the brightest star
     // has to sit below a station stroke, which sits below a contact: the sky is
     // the bottom of the contrast hierarchy, and anything up here that pulls the
     // eye is spending attention the pink creeps have already been promised.
-    const radius = bright ? 1 + rand() * 0.6 : 0.45 + rand() * 0.65;
-    const alpha = bright ? 0.55 + rand() * 0.25 : 0.16 + rand() * 0.34;
+    const radius = (bright ? 1 + rand() * 0.6 : 0.45 + rand() * 0.65) * (0.6 + depth * 0.4);
+    const alpha = (bright ? 0.55 + rand() * 0.25 : 0.16 + rand() * 0.34) * depth;
 
     g.circle(x, y, radius).fill({
       color: bright ? field.starBright : field.star,
       alpha,
     });
   }
-
-  return g;
 }
 
 /**

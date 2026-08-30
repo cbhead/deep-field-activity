@@ -136,9 +136,23 @@ export interface SectorField {
    */
   readonly bloomAlpha: number;
 
-  /** Starfield. Most stars are `star`; a scattered few are `starBright`. */
+  /**
+   * Starfield. Most stars are `star`; a scattered few are `starBright`.
+   *
+   * Count and rarity are per field because they are most of what separates one
+   * sector from another once the hue has been chosen: Cascade runs fewer stars
+   * at a higher bright-chance, so its open board reads as emptier *and* harder.
+   *
+   * `starFarAlpha` scales a second, dimmer pass drawn into the same Graphics —
+   * depth for free, since two passes of one node still cost one draw call and
+   * nothing per frame. The sky stays static: motion in the background means "a
+   * contact", and that is the one thing it may never say.
+   */
   readonly star: number;
   readonly starBright: number;
+  readonly starCount: number;
+  readonly starBrightChance: number;
+  readonly starFarAlpha: number;
   /**
    * Ground tiles draw at this alpha so the starfield shows through open
    * space. The route stays fully opaque, which is what makes it read as a
@@ -343,13 +357,79 @@ const SWITCHBACK: SectorField = {
   bloomAlpha: 0.45,
   star: 0x6f7699,
   starBright: 0xd7dcf0,
+  starCount: 300,
+  starBrightChance: 0.12,
+  starFarAlpha: 0.45,
   groundAlpha: 0.72,
+};
+
+/**
+ * Steel-cyan, thin nebula, harder stars — the open board should feel emptier.
+ *
+ * Fewer stars at a higher bright-chance is the whole trick: the same sky with
+ * more space in it and sharper points where it is not empty.
+ */
+const CASCADE: SectorField = {
+  ...SWITCHBACK,
+  id: 'cascade',
+  bg: 0x05090e,
+  ground: 0x0d1520,
+  groundAlt: 0x090f18,
+  gridLine: 0x182a36,
+  gridAlpha: 0.9,
+  blocked: 0x1a2430,
+  blockedEdge: 0x243444,
+  nebulaPerTile: 2,
+  path: 0x16222f,
+  pathLit: 0x22384d,
+  spillNear: 0x60a5be,
+  spillFar: 0xc4f2fc,
+  lineNear: 0xc4f2fc,
+  lineFar: 0xe6fbff,
+  spawn: 0xf9a8d4,
+  goal: 0xa5eefb,
+  lit: 0xa5eefb,
+  litAlpha: 0.2,
+  haze: 0x264454,
+  star: 0x6d8b99,
+  starBright: 0xd4ecf5,
+  starCount: 210,
+  starBrightChance: 0.2,
+};
+
+/** Cold teal-black, densest nebula pressing in on both lanes. */
+const PINCER: SectorField = {
+  ...SWITCHBACK,
+  id: 'pincer',
+  bg: 0x05090a,
+  ground: 0x0a1512,
+  groundAlt: 0x070f0d,
+  gridLine: 0x1a302a,
+  gridAlpha: 0.95,
+  blocked: 0x16241f,
+  blockedEdge: 0x1f3730,
+  nebulaPerTile: 6,
+  nebulaAlpha: 0.16,
+  path: 0x122120,
+  pathLit: 0x1d3a35,
+  spillNear: 0x6eb496,
+  spillFar: 0xcefae2,
+  lineNear: 0xcefae2,
+  lineFar: 0xeafff4,
+  spawn: 0xf9a8d4,
+  goal: 0x86e39b,
+  lit: 0x86e39b,
+  litAlpha: 0.17,
+  haze: 0x1e3a32,
+  hazeAlpha: 0.42,
+  star: 0x6b8f80,
+  starBright: 0xd2efe0,
 };
 
 export const SECTOR_FIELDS: Readonly<Record<SectorFieldId, SectorField>> = {
   switchback: SWITCHBACK,
-  cascade: { ...SWITCHBACK, id: 'cascade' },
-  pincer: { ...SWITCHBACK, id: 'pincer' },
+  cascade: CASCADE,
+  pincer: PINCER,
 };
 
 /** What Race mode and any unknown level get. Race passes no level at all. */

@@ -14,7 +14,25 @@ export interface UiPrefs {
   /** Show reach circles only under the pointer, or on every placed station. */
   reachCircles: 'hover' | 'always';
   damageNumbers: boolean;
+  /**
+   * The route's current. The one moving thing on the board layer.
+   *
+   * On by default, and off by default for anyone who has asked their system for
+   * reduced motion — which has to be checked in JS, because the stylesheet's
+   * `prefers-reduced-motion` block cannot reach a Pixi sprite.
+   */
+  stream: boolean;
 }
+
+/**
+ * Read once at startup rather than watched.
+ *
+ * A player who changes the system setting mid-run can flip the toggle, and
+ * live-watching it would mean the board could start moving underneath someone
+ * who had asked it not to.
+ */
+const wantsMotion = (): boolean =>
+  typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export interface UiState {
   /** Tower type armed for placement, or null when not building. */
@@ -36,5 +54,5 @@ export const createUiState = (): UiState => ({
   inspecting: null,
   deckOpen: true,
   paused: false,
-  prefs: { reachCircles: 'hover', damageNumbers: true },
+  prefs: { reachCircles: 'hover', damageNumbers: true, stream: wantsMotion() },
 });

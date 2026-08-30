@@ -342,7 +342,8 @@ async function startGame(
   const { app, layers } = await createRenderer(mount, boardW, boardH, field);
 
   const textures = createTextures(app.renderer);
-  layers.map.addChild(buildMapLayer(map, textures, field));
+  const mapLayer = buildMapLayer(map, textures, field);
+  layers.map.addChild(mapLayer.view);
 
   const view = new WorldView(layers, textures);
   const overlay = new Overlay(layers, textures);
@@ -397,6 +398,10 @@ async function startGame(
       hud.onEvent(ev);
     }
     world.events.length = 0;
+
+    // Real seconds, not `dt` scaled by the speed multiplier: the current is a
+    // property of the road, not of how fast the game is being run.
+    if (ui.prefs.stream) mapLayer.step(1 / 60);
 
     view.sync(world, dt);
     overlay.sync(world, ui.selected, ui.hover, ui.inspecting);

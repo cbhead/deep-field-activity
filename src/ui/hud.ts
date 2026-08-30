@@ -192,6 +192,9 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       case 'pref-damage':
         ui.prefs.damageNumbers = data['v'] === 'on';
         break;
+      case 'pref-stream':
+        ui.prefs.stream = data['v'] === 'on';
+        break;
     }
   }
 
@@ -792,6 +795,17 @@ function renderPaused(w: World, ui: UiState): string {
         ['off', 'Off'],
       ],
       ui.prefs.damageNumbers ? 'on' : 'off',
+    )}</div>` +
+    // Defaults *off* for anyone whose system asks for reduced motion, so this
+    // row is where they would turn it on rather than where they discover it has
+    // been running all along.
+    `<div class="row"><span>Route current</span>${toggle(
+      'pref-stream',
+      [
+        ['on', 'On'],
+        ['off', 'Off'],
+      ],
+      ui.prefs.stream ? 'on' : 'off',
     )}</div>` +
     `</div>` +
     `<div class="hr"></div>` +
