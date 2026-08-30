@@ -218,6 +218,11 @@ export const DEEP_FIELD: Theme = {
     lance: 0x8fc4fa,
     nova: 0xfcc08a,
     singularity: 0xa5eefb,
+    // Green and violet, because the three above are all blue-to-orange and a
+    // fourth blue would be unreadable in a crowd — the damage numbers are tinted
+    // by station, so these have to separate at a glance and at 13px.
+    arc: 0x86e39b,
+    filament: 0xc4a6ff,
   },
 
   // Contacts share one warm family so "something is coming" reads before "what

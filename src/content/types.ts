@@ -95,6 +95,33 @@ export interface TowerDef {
   /** Seconds the slow lasts. Refreshed on re-hit, never stacked. */
   readonly slowSeconds: number;
 
+  /**
+   * Extra contacts the hit jumps to, and how far a jump may reach.
+   *
+   * Distinct from `pierce`, which is the same idea constrained to a straight
+   * line. Pierce wants contacts *lined up* and splash wants them *clumped*; a
+   * loose scatter satisfies neither, and that was the hole in the roster. A
+   * chain needs only proximity, so it is the answer to a spread-out swarm
+   * without being an answer to anything tough.
+   */
+  readonly chainJumps: number;
+  readonly chainRange: number;
+  /** Damage multiplier applied per jump, compounding. `1` would not fall off. */
+  readonly chainFalloff: number;
+
+  /**
+   * How fast damage ramps while the station holds one target, and the ceiling.
+   *
+   * `rampPerSecond: 0` is a station that does not ramp, which is most of them.
+   * The ramp resets the instant the target changes — that is the whole design:
+   * it makes a ramping station excellent against one wall of hull and useless
+   * against a crowd, which is the inverse of the chain above, and it is why a
+   * slow that holds something in place is worth pairing with.
+   */
+  readonly rampPerSecond: number;
+  /** Ceiling as a multiple of base damage. `1` means no ramp is possible. */
+  readonly rampMax: number;
+
   /** Number key that selects this tower. */
   readonly hotkey: string;
   /**

@@ -157,6 +157,21 @@ export interface Tower {
   /** Seconds until this tower may fire again. */
   cooldown: number;
 
+  /**
+   * Which contact this station is currently spun up on, and for how long.
+   *
+   * Only a ramping station reads these, but every station carries them so the
+   * shape of a Tower does not depend on which one it is — the alternative is a
+   * union, and a union here would spread `defId` checks through targeting,
+   * build and the inspector alike.
+   *
+   * `focusId` is an id rather than a reference on purpose: it is compared, never
+   * dereferenced, and holding a dead contact alive to answer "is this still the
+   * same target" would be a leak with no upside.
+   */
+  focusId: EntityId | null;
+  focusTime: number;
+
   /** Total money sunk in, including upgrades. The sell refund is a cut of this. */
   spent: number;
 

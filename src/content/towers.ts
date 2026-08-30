@@ -1,7 +1,7 @@
 import type { TowerDef } from './types.ts';
 
 /**
- * The three v1 stations.
+ * The five stations.
  *
  * **Ids match the names on purpose.** They were once `arrow`/`cannon`/`frost`
  * and the display names moved on without them; that mismatch is the kind that
@@ -9,24 +9,28 @@ import type { TowerDef } from './types.ts';
  * now one word. Renaming later costs a typed find/replace the compiler polices
  * completely, plus the `.t-<id>` classes in styles.css that it does not.
  *
- * Costs are set against range, not against raw damage. Range buys time on
- * target, so a short-reach station needs more damage per dollar just to break
- * even: Lance yields 0.16 dps/$ at 2.8 tiles, Nova 0.21 at 2.5. Tuned by sweep
- * (see the balance probe in tools/check.ts), not by feel — the first guess had
- * Lance at 0.20 dps/$ *and* the longest reach, which made it strictly correct
- * and the other two decorative.
+ * **Every station is the answer to something, and to only one thing.** That is
+ * the property the roster is tuned for, and `tools/check.ts`'s matchup matrix
+ * is what checks it — a row of zeros is a station that beats everything, a
+ * column nothing clears is a contact with no counter, and both are failures.
  *
- * **These numbers are pre-M7 and will all move.** Each station is about to gain
- * the behaviour its name asserts — Lance pierces, Nova detonates, Singularity
- * slows — and everything here was tuned when all three behaved identically. The
- * blurbs below describe what they do *today*, not what the names promise; they
- * get rewritten when the mechanics land.
+ * The five, and the question each answers:
  *
- * Known gap: Singularity cannot yet carry a game on its own, and the probe says
- * so — `won 0/5`. With one contact type and no status effects there is nothing
- * for a low-damage, high-rate, long-reach station to be good *at*. Its whole
- * point is the gravitational slow that arrives in M7; it is priced as cheap
- * early coverage until then.
+ * - **Lance** pierces — contacts *lined up* along a straight.
+ * - **Nova** detonates — contacts *clumped* together.
+ * - **Arc** chains — contacts merely *near* each other, which is the case
+ *   neither of the other two covers and was the hole in the roster.
+ * - **Filament** ramps on a held target — one wall of hull, and nothing else.
+ * - **Singularity** slows — support. It wins 0/5 alone in the mono-build rows
+ *   and that number means nothing: a station with no damage cannot answer a
+ *   "can it clear the arc by itself" question. Read its marginal contribution
+ *   instead, where it is worth more than either of the ones that do damage.
+ *
+ * Costs are set against range, not against raw damage, because range buys time
+ * on target: a short-reach station needs more damage per dollar just to break
+ * even. Tuned by sweep, never by feel — the first guess had Lance at the best
+ * damage per dollar *and* the longest reach, which made it strictly correct and
+ * the other two decorative.
  */
 export const TOWERS = {
   lance: {
@@ -43,6 +47,11 @@ export const TOWERS = {
     splashFalloff: 1,
     slowFactor: 1,
     slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
     hotkey: '1',
     unlockWave: 0,
   },
@@ -60,6 +69,11 @@ export const TOWERS = {
     splashFalloff: 0.35,
     slowFactor: 1,
     slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
     hotkey: '2',
     unlockWave: 0,
   },
@@ -79,8 +93,82 @@ export const TOWERS = {
     splashFalloff: 1,
     slowFactor: 0.8,
     slowSeconds: 0.9,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    rampPerSecond: 0,
+    rampMax: 1,
     hotkey: '3',
     unlockWave: 0,
+  },
+
+  arc: {
+    id: 'arc',
+    name: 'Arc',
+    blurb: 'Jumps between contacts. Wants them near each other, not lined up.',
+    cost: 105,
+    range: 2.6,
+    damage: 10,
+    fireInterval: 0.75,
+    // Near-hitscan, like Singularity: an arc that visibly travelled would read
+    // as a slow projectile rather than as electricity finding a path.
+    projectileSpeed: 30,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    // 10 into the first, then 5.5, 3.0, 1.7 — about 20 spread over four
+    // contacts. Deliberately worse than Lance into a single target and better
+    // than either into a scatter, which is the only thing it should win at.
+    // The falloff started at 0.65 and the probe had Arc winning 5/5 at 17.4
+    // lives alone, ahead of every other single station — proximity is a far
+    // easier condition to satisfy than Lance's alignment, so equal falloff made
+    // it the strictly easier buy rather than a different one.
+    chainJumps: 3,
+    chainRange: 1.6,
+    chainFalloff: 0.55,
+    rampPerSecond: 0,
+    rampMax: 1,
+    hotkey: '4',
+    // Opens on the wave Motes first arrive. Every station unlocks alongside the
+    // problem it answers, so the deck teaches the roster instead of the player
+    // having to infer it.
+    unlockWave: 2,
+  },
+
+  filament: {
+    id: 'filament',
+    name: 'Filament',
+    blurb: 'Burns hotter the longer it holds one target. Resets if it switches.',
+    cost: 105,
+    range: 2.4,
+    // Low per-hit damage on purpose: armour is subtracted per hit, so a
+    // Filament is deliberately terrible into a Bulwark however long it burns.
+    // It answers hull, not plating — that is what keeps it from being a
+    // strictly better Nova.
+    damage: 4,
+    fireInterval: 0.25,
+    projectileSpeed: 40,
+    pierce: 0,
+    splashRadius: 0,
+    splashFalloff: 1,
+    slowFactor: 1,
+    slowSeconds: 0,
+    chainJumps: 0,
+    chainRange: 0,
+    chainFalloff: 1,
+    // 16 dps cold, 48 dps at the ceiling, reached after 2.5s on one target.
+    // Swept between two failures rather than guessed: 12/42 over 4s could not
+    // carry a run even with its unlock removed (wave 8 of 10, level with pure
+    // Singularity, which has no damage at all), while 20/70 over 2.5s won alone
+    // at 19.8 lives and made nova+filament a flawless 20/20 — dominant, which
+    // is the one outcome the roster must not have.
+    rampPerSecond: 0.8,
+    rampMax: 3,
+    hotkey: '5',
+    /** Opens on the wave the first Monolith walks in. */
+    unlockWave: 4,
   },
 } as const satisfies Record<string, TowerDef>;
 

@@ -389,6 +389,16 @@ function mechanics(d: TowerDef): string {
   if (d.slowFactor < 1) {
     parts.push(`Slows to ${Math.round(d.slowFactor * 100)}% for ${d.slowSeconds}s`);
   }
+  if (d.chainJumps > 0) {
+    parts.push(`Jumps to ${d.chainJumps} more within ${d.chainRange.toFixed(1)} tiles`);
+  }
+  if (d.rampPerSecond > 0) {
+    // Stated as the ceiling and the time to reach it, because those are the two
+    // numbers a placement decision turns on — "×3.5" alone says nothing about
+    // whether anything on this board stands still long enough to see it.
+    const seconds = (d.rampMax - 1) / d.rampPerSecond;
+    parts.push(`Ramps to ×${d.rampMax} over ${seconds.toFixed(1)}s on one target`);
+  }
   return parts.join(' · ');
 }
 

@@ -103,6 +103,8 @@ export function buildTower(w: World, defId: TowerId, col: number, row: number): 
     targeting: 'first',
     // Ready to fire the moment it lands, so a last-second build still helps.
     cooldown: 0,
+    focusId: null,
+    focusTime: 0,
     spent: def.cost,
     kills: 0,
     damageDealt: 0,

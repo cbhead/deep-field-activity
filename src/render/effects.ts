@@ -379,9 +379,29 @@ export class Effects {
       }
     }
 
-    // Reach circles for every placed station, when the player asked for them.
-    if (prefs.reachCircles === 'always') {
-      for (const t of w.towers) {
+    for (const t of w.towers) {
+      // Spin-up, drawn on the station rather than on its shots.
+      //
+      // A ramp nobody can see is a ramp nobody can play around, and the useful
+      // question is about the *station* — "is this one up to speed, or did it
+      // just switch targets and lose everything" — not about any single shot.
+      // Putting it here also keeps the ramp out of the projectile, so the sim
+      // carries no field that exists only to be drawn.
+      const def = TOWERS[t.defId];
+      if (def.rampPerSecond > 0 && t.focusTime > 0) {
+        const ceiling = (def.rampMax - 1) / def.rampPerSecond;
+        const charge = Math.min(1, t.focusTime / ceiling);
+        const r = TILE_PX * 0.42;
+        const start = -Math.PI / 2;
+        // `moveTo` first — see the slow ring above for why an arc without one
+        // trails a line back to whatever was drawn before it.
+        g.moveTo(t.x * TILE_PX, t.y * TILE_PX - r)
+          .arc(t.x * TILE_PX, t.y * TILE_PX, r, start, start + Math.PI * 2 * charge)
+          .stroke({ width: 1 + charge * 2.5, color: THEME.towers[t.defId], alpha: 0.4 + charge * 0.5 });
+      }
+
+      // Reach circles for every placed station, when the player asked for them.
+      if (prefs.reachCircles === 'always') {
         g.circle(t.x * TILE_PX, t.y * TILE_PX, t.range * TILE_PX).stroke({
           width: 1,
           color: THEME.towers[t.defId],

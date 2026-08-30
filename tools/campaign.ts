@@ -52,7 +52,7 @@ function rankedSpots(map: MapDef, range: number): [number, number][] {
   return scored.map((s) => [s.col, s.row] as [number, number]);
 }
 
-const BUILD: TowerId[] = ['nova', 'lance', 'singularity'];
+const BUILD: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
 const SEEDS = [4242, 7, 999, 31337, 12345];
 
 interface Result {
@@ -68,7 +68,14 @@ function run(map: MapDef, rules: ReturnType<typeof resolveRules>, seed: number):
 
   for (let i = 0; i < 600_000 && w.phase === 'playing'; i++) {
     const want = BUILD[next % BUILD.length]!;
-    if (next < spots.length && w.money >= TOWERS[want].cost) {
+    // Locked stations are skipped rather than attempted — advancing `next` on a
+    // rejected command would burn one of the ranked tiles and quietly leave the
+    // build short of the coverage it was supposed to be measuring.
+    if (
+      next < spots.length &&
+      w.money >= TOWERS[want].cost &&
+      w.wave.index >= TOWERS[want].unlockWave
+    ) {
       w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
       next++;
     }
@@ -80,7 +87,7 @@ function run(map: MapDef, rules: ReturnType<typeof resolveRules>, seed: number):
 }
 
 console.log('\n\x1b[1mcampaign arc\x1b[0m');
-console.log('  \x1b[2mgreedy mixed build (nova+lance+singularity) · real starting money · 5 seeds · no rushing\x1b[0m');
+console.log('  \x1b[2mgreedy mixed build (all five stations) · real starting money · 5 seeds · no rushing\x1b[0m');
 
 for (const level of CAMPAIGN) {
   // Parsing is the assertion: parseMap throws on a malformed board, and a

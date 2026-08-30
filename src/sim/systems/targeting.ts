@@ -1,4 +1,5 @@
 import { TOWERS } from '../../content/towers.ts';
+import type { TowerDef } from '../../content/types.ts';
 import type { Creep, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
@@ -29,10 +30,29 @@ export function fireTowers(w: World, dt: number): void {
       // a tower that idled through an intermission would fire a burst the
       // instant the next wave walked in.
       t.cooldown = 0;
+      // Losing the target loses the spin-up with it. Without this a station
+      // would hold its charge across a whole intermission and open the next
+      // wave at full power, which is the one reward a ramp must not give.
+      t.focusId = null;
+      t.focusTime = 0;
       continue;
     }
 
     const def = TOWERS[t.defId];
+
+    // Focus advances here rather than every tick, and that is deliberate.
+    // Re-targeting every tick is affordable; doing it for every station
+    // *regardless of cooldown* is a different bill and buys nothing, because
+    // between two shots the ramp cannot be observed — only its effect on the
+    // next one. Adding the interval that just elapsed gives the same answer
+    // sampling continuously would, for a fraction of the work.
+    if (t.focusId === best.id) {
+      t.focusTime = Math.min(t.focusTime + def.fireInterval, rampSeconds(def));
+    } else {
+      t.focusId = best.id;
+      t.focusTime = 0;
+    }
+
     const aim = aimPoint(t, best, def.pierce > 0);
 
     w.projectiles.push({
@@ -47,7 +67,10 @@ export function fireTowers(w: World, dt: number): void {
       tx: aim.x,
       ty: aim.y,
       speed: t.projectileSpeed,
-      damage: t.damage,
+      // The ramp multiplies the tier's damage rather than replacing it, so an
+      // upgraded Filament ramps from a higher floor to a higher ceiling and the
+      // two systems stay independent.
+      damage: t.damage * rampFactor(t, def),
       // Pierce is a property of the station type, not of the tier: upgrading
       // raises damage only, so a Mk III Lance passes through the same number
       // of contacts as a Mk I and simply hurts each of them more.
@@ -63,6 +86,25 @@ export function fireTowers(w: World, dt: number): void {
     t.cooldown += t.fireInterval;
   }
 }
+
+/**
+ * Seconds of held focus needed to reach the ceiling. `0` for a station that
+ * does not ramp, which is what keeps `focusTime` from drifting upward forever
+ * on the four stations that never read it.
+ */
+export const rampSeconds = (def: TowerDef): number =>
+  def.rampPerSecond > 0 ? (def.rampMax - 1) / def.rampPerSecond : 0;
+
+/**
+ * Damage multiplier from held focus, `1` for everything that does not ramp.
+ *
+ * Exported because the inspector prints it: a player deciding whether a
+ * Filament is worth its price needs to see what it is *currently* doing, and a
+ * HUD computing its own copy of this would drift from the simulation at exactly
+ * the moment money is being spent. Same discipline as `effectiveDamage`.
+ */
+export const rampFactor = (t: Tower, def: TowerDef): number =>
+  def.rampPerSecond > 0 ? Math.min(def.rampMax, 1 + t.focusTime * def.rampPerSecond) : 1;
 
 /**
  * Where the shot is headed.
@@ -110,6 +152,31 @@ function score(mode: TargetMode, c: Creep, d2: number): number {
 
 function pickTarget(w: World, t: Tower): Creep | undefined {
   const r2 = t.range * t.range;
+
+  /**
+   * A ramping station holds its target while that target is alive and in reach.
+   *
+   * This is the one deliberate exception to the no-caching rule above, and it
+   * exists because without it the mechanic cannot function. `first` re-picks the
+   * contact furthest along every single tick, and in a moving stream that is a
+   * different contact constantly — so a Filament reset its ramp perpetually and
+   * measured *weaker* than pure Singularity, a station with no damage at all.
+   *
+   * The rule's usual objection — a tower fixated on something about to die
+   * elsewhere — is precisely the trade a beam is supposed to make. It is also
+   * scoped: only stations that actually ramp are sticky, so the default
+   * behaviour of the other four is untouched.
+   */
+  if (TOWERS[t.defId].rampPerSecond > 0 && t.focusId !== null) {
+    for (const c of w.creeps) {
+      if (c.dead || c.id !== t.focusId) continue;
+      const dx = c.x - t.x;
+      const dy = c.y - t.y;
+      if (dx * dx + dy * dy <= r2) return c;
+      break;
+    }
+  }
+
   let best: Creep | undefined;
   let bestScore = -Infinity;
 

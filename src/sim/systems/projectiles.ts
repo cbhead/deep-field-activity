@@ -2,7 +2,7 @@ import { ENEMIES } from '../../content/enemies.ts';
 import { TOWERS } from '../../content/towers.ts';
 import type { TowerDef } from '../../content/types.ts';
 import { damageCreep } from '../damage.ts';
-import type { Creep, Projectile, Tower } from '../types.ts';
+import type { Creep, EntityId, Projectile, Tower } from '../types.ts';
 import { towerById, type World } from '../world.ts';
 
 /** Safety net: no projectile may outlive this, whatever the numbers say. */
@@ -22,10 +22,16 @@ const MAX_FLIGHT_SECONDS = 5;
  * back into a contact it had just passed. That is the whole reason the branch
  * exists, and it is a branch on movement, not on damage.
  *
- * Splash and the gravitational slow add no branch at all: they are extra ways
- * to *reach* `damageCreep`, applied at the moment of impact. If a change ever
- * needs a second way to actually apply damage, that is the moment to stop and
- * re-plan rather than grow a third path here.
+ * Splash, the chain and the gravitational slow add no branch at all: they are
+ * extra ways to *reach* `damageCreep`, applied at the moment of impact. If a
+ * change ever needs a second way to actually apply damage, that is the moment
+ * to stop and re-plan rather than grow a third path here.
+ *
+ * Filament's ramp was the change that nearly did. A sustained beam is naturally
+ * a per-tick channel, which would have been exactly that second path — so it is
+ * built as an ordinary near-hitscan shot whose *damage* depends on how long the
+ * station has held its target. The ramp lives in `fireTowers`, this file never
+ * learns about it, and there is still one funnel.
  */
 export function stepProjectiles(w: World, dt: number): void {
   for (const p of w.projectiles) {
@@ -78,6 +84,7 @@ function stepHoming(w: World, p: Projectile, def: TowerDef, dt: number): void {
   // damageCreep no-ops on an already-dead contact, so a wasted shot is free.
   hit(w, p.target, p.damage, def, source);
   if (def.splashRadius > 0) detonate(w, p, def, source);
+  if (def.chainJumps > 0) chain(w, p, def, source);
 }
 
 /**
@@ -164,6 +171,58 @@ function detonate(w: World, p: Projectile, def: TowerDef, source: Tower | undefi
 
     const falloff = 1 - (Math.sqrt(d2) / r) * (1 - def.splashFalloff);
     hit(w, c, p.damage * falloff, def, source);
+  }
+}
+
+/**
+ * Hop from the struck contact to its nearest neighbours, falling off per jump.
+ *
+ * Note what this is *not*: a second way to apply damage. Like `detonate` it is
+ * another way to **reach** `damageCreep` at the instant of impact, which is the
+ * rule this file is built around — one funnel, one set of edge cases. It adds
+ * no branch on flight and none on damage.
+ *
+ * The walk is nearest-first from the *previous* link rather than all-from-the-
+ * origin, because that is what makes a chain read as a chain: it follows a line
+ * of contacts away from the impact instead of picking the same tight cluster
+ * the blast would have caught anyway. Without it, Arc is a worse Nova.
+ *
+ * O(jumps × creeps) at the moment of impact only — three jumps over a couple of
+ * hundred contacts, a few times a second. `Math.sqrt` is avoided for the same
+ * reason as everywhere else, by comparing squared distances.
+ */
+function chain(w: World, p: Projectile, def: TowerDef, source: Tower | undefined): void {
+  const struck: EntityId[] = [p.target.id];
+  let fromX = p.x;
+  let fromY = p.y;
+  let damage = p.damage;
+  const reach2 = def.chainRange * def.chainRange;
+
+  for (let jump = 0; jump < def.chainJumps; jump++) {
+    let best: Creep | undefined;
+    let bestD2 = reach2;
+
+    for (const c of w.creeps) {
+      if (c.dead || struck.includes(c.id)) continue;
+      const dx = c.x - fromX;
+      const dy = c.y - fromY;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = c;
+      }
+    }
+
+    // Nothing within reach ends the chain. A jump that found no one must not be
+    // spent and then resumed from the same place on the next iteration, or the
+    // loop would just re-scan and re-fail `chainJumps` times.
+    if (best === undefined) return;
+
+    damage *= def.chainFalloff;
+    hit(w, best, damage, def, source);
+    struck.push(best.id);
+    fromX = best.x;
+    fromY = best.y;
   }
 }
 

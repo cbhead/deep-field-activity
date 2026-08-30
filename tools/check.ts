@@ -1371,6 +1371,12 @@ section('matchup matrix (informational)');
   const duel = (tower: TowerId, enemy: EnemyId): number => {
     const w = createWorld(map, 4242);
     w.wave.phase = 'done';
+    // The duel measures wave-DUEL_WAVE stats, so the world has to *be* at that
+    // wave — stations gate on `wave.index >= unlockWave`, and at index 0 every
+    // station that unlocks later silently failed to place. The matrix then read
+    // as "leaks everything", which is indistinguishable from a useless station
+    // and is exactly the false signal this table exists to avoid.
+    w.wave.index = DUEL_WAVE;
     w.money = 1_000_000;
     // Deep enough that a leak never ends the run — we want the count, not a loss.
     w.lives = 9999;
@@ -1436,7 +1442,14 @@ section('balance probe (informational)');
 
     for (let i = 0; i < 400_000 && w.phase === 'playing'; i++) {
       const want = build[next % build.length]!;
-      if (next < spots.length && w.money >= TOWERS[want].cost) {
+      // `next` advances only when the command can actually succeed. It used to
+      // advance on every attempt, so a station rejected for being locked burned
+      // one of the ranked tiles and the build quietly came out short.
+      if (
+        next < spots.length &&
+        w.money >= TOWERS[want].cost &&
+        w.wave.index >= TOWERS[want].unlockWave
+      ) {
         w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
         next++;
       }
@@ -1484,7 +1497,11 @@ section('balance probe (informational)');
     ['lance', ['lance']],
     ['nova', ['nova']],
     ['singularity', ['singularity']],
+    ['arc', ['arc']],
+    ['filament', ['filament']],
     ['nova+2lance', ['nova', 'lance', 'lance']],
+    ['arc+filament', ['arc', 'filament']],
+    ['all five', ['nova', 'lance', 'singularity', 'arc', 'filament']],
     ['nova+lance+sing', ['nova', 'lance', 'singularity']],
     ['2nova+sing', ['nova', 'nova', 'singularity']],
   ];
