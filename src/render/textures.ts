@@ -23,7 +23,12 @@ export interface Textures {
   creep: Texture;
   /** Also baked white and tinted per tower type. Doubles as the build ghost. */
   tower: Texture;
+  /** Tinted by the firing tower, so you can read which tower landed a shot. */
+  projectile: Texture;
 }
+
+/** Radius the projectile texture is baked at, in tiles. */
+export const PROJECTILE_RADIUS = 0.11;
 
 /** Radius the creep texture is baked at, in tiles. Sprites scale from this. */
 export const CREEP_BAKE_RADIUS = 0.5;
@@ -75,6 +80,14 @@ export function createTextures(renderer: Renderer): Textures {
         .fill({ color: 0xffffff, alpha: 0.32 })
         .stroke({ width: 2, color: 0xffffff });
       g.circle(TILE_PX / 2, TILE_PX / 2, TILE_PX * 0.19).fill(0xffffff);
+    }),
+
+    projectile: bake(renderer, (g) => {
+      const pr = PROJECTILE_RADIUS * TILE_PX;
+      // A soft halo under a hard core: at this size a plain dot disappears
+      // against the board, and the halo is what makes fire legible.
+      g.circle(pr * 2, pr * 2, pr * 1.9).fill({ color: 0xffffff, alpha: 0.22 });
+      g.circle(pr * 2, pr * 2, pr).fill(0xffffff);
     }),
     ground: bake(renderer, flatTile(COLORS.ground, COLORS.gridLine)),
     groundAlt: bake(renderer, flatTile(COLORS.groundAlt, COLORS.gridLine)),

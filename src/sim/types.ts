@@ -104,6 +104,34 @@ export interface Tower {
   spent: number;
 }
 
+export interface Projectile {
+  readonly id: EntityId;
+  readonly defId: TowerId;
+
+  x: number;
+  y: number;
+
+  /**
+   * A direct reference, not an id.
+   *
+   * An id would mean an O(creeps) lookup per projectile per tick, which is
+   * worse than the targeting scan it was meant to avoid. Holding the object is
+   * safe: `cleanup` removes it from the array but the reference keeps it alive,
+   * and `dead` is what we actually check.
+   */
+  readonly target: Creep;
+
+  /** Last known target position, so a shot at a creep that dies still lands. */
+  tx: number;
+  ty: number;
+
+  speed: number;
+  damage: number;
+  /** Seconds in flight, for the runaway guard. */
+  age: number;
+  dead: boolean;
+}
+
 /**
  * Player intent. Nothing outside the sim mutates the world directly — a click
  * pushes a Command, and `applyCommands` drains the queue as the first phase of
@@ -135,6 +163,7 @@ export type PlacementError = 'offBoard' | 'notBuildable' | 'occupied' | 'tooPoor
 export type SimEvent =
   | { type: 'creepLeaked'; x: number; y: number }
   | { type: 'waveStarted'; wave: number; count: number }
+  | { type: 'creepKilled'; x: number; y: number; bounty: number }
   | { type: 'waveCleared'; wave: number }
   | { type: 'towerPlaced'; id: EntityId; col: number; row: number }
   | { type: 'buildRejected'; reason: PlacementError }

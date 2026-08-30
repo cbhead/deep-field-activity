@@ -395,6 +395,201 @@ section('build — the ghost cannot lie');
 }
 
 // ---------------------------------------------------------------------------
+section('combat — the loop closes');
+
+{
+  // One arrow tower beside the entry lane, one creep walking into it.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 3, row: 3 });
+  stepWorld(w, DT);
+
+  const c = spawnCreep(w, 'grunt');
+  const startMoney = w.money;
+  let sawProjectile = false;
+  for (let i = 0; i < 60 * 30 && w.creeps.length > 0; i++) {
+    stepWorld(w, DT);
+    if (w.projectiles.length > 0) sawProjectile = true;
+  }
+
+  check(sawProjectile, 'a tower in range fires');
+  check(c.dead && c.hp <= 0, 'the creep dies of damage, not of leaking', `hp=${c.hp}`);
+  check(w.lives === BALANCE.startingLives, 'a killed creep never reaches the goal');
+  check(w.money === startMoney + c.bounty, 'bounty is paid exactly once', `+$${w.money - startMoney}`);
+  check(w.projectiles.length === 0, 'spent projectiles are swept up');
+}
+
+{
+  // Overkill: many towers, one creep. The bounty must still be paid once, and
+  // the death event must fire once, however many shots land on the same tick.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.money = 100_000;
+  for (const [col, row] of [[6, 6], [8, 6], [6, 8], [8, 8], [7, 9], [5, 7]] as const) {
+    w.commands.push({ type: 'placeTower', defId: 'cannon', col, row });
+  }
+  stepWorld(w, DT);
+  check(w.towers.length === 6, 'six towers cover one stretch of road');
+
+  const c = spawnCreep(w, 'grunt');
+  const before = w.money;
+  let kills = 0;
+  for (let i = 0; i < 60 * 30 && !c.dead; i++) {
+    stepWorld(w, DT);
+    for (const ev of w.events) if (ev.type === 'creepKilled') kills++;
+    w.events.length = 0;
+  }
+  check(kills === 1, 'a creep dies exactly once under concentrated fire', `${kills} death events`);
+  check(w.money === before + c.bounty, 'and pays exactly one bounty', `+$${w.money - before}`);
+}
+
+{
+  // Fire rate must be exact. `cooldown = fireInterval` would round every
+  // tower's rate up to a tick multiple and quietly falsify every balance
+  // number; `cooldown += fireInterval` does not.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 3, row: 3 });
+  stepWorld(w, DT);
+
+  // A creep that cannot die and crawls, so it stays in range long enough to
+  // measure many intervals rather than the three or four a normal-speed creep
+  // allows. Timestamping every shot is the only way to see drift; a shot
+  // *count* would pass even if the rate were wrong by a tick each time.
+  const c = spawnCreep(w, 'grunt', 1e9, 0);
+  c.speed = 0.15;
+
+  const shotTicks: number[] = [];
+  for (let i = 0; i < 60 * 60; i++) {
+    const before = w.projectiles.length;
+    stepWorld(w, DT);
+    if (w.projectiles.length > before) shotTicks.push(w.tick);
+  }
+  c.dead = true;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < shotTicks.length; i++) gaps.push(shotTicks[i]! - shotTicks[i - 1]!);
+  const idealTicks = TOWERS.arrow.fireInterval / DT;
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const worst = Math.max(...gaps.map((g) => Math.abs(g - idealTicks)));
+
+  check(gaps.length > 30, 'the tower fired steadily', `${shotTicks.length} shots`);
+  check(
+    Math.abs(mean - idealTicks) < 0.05,
+    'mean interval matches fireInterval — no drift',
+    `${mean.toFixed(3)} ticks vs ${idealTicks} ideal`,
+  );
+  check(worst <= 1, 'and no individual gap is off by more than a tick', `worst ±${worst}`);
+}
+
+{
+  // A tower that idles through an intermission must not bank cooldown and fire
+  // a burst when the next wave arrives.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'cannon', col: 3, row: 3 });
+  stepWorld(w, DT);
+  for (let i = 0; i < 60 * 30; i++) stepWorld(w, DT); // 30s with nothing to shoot
+
+  const t = w.towers[0]!;
+  check(t.cooldown === 0, 'an idle tower clamps its cooldown at zero', `cooldown=${t.cooldown}`);
+
+  spawnCreep(w, 'grunt', 1e9, 0);
+  let shotsInFirstSecond = 0;
+  for (let i = 0; i < 60; i++) {
+    const before = w.projectiles.length;
+    stepWorld(w, DT);
+    if (w.projectiles.length > before) shotsInFirstSecond++;
+  }
+  check(shotsInFirstSecond <= 1, 'and does not burst when a target appears', `${shotsInFirstSecond} shots`);
+}
+
+{
+  // No projectile may outlive its target's death or the flight guard.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'frost', col: 3, row: 3 });
+  stepWorld(w, DT);
+  for (let i = 0; i < 6; i++) spawnCreep(w, 'grunt');
+  for (let i = 0; i < 60 * 60; i++) stepWorld(w, DT);
+  check(w.projectiles.length === 0, 'no projectile is left in flight', `${w.projectiles.length} stragglers`);
+  check(w.creeps.length === 0, 'the board empties');
+}
+
+// ---------------------------------------------------------------------------
+// Not assertions — a readout. The plan calls M5 the point where we find out
+// whether the game is fun, and this is the cheapest way to see whether the
+// numbers are anywhere near sane before playing it.
+section('balance probe (informational)');
+
+{
+  /**
+   * Rank buildable tiles by how much road they cover. A competent player finds
+   * these tiles by eye; ranking them here means the probe measures the design
+   * rather than my ability to guess coordinates.
+   */
+  const rankedSpots = (range: number): [number, number][] => {
+    const scored: { col: number; row: number; covered: number }[] = [];
+    for (let row = 0; row < map.rows; row++) {
+      for (let col = 0; col < map.cols; col++) {
+        if (map.tiles[row * map.cols + col] !== 'ground') continue;
+        let covered = 0;
+        for (let r = 0; r < map.rows; r++) {
+          for (let c = 0; c < map.cols; c++) {
+            if (map.tiles[r * map.cols + c] !== 'path') continue;
+            const dx = c - col;
+            const dy = r - row;
+            if (dx * dx + dy * dy <= range * range) covered++;
+          }
+        }
+        scored.push({ col, row, covered });
+      }
+    }
+    scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
+    return scored.map((s) => [s.col, s.row]);
+  };
+
+  /**
+   * Play a real economy: start with the real budget and buy the best remaining
+   * tile whenever it becomes affordable. Handing the probe unlimited money
+   * measures tower damage but says nothing about whether bounty income can
+   * fund a defence, which is the actual question at M5.
+   */
+  const probe = (towerId: 'arrow' | 'cannon' | 'frost'): string => {
+    const spots = rankedSpots(TOWERS[towerId].range);
+    const w = createWorld(map, 4242);
+    const acc: Accumulator = { debt: 0 };
+    let next = 0;
+    let leaked = 0;
+
+    for (let i = 0; i < 400_000 && w.phase === 'playing'; i++) {
+      if (next < spots.length && w.money >= TOWERS[towerId].cost) {
+        w.commands.push({ type: 'placeTower', defId: towerId, col: spots[next]![0], row: spots[next]![1] });
+        next++;
+      }
+      advance(w, acc, 1000 / TICK_HZ, 1);
+      for (const ev of w.events) if (ev.type === 'creepLeaked') leaked++;
+      w.events.length = 0;
+    }
+
+    const reached = w.phase === 'won' ? waveCount() : w.wave.index + 1;
+    return (
+      `${towerId.padEnd(6)} → ${w.phase === 'won' ? 'WON ' : 'lost'} on wave ${String(reached).padStart(2)}/${waveCount()}` +
+      ` · ${String(w.towers.length).padStart(2)} towers built · ${String(w.lives).padStart(2)} lives · ${leaked} leaked`
+    );
+  };
+
+  console.log('  \x1b[2mgreedy auto-builder, real starting money, best-coverage tiles\x1b[0m');
+  for (const id of ['arrow', 'cannon', 'frost'] as const) {
+    console.log(`  \x1b[2m${probe(id)}\x1b[0m`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Throwing rather than setting process.exitCode: it exits non-zero all the same
 // and avoids pulling @types/node into the project, which would put Node globals
 // in scope for src/ and quietly weaken the purity boundary.

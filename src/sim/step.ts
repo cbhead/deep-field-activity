@@ -1,6 +1,8 @@
 import { applyCommands } from './systems/commands.ts';
 import { updateWaves } from './systems/waves.ts';
 import { moveCreeps } from './systems/movement.ts';
+import { fireTowers } from './systems/targeting.ts';
+import { stepProjectiles } from './systems/projectiles.ts';
 import { cleanup } from './systems/cleanup.ts';
 import type { World } from './world.ts';
 
@@ -23,7 +25,11 @@ export function stepWorld(w: World, dt: number): void {
   applyCommands(w);
   updateWaves(w, dt);
   moveCreeps(w, dt);
-  // M5: fireTowers(w, dt); stepProjectiles(w, dt)
+  // Fire before stepping: a projectile spawned this tick waits a tick before
+  // moving, which is one frame of muzzle position rather than a shot that
+  // teleports partway to its target the instant it appears.
+  fireTowers(w, dt);
+  stepProjectiles(w, dt);
   cleanup(w);
 
   // Checked after cleanup so the leak that emptied the life bar has already

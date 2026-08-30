@@ -7,6 +7,7 @@ import type {
   EntityId,
   MapDef,
   MatchPhase,
+  Projectile,
   SimEvent,
   Tower,
   WavePhase,
@@ -52,6 +53,7 @@ export interface World {
 
   creeps: Creep[];
   towers: Tower[];
+  projectiles: Projectile[];
 
   /** Drained at the start of each tick. See the Command doc comment. */
   commands: Command[];
@@ -79,6 +81,7 @@ export function createWorld(map: MapDef, seed: number): World {
     },
     creeps: [],
     towers: [],
+    projectiles: [],
     commands: [],
     events: [],
     nextId: 1,

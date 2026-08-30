@@ -1,4 +1,4 @@
-import { Sprite } from 'pixi.js';
+import { Sprite, type Container } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
 import { TOWERS } from '../content/towers.ts';
 import type { EntityId } from '../sim/types.ts';
@@ -7,10 +7,17 @@ import type { Layers } from './pixiApp.ts';
 import { TILE_PX } from './constants.ts';
 import { CREEP_BAKE_RADIUS, type Textures } from './textures.ts';
 
-interface CreepView {
+interface EntityView {
   sprite: Sprite;
-  /** Frame this view was last matched to a live creep. See the sweep below. */
+  /** Frame this view was last matched to a live entity. See the sweep below. */
   seen: number;
+}
+
+/** The minimum a thing needs to be drawable by `syncEntities`. */
+interface Drawable {
+  readonly id: EntityId;
+  readonly x: number;
+  readonly y: number;
 }
 
 /**
@@ -22,7 +29,8 @@ interface CreepView {
  * and never writes to them.
  */
 export class WorldView {
-  private readonly creeps = new Map<EntityId, CreepView>();
+  private readonly creeps = new Map<EntityId, EntityView>();
+  private readonly projectiles = new Map<EntityId, EntityView>();
   /** Towers never move and never die (until M7's sell), so a plain set suffices. */
   private readonly towers = new Set<EntityId>();
   private frame = 0;
@@ -46,40 +54,34 @@ export class WorldView {
 
     // --- Channel 1: pull continuous state. Idempotent, so a dropped frame
     // costs nothing.
-    for (const c of w.creeps) {
-      let view = this.creeps.get(c.id);
-      if (view === undefined) {
-        const def = ENEMIES[c.defId];
-        const sprite = new Sprite(this.textures.creep);
-        sprite.anchor.set(0.5);
-        sprite.tint = def.color;
-        sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);
-        this.layers.creeps.addChild(sprite);
-        view = { sprite, seen: 0 };
-        this.creeps.set(c.id, view);
-      }
-      view.seen = this.frame;
-      view.sprite.position.set(c.x * TILE_PX, c.y * TILE_PX);
-    }
+    this.syncEntities(w.creeps, this.creeps, this.layers.creeps, (c) => {
+      const def = ENEMIES[c.defId];
+      const sprite = new Sprite(this.textures.creep);
+      sprite.anchor.set(0.5);
+      sprite.tint = def.color;
+      sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);
+      return sprite;
+    });
 
-    // Mark-and-sweep rather than building a Set of live ids every frame: same
-    // result, no per-frame allocation. Deleting while iterating a Map is safe.
-    for (const [id, view] of this.creeps) {
-      if (view.seen !== this.frame) {
-        view.sprite.destroy();
-        this.creeps.delete(id);
-      }
-    }
+    this.syncEntities(w.projectiles, this.projectiles, this.layers.projectiles, (p) => {
+      const sprite = new Sprite(this.textures.projectile);
+      sprite.anchor.set(0.5);
+      sprite.tint = TOWERS[p.defId].color;
+      return sprite;
+    });
 
     // --- Channel 2: drain discrete events. These are instants; if we miss one
     // the effect simply never plays, which is why they are pushed rather than
-    // polled.
-    // M6 turns these into HUD updates; M8 gives them sound and screen shake.
-    // Until then the console is the HUD.
+    // polled. M6 turns these into HUD updates; M8 gives them impact. Until then
+    // the console is the HUD.
     for (const ev of w.events) {
       switch (ev.type) {
         case 'creepLeaked':
           console.info(`[td] leak at (${ev.x.toFixed(1)}, ${ev.y.toFixed(1)}) — ${w.lives} lives left`);
+          break;
+        case 'creepKilled':
+          // Far too chatty to log per kill; M8 turns this into a particle burst
+          // and a floating damage number.
           break;
         case 'waveStarted':
           console.info(`[td] wave ${ev.wave + 1} — ${ev.count} incoming`);
@@ -99,5 +101,35 @@ export class WorldView {
       }
     }
     w.events.length = 0;
+  }
+
+  /**
+   * Mark-and-sweep rather than building a Set of live ids every frame: same
+   * result, no per-frame allocation. Deleting while iterating a Map is safe.
+   */
+  private syncEntities<T extends Drawable>(
+    list: readonly T[],
+    views: Map<EntityId, EntityView>,
+    layer: Container,
+    create: (entity: T) => Sprite,
+  ): void {
+    for (const entity of list) {
+      let view = views.get(entity.id);
+      if (view === undefined) {
+        const sprite = create(entity);
+        layer.addChild(sprite);
+        view = { sprite, seen: 0 };
+        views.set(entity.id, view);
+      }
+      view.seen = this.frame;
+      view.sprite.position.set(entity.x * TILE_PX, entity.y * TILE_PX);
+    }
+
+    for (const [id, view] of views) {
+      if (view.seen !== this.frame) {
+        view.sprite.destroy();
+        views.delete(id);
+      }
+    }
   }
 }
