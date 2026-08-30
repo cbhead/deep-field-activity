@@ -54,9 +54,9 @@ export async function createRenderer(
   // v8: `app.canvas`, not `app.view`.
   mount.appendChild(app.canvas);
 
-  fitCanvas(app, mount);
+  fitCanvas(app);
   window.addEventListener('resize', () => {
-    fitCanvas(app, mount);
+    fitCanvas(app);
   });
 
   const layers: Layers = {
@@ -91,16 +91,30 @@ export async function createRenderer(
  *
  * Clamped to 1: past that we'd be upscaling a fixed-resolution buffer and the
  * whole board would go soft.
+ *
+ * **Measure the viewport, never the mount.** `#game-root` is sized from
+ * `--board-w`/`--board-h`, which this function writes at the bottom — so
+ * measuring it means measuring this function's own last output. The first call
+ * read the viewport, because the variables did not exist yet, and was correct;
+ * every call after it read 1040x600 and pinned the scale at `600/796 = 0.754`
+ * however much room the window actually had. The feedback loop could only ever
+ * shrink the board, and nothing could grow it back.
+ *
+ * `body` is `overflow:hidden` and `#app` fills the viewport exactly, so the
+ * document element is the honest box — and it is the one box on the page this
+ * function cannot accidentally resize.
  */
-function fitCanvas(app: Application, mount: HTMLElement): void {
+function fitCanvas(app: Application): void {
+  const viewport = document.documentElement;
+
   // The deck's height is reserved beneath the board, so the two letterbox as a
   // single stack. Fitting the board alone would put the deck back on top of the
   // final approach, which is the one stretch that must stay visible.
   const stackHeight = TOP_PX + app.screen.height + DECK_PX;
   const scale = Math.min(
     1,
-    mount.clientWidth / app.screen.width,
-    mount.clientHeight / stackHeight,
+    viewport.clientWidth / app.screen.width,
+    viewport.clientHeight / stackHeight,
   );
 
   // The canvas keeps its logical CSS size; #stage applies the scale to board
