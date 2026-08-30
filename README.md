@@ -4,7 +4,12 @@ A tower defense game for your browser — hold the line through a three-sector
 campaign, or race a friend head-to-head on the same seed and see who survives
 longer.
 
-![Deep Field gameplay](docs/media/gameplay.png)
+![Wave 10 under fire on Switchback: five station types ringing the route, contacts taking damage as they run the gauntlet, and the build deck along the bottom](docs/media/gameplay.png)
+
+Five station types across three sectors — Switchback, Cascade and Pincer, 34
+waves in all — at three difficulty tiers. The simulation is deterministic: a
+seed fixes every wave's composition and timing, which is what makes a fair
+race possible in the first place.
 
 ## Someone sent me an invite link
 
@@ -43,17 +48,39 @@ caffeinate -i npm run play    # macOS: caffeinate keeps the machine awake mid-ma
 ```
 
 The server prints the URL to open — something like
-`http://100.x.y.z:8787/?race`. Open it, and the lobby shows a **room code**
-and a ready-made **invite link**. Send the link to your friend (click to
-select, then copy — or paste a Discord webhook once and use **Send to
-Discord**). When you're both Ready, a countdown runs and the race starts on a
-shared seed.
+`http://100.x.y.z:8787/?race`. Open it, pick a sector and difficulty, and the
+lobby hands you a **room code** and a ready-made **invite link**:
+
+![The Race lobby holding room: a large room code, the tailnet invite link, a Send to Discord button, and a pilots panel with one seat filled and one waiting](docs/media/race-lobby.png)
+
+Send the link to your friend — click to select, then copy, or paste a Discord
+webhook once and use **Send to Discord**. Both fields are select-on-click
+rather than copy buttons on purpose: over Tailscale the page is plain http,
+which isn't a secure context, so the browser refuses clipboard access.
+
+When you're both **Ready**, a three-second countdown runs and the race starts
+on a shared seed.
+
+> If port 8787 is already taken, `PORT=8790 npm run play` moves the whole
+> thing — page and relay together — and the lobby's invite link follows the new
+> port automatically.
 
 Something not working? The
 [match night runbook](docs/RUNBOOK-match-night.md) has step-by-step
 verification and a troubleshooting table.
 
-## Single-player Campaign
+### What a race looks like
+
+Both pilots get identical waves. You see their standing — wave, lives, elapsed
+time, and a minimap of the stations they've built — but never their board:
+
+![An in-progress race: the opponent strip reads "you · wave 7 · 20 lives | VEGA · wave 5 · 17 lives — ahead", with VEGA's board shown as a minimap in the top right](docs/media/race.png)
+
+Runs are ranked on waves cleared, then lives kept, then time. Lose your
+connection and you can reclaim the same seat and carry on; walk away and it's a
+forfeit after 90 seconds.
+
+## Single-player campaign
 
 No Tailscale, no friend, no setup beyond the clone:
 
@@ -61,9 +88,19 @@ No Tailscale, no friend, no setup beyond the clone:
 npm run play
 ```
 
-Open <http://localhost:8787> and start the campaign — three sectors, three
-difficulties. Progress saves in your browser (localStorage), so use the same
-browser to continue a run.
+Open <http://localhost:8787> and start the campaign. Three sectors, three
+difficulties — Recon (30 lives), Standard (20), and Blackout (14 lives and
+tougher contacts). Money you finish a sector with carries into the next one.
+
+Every station upgrades along three independent paths, and the board shows which
+one you've committed to. Select a station to see what it's actually doing —
+damage dealt, kills, and what it does to the contact type currently on the
+board:
+
+![A Nova station selected: its range ring on the board, and an inspector panel showing damage, rate, range and kills alongside three upgrade options — damage, range and blast](docs/media/upgrades.png)
+
+Progress saves in your browser (localStorage), so use the same browser to
+continue a run.
 
 ## Developing
 
@@ -76,6 +113,12 @@ npm run check       # headless simulation gates — the balance test suite
 npm run campaign    # explore the campaign arc headlessly
 npm run sweep       # balance sweeps
 ```
+
+`npm run play` is the single-port build: it bundles the client and serves both
+the page and the WebSocket relay from one process, so the socket follows
+whatever port the page came from. The two-process split above is dev-only —
+there Vite serves the page while `npm run server` holds the relay on 8787, so
+that port is the one case the client has to name explicitly.
 
 The layout: `src/sim/` is the deterministic game simulation (shared by the
 browser and the headless tools), `src/render/` draws it with Pixi.js,
