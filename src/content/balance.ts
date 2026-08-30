@@ -64,8 +64,30 @@ export const BALANCE = {
    * `base * growth ** N`. Computed rather than tabulated is the whole reason
    * content is TypeScript and not JSON — this is the dial difficulty is
    * actually tuned with, and it isn't expressible in a data file.
+   *
+   * **`hpGrowth` is swept, not guessed**, and it is sharper than it looks. The
+   * entire arc turns over inside nine hundredths, measured as
+   * (best mixed build / pure Nova / pure Lance), wins out of five:
+   *
+   *   1.21   5/5 · 5/5 · 5/5    every build wins untouched at 20/20 lives
+   *   1.25   5/5 · 5/5 · 5/5    mixed comfortable, pure easy
+   *   1.26   5/5 · 5/5 · 5/5    mixed 19.4 · Nova 13.2 · Lance 10.6 lives
+   *   1.27   5/5 · 5/5 · 2/5    mixed 16.0, but pure Lance nearly written off
+   *   1.28   3/5 · 5/5 · 0/5    only Nova survives
+   *   1.30   0/5 · 1/5 · 0/5    nothing survives
+   *
+   * 1.26 is the point where mixing beats mono-building without making any
+   * single-station build unplayable — three stations should be three decisions,
+   * not one correct answer. 1.27 is the deliberate alternative if the game
+   * should bite harder: it costs the player four more lives on a winning run,
+   * at the price of pure Lance becoming a 2/5 gamble.
+   *
+   * Re-sweep after any change to station damage, station cost, or the contact
+   * roster. Do not nudge it by feel — the last re-sweep, run after Lance went
+   * 6 to 8 damage and two stations were repriced, reproduced these numbers
+   * byte-for-byte, which is the only reason to trust them.
    */
-  hpGrowth: 1.28,
+  hpGrowth: 1.26,
   bountyGrowth: 1.14,
 
   /**
