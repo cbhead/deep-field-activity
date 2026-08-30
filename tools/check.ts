@@ -13,6 +13,9 @@ import { LEVEL01 } from '../src/content/maps/level01.ts';
 import { LEVEL02 } from '../src/content/maps/level02.ts';
 import { LEVEL03 } from '../src/content/maps/level03.ts';
 import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
+import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
+import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
+import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1566,6 +1569,117 @@ section('balance probe (informational)');
   console.log('  \x1b[2m"wait" lets each intermission run out; "rush" sends every wave early\x1b[0m');
   for (const rush of [false, true]) {
     for (const [label, build] of builds) console.log(`  \x1b[2m${row(label, build, rush)}\x1b[0m`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTRAST ORDER, FOR THE LAYERS THAT ARE SOLID FILLS.
+//
+// The design's checklist says to desaturate a running frame and read the order
+// brightest-last: field, nebula, grid, route, pulsar, station, projectile,
+// contact, hit flash. Most of that needs a rendered frame and stays a human
+// test — a station is a 2.2px stroke around a 0.2-alpha interior, so its *tint*
+// luminance says almost nothing about how bright it lands on screen.
+//
+// But the structural layers are flat fills at known alphas over known
+// backgrounds, so their order can be computed exactly. That half becomes a
+// gate; the foreground half stays on the checklist where it belongs.
+//
+// This caught two real inversions when it was written: a nebula plate a hair
+// brighter than the grid, and a centre line whose bright end out-glowed every
+// station on the board.
+// ---------------------------------------------------------------------------
+section('board · contrast order');
+{
+  const chan = (c: number): number => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = (h: number): number =>
+    0.2126 * chan((h >> 16) & 255) + 0.7152 * chan((h >> 8) & 255) + 0.0722 * chan(h & 255);
+  const over = (fg: number, a: number, bg: number): number => {
+    const m = (s: number): number =>
+      Math.round((((fg >> s) & 255) * a + ((bg >> s) & 255) * (1 - a)) as number);
+    return (m(16) << 16) | (m(8) << 8) | m(0);
+  };
+
+  for (const id of SECTOR_FIELD_IDS) {
+    const f = SECTOR_FIELDS[id];
+    const ground = over(f.ground, f.groundAlpha, f.bg);
+
+    const layers: readonly (readonly [string, number])[] = [
+      ['field', ground],
+      ['nebula', over(f.blocked, f.blockedAlpha, f.bg)],
+      ['grid', over(f.gridLine, f.gridAlpha, ground)],
+      ['route', f.pathLit],
+      ['line', over(f.lineFar, f.lineFarAlpha, f.pathLit)],
+    ];
+
+    let ok = true;
+    const trail: string[] = [];
+    for (let i = 0; i < layers.length; i++) {
+      trail.push(`${layers[i]![0]} ${lum(layers[i]![1]).toFixed(4)}`);
+      if (i > 0 && lum(layers[i]![1]) <= lum(layers[i - 1]![1])) ok = false;
+    }
+    check(ok, `${id}: structural layers get brighter in order`, trail.join(' < '));
+
+    // The route may glow; it may never out-glow a station. The dimmest station
+    // is the one that has to survive it.
+    const dimmest = Math.min(...Object.values(THEME.towers).map(lum));
+    const line = lum(over(f.lineFar, f.lineFarAlpha, f.pathLit));
+    check(line < dimmest, `${id}: the centre line stays under the dimmest station`,
+      `line ${line.toFixed(3)} < ${dimmest.toFixed(3)}`);
+
+    // Warm belongs to the contacts. A warm field at any value takes the one
+    // signal that says "this is something to shoot".
+    for (const [name, v] of [['bg', f.bg], ['ground', f.ground], ['groundAlt', f.groundAlt],
+      ['blocked', f.blocked], ['path', f.path], ['pathLit', f.pathLit]] as const) {
+      check(((v >> 16) & 255) <= (v & 255), `${id}: ${name} is not warm`, `#${v.toString(16).padStart(6, '0')}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE ROUTE RAMP AGREES WITH THE MAP.
+//
+// The corridor's fill, its spill and its centre line all key off
+// `routeDistance`, so a board where that is wrong is a board that lies about
+// which way contacts travel — and it would lie quietly, since a plausible-
+// looking gradient is exactly what a bug here produces.
+//
+// `route.ts` is pixi-free precisely so this can run headlessly.
+// ---------------------------------------------------------------------------
+section('board · route ramp');
+{
+  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+    const m = parseMap(src);
+    const dist = routeDistance(m);
+
+    let marked = 0;
+    let onRoute = 0;
+    let outOfRange = 0;
+    for (let i = 0; i < dist.length; i++) {
+      if (m.tiles[i] === 'path') onRoute++;
+      if (dist[i] === OFF_ROUTE) continue;
+      marked++;
+      if (dist[i]! < 0 || dist[i]! > 1) outOfRange++;
+    }
+
+    check(marked === onRoute, `${m.name}: every route tile has a distance`, `${marked} of ${onRoute}`);
+    check(outOfRange === 0, `${m.name}: distances stay in 0..1`, `${outOfRange} outside`);
+
+    // The goal is the far end by construction; if it is not, the ramp runs
+    // backwards and the board points contacts the wrong way.
+    const goal = dist[Math.floor(m.goal.y) * m.cols + Math.floor(m.goal.x)]!;
+    check(goal > 0.99, `${m.name}: the ramp peaks at the pulsar`, `goal t=${goal.toFixed(3)}`);
+
+    // Spill must actually reach ground, or the road lights nothing.
+    const spill = routeSpill(m, dist, SPILL_RINGS);
+    let lit = 0;
+    for (let i = 0; i < spill.length; i++) {
+      if (spill[i]! >= 1 && spill[i]! <= SPILL_RINGS && m.tiles[i] === 'ground') lit++;
+    }
+    check(lit > 0, `${m.name}: the road lights the ground beside it`, `${lit} tiles`);
   }
 }
 

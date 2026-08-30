@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
 import { TILE_PX, gridMaskAt } from './constants.ts';
+import { OFF_ROUTE, SPILL_FALLOFF, SPILL_RINGS, routeDistance, routeSpill } from './route.ts';
 import type { SectorField } from './theme.ts';
 import type { Textures } from './textures.ts';
 
@@ -27,7 +28,8 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
     halo(tex, map.spawn.x, map.spawn.y, PULSAR_REACH, field.spawn, field.bloomAlpha * SPAWN_SHARE),
   );
 
-  layer.addChild(buildTileField(map, tex, field));
+  const dist = routeDistance(map);
+  layer.addChild(buildTileField(map, tex, field, dist, routeSpill(map, dist, SPILL_RINGS)));
 
   // Above the tiles, because ground is translucent: a wash underneath would
   // arrive at `1 - groundAlpha` and be most of a layer you paid for and cannot
@@ -40,6 +42,7 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): C
   layer.addChild(buildNebula(map, field));
 
   layer.addChild(buildLattice(map, field));
+  layer.addChild(buildRouteLine(map, field));
   layer.addChild(buildEndMarkers(map, field));
 
   return layer;
@@ -145,16 +148,26 @@ const wash = (
  * as a visual one — a route you can trace without the field competing under it
  * is a route you can plan against.
  */
-function buildTileField(map: MapDef, tex: Textures, field: SectorField): Container {
+function buildTileField(
+  map: MapDef,
+  tex: Textures,
+  field: SectorField,
+  dist: Float32Array,
+  spill: Uint8Array,
+): Container {
   const tileField = new Container();
 
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
-      const kind = map.tiles[row * map.cols + col]!;
+      const i = row * map.cols + col;
+      const kind = map.tiles[i]!;
       const sprite = new Sprite(tex.tile);
 
       if (kind === 'path') {
-        sprite.tint = field.path;
+        // Ramps toward the pulsar, so a still frame says which way contacts
+        // travel — one of the design's acceptance tests, and free because tint
+        // is a vertex attribute rather than a new texture.
+        sprite.tint = mixColor(field.path, field.pathLit, dist[i]!);
       } else if (kind === 'blocked') {
         // A thin plate, so the cloud drawn beneath it reads through. The plate
         // is the rule and the cloud is the atmosphere; the lattice draws the
@@ -164,7 +177,8 @@ function buildTileField(map: MapDef, tex: Textures, field: SectorField): Contain
       } else {
         // Checker the buildable ground, so a tile is countable without a hard
         // grid line having to do the whole job.
-        sprite.tint = (col + row) % 2 === 0 ? field.ground : field.groundAlt;
+        const base = (col + row) % 2 === 0 ? field.ground : field.groundAlt;
+        sprite.tint = withSpill(base, field, map, dist, spill, i);
         sprite.alpha = field.groundAlpha;
       }
 
@@ -174,6 +188,71 @@ function buildTileField(map: MapDef, tex: Textures, field: SectorField): Contain
   }
 
   return tileField;
+}
+
+/** Channel-wise lerp between two packed colours. */
+function mixColor(from: number, to: number, t: number): number {
+  const k = t < 0 ? 0 : t > 1 ? 1 : t;
+  const r = ((from >> 16) & 255) + (((to >> 16) & 255) - ((from >> 16) & 255)) * k;
+  const g = ((from >> 8) & 255) + (((to >> 8) & 255) - ((from >> 8) & 255)) * k;
+  const b = (from & 255) + ((to & 255) - (from & 255)) * k;
+  return (r << 16) | (g << 8) | b;
+}
+
+/**
+ * The road's light on a tile beside it, composited into that tile's own colour.
+ *
+ * **Not a second sprite.** Alpha-over is associative and collapses to a single
+ * `(rgb, a)`, so a spill tile can be one tinted sprite rather than two stacked
+ * ones — the tile field stays at exactly one sprite per tile, and therefore at
+ * one draw call, however much of the board the road touches.
+ *
+ * The spill takes its colour and strength from the *nearest* route tile's
+ * position along the route, so the glow beside the road ramps with the road
+ * rather than being uniform along it.
+ */
+function withSpill(
+  base: number,
+  field: SectorField,
+  map: MapDef,
+  dist: Float32Array,
+  spill: Uint8Array,
+  i: number,
+): number {
+  const ring = spill[i]!;
+  if (ring === 0 || ring > SPILL_RINGS) return base;
+
+  const t = nearestRouteT(map, dist, i);
+  const tint = mixColor(field.spillNear, field.spillFar, t);
+  const strength =
+    (field.spillNearAlpha + (field.spillFarAlpha - field.spillNearAlpha) * t) *
+    SPILL_FALLOFF[ring]!;
+
+  return mixColor(base, tint, strength);
+}
+
+/** The route position of the closest road tile, for a tile beside the road. */
+function nearestRouteT(map: MapDef, dist: Float32Array, i: number): number {
+  const col = i % map.cols;
+  const row = (i / map.cols) | 0;
+  let best = 0;
+  let bestD = Infinity;
+
+  for (let r = row - SPILL_RINGS; r <= row + SPILL_RINGS; r++) {
+    for (let c = col - SPILL_RINGS; c <= col + SPILL_RINGS; c++) {
+      if (c < 0 || r < 0 || c >= map.cols || r >= map.rows) continue;
+      const t = dist[r * map.cols + c]!;
+      if (t === OFF_ROUTE) continue;
+
+      const d = Math.abs(c - col) + Math.abs(r - row);
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+  }
+
+  return best;
 }
 
 /**
@@ -232,6 +311,48 @@ function buildNebula(map: MapDef, field: SectorField): Graphics {
         });
       }
     }
+  }
+
+  return g;
+}
+
+/**
+ * The hot line down the middle of the road.
+ *
+ * Stroked **per segment** rather than as one polyline, because a Graphics path
+ * carries a single stroke style and the whole point here is that the colour and
+ * alpha ramp along it. Segments meet at waypoint centres with a round cap,
+ * which at 2px is indistinguishable from a mitre and costs nothing — the
+ * design asked for mitred corners, and this is the honest way to have both the
+ * ramp and the joins.
+ *
+ * Drawn above the tiles and the nebula but below the end markers, so the pulsar
+ * still terminates it rather than being crossed by it.
+ */
+function buildRouteLine(map: MapDef, field: SectorField): Graphics {
+  const g = new Graphics();
+  const wp = map.waypoints;
+  let travelled = 0;
+
+  for (let i = 1; i < wp.length; i++) {
+    const a = wp[i - 1]!;
+    const b = wp[i]!;
+    const steps = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+
+    // The midpoint's position along the route sets the segment's colour, so the
+    // ramp follows the road rather than the screen.
+    const t = (travelled + steps / 2) / map.pathLength;
+    travelled += steps;
+
+    g.moveTo(a.x * TILE_PX, a.y * TILE_PX)
+      .lineTo(b.x * TILE_PX, b.y * TILE_PX)
+      .stroke({
+        width: 2,
+        cap: 'round',
+        join: 'round',
+        color: mixColor(field.lineNear, field.lineFar, t),
+        alpha: field.lineNearAlpha + (field.lineFarAlpha - field.lineNearAlpha) * t,
+      });
   }
 
   return g;

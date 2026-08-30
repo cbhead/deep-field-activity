@@ -63,13 +63,47 @@ export interface SectorField {
    */
   readonly nebulaAlpha: number;
   readonly nebulaPerTile: number;
+  /**
+   * The route, at the spawn end and at the pulsar end.
+   *
+   * A flat corridor says where contacts walk and nothing else — not which way
+   * they travel, not how close to the core they are. The most information-dense
+   * object on the board was carrying one bit. Interpolating the fill along
+   * route distance makes direction readable from a still frame, which is one of
+   * the design's acceptance tests.
+   *
+   * Both must stay legible in **greyscale**: the route reads lighter than the
+   * field by value, never by hue alone.
+   */
   readonly path: number;
+  readonly pathLit: number;
   /**
    * `null` means the path tile gets no edge stroke, so the route reads as one
    * continuous road rather than 43 separate tiles. That is a deliberate look
    * and this is where a field opts out of it.
    */
   readonly pathEdge: number | null;
+
+  /**
+   * The road lighting the ground beside it, and the hot line down its middle.
+   *
+   * Both ramp from the spawn end to the pulsar end, so every cue on the board
+   * points the same way. The spill is composited into the neighbouring tile's
+   * own tint rather than drawn as extra sprites — it is free.
+   *
+   * The line is the brightest thing the board layer draws, which is deliberate
+   * and also the risk: it must never out-glow a station. Stations cannot be
+   * built on route tiles so the two never share a pixel, but if it starts
+   * pulling the eye, cap the far end rather than dimming the whole run.
+   */
+  readonly spillNear: number;
+  readonly spillNearAlpha: number;
+  readonly spillFar: number;
+  readonly spillFarAlpha: number;
+  readonly lineNear: number;
+  readonly lineNearAlpha: number;
+  readonly lineFar: number;
+  readonly lineFarAlpha: number;
   readonly spawn: number;
   readonly goal: number;
 
@@ -278,7 +312,7 @@ const SWITCHBACK: SectorField = {
   groundAlt: 0x0b0d19,
   gridLine: 0x1a1d33,
   gridAlpha: 0.85,
-  blocked: 0x232532,
+  blocked: 0x1e2030,
   blockedEdge: 0x2f3245,
   blockedAlpha: 0.72,
   nebulaAlpha: 0.14,
@@ -286,7 +320,16 @@ const SWITCHBACK: SectorField = {
   // The route reads *lighter* than the field it crosses, so the path is
   // legible in greyscale rather than relying on hue.
   path: 0x1b1f36,
+  pathLit: 0x2c3260,
   pathEdge: null,
+  spillNear: 0x9184d9,
+  spillNearAlpha: 0.1,
+  spillFar: 0xd2cefd,
+  spillFarAlpha: 0.44,
+  lineNear: 0xd2cefd,
+  lineNearAlpha: 0.2,
+  lineFar: 0xf0eeff,
+  lineFarAlpha: 0.62,
   spawn: 0xf9a8d4,
   goal: 0xb5abfc,
   lit: 0xb5abfc,
