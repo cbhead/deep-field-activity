@@ -6,7 +6,7 @@ import type { WaveDef, WaveGroup } from './types.ts';
  * wave. Two helpers is all it takes to keep the table below readable — the
  * alternative spelling is ten screens of object literals nobody will tune.
  */
-const g = (count: number, every: number, after = 0, enemy: EnemyId = 'grunt'): WaveGroup => ({
+const g = (count: number, every: number, after = 0, enemy: EnemyId = 'drifter'): WaveGroup => ({
   enemy,
   count,
   every,

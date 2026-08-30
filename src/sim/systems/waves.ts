@@ -1,6 +1,6 @@
 import { BALANCE } from '../../content/balance.ts';
 import { planWave, waveCount } from '../wavePlan.ts';
-import { spawnCreep, type World } from '../world.ts';
+import { spawnCreep, waveStats, type World } from '../world.ts';
 
 /**
  * Send the next wave now, forfeiting the rest of the intermission.
@@ -109,7 +109,16 @@ function settleClearedWaves(w: World): void {
   while (s.clearedThrough < clearable) {
     s.clearedThrough++;
     w.money += BALANCE.waveClearReward;
-    w.events.push({ type: 'waveCleared', wave: s.clearedThrough });
+
+    const tally = waveStats(w, s.clearedThrough);
+    w.events.push({
+      type: 'waveCleared',
+      wave: s.clearedThrough,
+      kills: tally.kills,
+      bounty: tally.bounty,
+      leaked: tally.leaked,
+      reward: BALANCE.waveClearReward,
+    });
   }
 
   if (s.clearedThrough >= waveCount() - 1 && w.phase === 'playing') {

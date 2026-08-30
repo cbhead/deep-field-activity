@@ -1,6 +1,7 @@
 import type { Application } from 'pixi.js';
 import { TOWERS, TOWER_IDS } from '../content/towers.ts';
 import { TILE_PX } from '../render/constants.ts';
+import { isUnlocked, towerAt } from '../sim/build.ts';
 import type { World } from '../sim/world.ts';
 import type { UiState } from './uiState.ts';
 
@@ -30,7 +31,12 @@ export function pointerToTile(
  * queues it; the sim applies it at the top of the next tick. Hover, by
  * contrast, is pure presentation and goes straight into UiState.
  */
-export function attachInput(app: Application, world: World, ui: UiState): void {
+export function attachInput(
+  app: Application,
+  world: World,
+  ui: UiState,
+  togglePause: () => void,
+): void {
   const { cols, rows } = world.map;
   const canvas = app.canvas;
 
@@ -48,7 +54,13 @@ export function attachInput(app: Application, world: World, ui: UiState): void {
     if (tile === null) return;
     ui.hover = tile;
 
-    if (ui.selected === null) return;
+    // Nothing armed: a click is an inspect gesture. Clicking empty ground
+    // dismisses the inspector, which is the expected way out of it.
+    if (ui.selected === null) {
+      const hit = towerAt(world, tile[0], tile[1]);
+      ui.inspecting = hit?.id ?? null;
+      return;
+    }
     world.commands.push({ type: 'placeTower', defId: ui.selected, col: tile[0], row: tile[1] });
   });
 
@@ -61,17 +73,31 @@ export function attachInput(app: Application, world: World, ui: UiState): void {
 
   window.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
-      ui.selected = null;
+      // Escape unwinds one layer at a time: disarm, then close the inspector,
+      // then pause. Jumping straight to the pause menu from an armed state
+      // would make cancelling a placement feel like it opened a modal.
+      if (ui.selected !== null) ui.selected = null;
+      else if (ui.inspecting !== null) ui.inspecting = null;
+      else togglePause();
+      return;
+    }
+    if (ev.key === 'Tab') {
+      ev.preventDefault();
+      ui.deckOpen = !ui.deckOpen;
       return;
     }
     if (ev.code === 'Space') {
-      // M6 gives this a button. Until then it is the only way to skip an
-      // intermission.
       ev.preventDefault();
       world.commands.push({ type: 'startWave' });
       return;
     }
+
     const hit = TOWER_IDS.find((id) => TOWERS[id].hotkey === ev.key);
-    if (hit !== undefined) ui.selected = ui.selected === hit ? null : hit;
+    if (hit !== undefined && isUnlocked(world, hit)) {
+      ui.selected = ui.selected === hit ? null : hit;
+      // Arming and inspecting are mutually exclusive: both want the detail
+      // column, and both draw a reach circle.
+      if (ui.selected !== null) ui.inspecting = null;
+    }
   });
 }

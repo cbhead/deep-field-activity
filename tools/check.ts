@@ -14,7 +14,10 @@ import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, type TowerId } from '../src/content/towers.ts';
-import { placementError } from '../src/sim/build.ts';
+import { ENEMIES } from '../src/content/enemies.ts';
+import { damageAtTier, placementError, upgradeCost } from '../src/sim/build.ts';
+import { coverage } from '../src/sim/analysis.ts';
+import type { TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
@@ -120,7 +123,7 @@ function soloWorld(): ReturnType<typeof createWorld> {
 
 {
   const w = soloWorld();
-  const c = spawnCreep(w, 'grunt');
+  const c = spawnCreep(w, 'drifter');
   const acc: Accumulator = { debt: 0 };
   const expected = map.pathLength / c.speed;
 
@@ -176,7 +179,7 @@ section('loop — M2 gate: refresh-rate independence');
 
   const run = (frames: number[]): { tick: number; x: number; y: number } => {
     const w = soloWorld();
-    const c = spawnCreep(w, 'grunt');
+    const c = spawnCreep(w, 'drifter');
     const acc: Accumulator = { debt: 0 };
     for (const d of frames) advance(w, acc, d, 1);
     return { tick: w.tick, x: c.x, y: c.y };
@@ -212,7 +215,7 @@ section('loop — hitch guards');
 {
   for (const speed of [1, 2, 4]) {
     const w = soloWorld();
-    spawnCreep(w, 'grunt');
+    spawnCreep(w, 'drifter');
     const acc: Accumulator = { debt: 0 };
     // A backgrounded tab returns with a delta like this. Without the guards the
     // sim would try to run 300 seconds of ticks in one frame and lock the page.
@@ -226,7 +229,7 @@ section('loop — hitch guards');
 
   const at = (speed: number): number => {
     const w = soloWorld();
-    spawnCreep(w, 'grunt');
+    spawnCreep(w, 'drifter');
     const acc: Accumulator = { debt: 0 };
     for (let i = 0; i < 300; i++) advance(w, acc, 1000 / 60, speed);
     return w.tick;
@@ -459,38 +462,38 @@ section('build — placement rules');
   const w = createWorld(map, 4242);
   w.wave.phase = 'done';
 
-  check(placementError(w, 'arrow', 0, 0) === null, 'open ground accepts a tower');
-  check(placementError(w, 'arrow', 5, 2) === 'notBuildable', 'the road refuses a tower');
-  check(placementError(w, 'arrow', 3, 5) === 'notBuildable', 'scenery refuses a tower');
-  check(placementError(w, 'arrow', -1, 0) === 'offBoard', 'off-board is rejected');
-  check(placementError(w, 'arrow', map.cols, 0) === 'offBoard', 'past the right edge is rejected');
-  check(placementError(w, 'arrow', 0.5, 0) === 'offBoard', 'a fractional tile is rejected');
+  check(placementError(w, 'lance', 0, 0) === null, 'open ground accepts a tower');
+  check(placementError(w, 'lance', 5, 2) === 'onRoute', 'the road refuses a tower');
+  check(placementError(w, 'lance', 3, 5) === 'blocked', 'scenery refuses a tower');
+  check(placementError(w, 'lance', -1, 0) === 'offBoard', 'off-board is rejected');
+  check(placementError(w, 'lance', map.cols, 0) === 'offBoard', 'past the right edge is rejected');
+  check(placementError(w, 'lance', 0.5, 0) === 'offBoard', 'a fractional tile is rejected');
 
   const before = w.money;
-  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 0, row: 0 });
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 0, row: 0 });
   stepWorld(w, DT);
   check(w.towers.length === 1, 'a valid command builds exactly one tower');
-  check(w.money === before - TOWERS.arrow.cost, 'the cost is deducted once', `$${before} → $${w.money}`);
-  check(placementError(w, 'arrow', 0, 0) === 'occupied', 'the tile is now occupied');
+  check(w.money === before - TOWERS.lance.cost, 'the cost is deducted once', `$${before} → $${w.money}`);
+  check(placementError(w, 'lance', 0, 0) === 'occupied', 'the tile is now occupied');
 
   // The same tile twice in one tick is the double-click case, and it must not
   // build two towers or charge twice.
   const moneyBefore = w.money;
-  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 1, row: 1 });
-  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 1, row: 1 });
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 1, row: 1 });
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 1, row: 1 });
   stepWorld(w, DT);
   check(w.towers.length === 2, 'a duplicate command in the same tick is rejected', `${w.towers.length} towers`);
-  check(w.money === moneyBefore - TOWERS.arrow.cost, 'and is not charged for');
+  check(w.money === moneyBefore - TOWERS.lance.cost, 'and is not charged for');
 
   // Spend down to nothing and confirm the wallet cannot go negative.
   let built = 2;
   for (let col = 2; col < 20 && w.money >= 0; col++) {
-    w.commands.push({ type: 'placeTower', defId: 'arrow', col, row: 0 });
+    w.commands.push({ type: 'placeTower', defId: 'lance', col, row: 0 });
     stepWorld(w, DT);
     if (w.towers.length > built) built = w.towers.length;
   }
   check(w.money >= 0, 'money never goes negative', `$${w.money} after ${w.towers.length} towers`);
-  check(placementError(w, 'cannon', 21, 0) === 'tooPoor', 'unaffordable towers are refused');
+  check(placementError(w, 'nova', 21, 0) === 'tooPoor', 'unaffordable towers are refused');
 }
 
 // ---------------------------------------------------------------------------
@@ -506,8 +509,8 @@ section('build — the ghost cannot lie');
     for (let col = 0; col < map.cols; col++) {
       const w = createWorld(map, 4242);
       w.wave.phase = 'done';
-      const shown = placementError(w, 'arrow', col, row) === null;
-      w.commands.push({ type: 'placeTower', defId: 'arrow', col, row });
+      const shown = placementError(w, 'lance', col, row) === null;
+      w.commands.push({ type: 'placeTower', defId: 'lance', col, row });
       stepWorld(w, DT);
       const built = w.towers.length === 1;
       if (shown !== built) mismatches++;
@@ -522,14 +525,14 @@ section('build — the ghost cannot lie');
 section('combat — the loop closes');
 
 {
-  // One arrow tower beside the entry lane, one creep walking into it.
+  // One Lance station beside the entry lane, one creep walking into it.
   const w = createWorld(map, 4242);
   w.wave.phase = 'done';
   w.money = 1000;
-  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 3, row: 3 });
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 3, row: 3 });
   stepWorld(w, DT);
 
-  const c = spawnCreep(w, 'grunt');
+  const c = spawnCreep(w, 'drifter');
   const startMoney = w.money;
   let sawProjectile = false;
   for (let i = 0; i < 60 * 30 && w.creeps.length > 0; i++) {
@@ -541,6 +544,12 @@ section('combat — the loop closes');
   check(c.dead && c.hp <= 0, 'the creep dies of damage, not of leaking', `hp=${c.hp}`);
   check(w.lives === BALANCE.startingLives, 'a killed creep never reaches the goal');
   check(w.money === startMoney + c.bounty, 'bounty is paid exactly once', `+$${w.money - startMoney}`);
+
+  // The loop above exits the tick the contact dies, and a *piercing* shot
+  // deliberately outlives its target — it carries on to the edge of reach. So
+  // the property worth asserting is that nothing leaks, not that a shot
+  // vanishes the instant its target does, which was only ever true of homing.
+  for (let i = 0; i < 60 * 2; i++) stepWorld(w, DT);
   check(w.projectiles.length === 0, 'spent projectiles are swept up');
 }
 
@@ -551,12 +560,12 @@ section('combat — the loop closes');
   w.wave.phase = 'done';
   w.money = 100_000;
   for (const [col, row] of [[6, 6], [8, 6], [6, 8], [8, 8], [7, 9], [5, 7]] as const) {
-    w.commands.push({ type: 'placeTower', defId: 'cannon', col, row });
+    w.commands.push({ type: 'placeTower', defId: 'nova', col, row });
   }
   stepWorld(w, DT);
   check(w.towers.length === 6, 'six towers cover one stretch of road');
 
-  const c = spawnCreep(w, 'grunt');
+  const c = spawnCreep(w, 'drifter');
   const before = w.money;
   let kills = 0;
   for (let i = 0; i < 60 * 30 && !c.dead; i++) {
@@ -575,14 +584,14 @@ section('combat — the loop closes');
   const w = createWorld(map, 4242);
   w.wave.phase = 'done';
   w.money = 1000;
-  w.commands.push({ type: 'placeTower', defId: 'arrow', col: 3, row: 3 });
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 3, row: 3 });
   stepWorld(w, DT);
 
   // A creep that cannot die and crawls, so it stays in range long enough to
   // measure many intervals rather than the three or four a normal-speed creep
   // allows. Timestamping every shot is the only way to see drift; a shot
   // *count* would pass even if the rate were wrong by a tick each time.
-  const c = spawnCreep(w, 'grunt', 1e9, 0);
+  const c = spawnCreep(w, 'drifter', 1e9, 0);
   c.speed = 0.15;
 
   const shotTicks: number[] = [];
@@ -595,7 +604,7 @@ section('combat — the loop closes');
 
   const gaps: number[] = [];
   for (let i = 1; i < shotTicks.length; i++) gaps.push(shotTicks[i]! - shotTicks[i - 1]!);
-  const idealTicks = TOWERS.arrow.fireInterval / DT;
+  const idealTicks = TOWERS.lance.fireInterval / DT;
   const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
   const worst = Math.max(...gaps.map((g) => Math.abs(g - idealTicks)));
 
@@ -614,14 +623,14 @@ section('combat — the loop closes');
   const w = createWorld(map, 4242);
   w.wave.phase = 'done';
   w.money = 1000;
-  w.commands.push({ type: 'placeTower', defId: 'cannon', col: 3, row: 3 });
+  w.commands.push({ type: 'placeTower', defId: 'nova', col: 3, row: 3 });
   stepWorld(w, DT);
   for (let i = 0; i < 60 * 30; i++) stepWorld(w, DT); // 30s with nothing to shoot
 
   const t = w.towers[0]!;
   check(t.cooldown === 0, 'an idle tower clamps its cooldown at zero', `cooldown=${t.cooldown}`);
 
-  spawnCreep(w, 'grunt', 1e9, 0);
+  spawnCreep(w, 'drifter', 1e9, 0);
   let shotsInFirstSecond = 0;
   for (let i = 0; i < 60; i++) {
     const before = w.projectiles.length;
@@ -636,12 +645,323 @@ section('combat — the loop closes');
   const w = createWorld(map, 4242);
   w.wave.phase = 'done';
   w.money = 1000;
-  w.commands.push({ type: 'placeTower', defId: 'frost', col: 3, row: 3 });
+  w.commands.push({ type: 'placeTower', defId: 'singularity', col: 3, row: 3 });
   stepWorld(w, DT);
-  for (let i = 0; i < 6; i++) spawnCreep(w, 'grunt');
+  for (let i = 0; i < 6; i++) spawnCreep(w, 'drifter');
   for (let i = 0; i < 60 * 60; i++) stepWorld(w, DT);
   check(w.projectiles.length === 0, 'no projectile is left in flight', `${w.projectiles.length} stragglers`);
   check(w.creeps.length === 0, 'the board empties');
+}
+
+// ---------------------------------------------------------------------------
+// M7's three identities. Each station now does something the others cannot, and
+// these are the assertions that say so.
+section('stations — pierce, splash, slow');
+
+/** A station with no wave machine running, so the gate measures the mechanic. */
+function stationWorld(defId: TowerId, col: number, row: number, seed = 909) {
+  const w = createWorld(map, seed);
+  w.wave.phase = 'done';
+  w.money = 5000;
+  w.commands.push({ type: 'placeTower', defId, col, row });
+  stepWorld(w, DT);
+  return { w, t: w.towers[0]! };
+}
+
+{
+  // Lance pierces. Three contacts strung along the firing line: one shot must
+  // damage all three, and each exactly once.
+  const { w, t } = stationWorld('lance', 3, 3);
+  const line = [0.8, 1.5, 2.2].map((d) => {
+    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    c.x = t.x + d;
+    c.y = t.y;
+    return c;
+  });
+
+  t.cooldown = 0;
+  for (let i = 0; i < 60; i++) stepWorld(w, DT);
+
+  const dmg = TOWERS.lance.damage;
+  const hurt = line.filter((c) => c.hp < c.maxHp).length;
+  check(hurt === 3, 'one Lance shot reaches every contact in the line', `${hurt}/3`);
+  check(
+    line.every((c) => (c.maxHp - c.hp) % dmg === 0),
+    'and damages each a whole number of times — never twice per pass',
+  );
+  check(TOWERS.lance.pierce === 2, 'pierce budget is 2 extra contacts', `${TOWERS.lance.pierce}`);
+}
+
+{
+  // The budget is finite: a fourth contact in the same line must be untouched
+  // by a shot that has already spent its two passes.
+  const { w, t } = stationWorld('lance', 3, 3, 910);
+  const line = [0.6, 1.1, 1.6, 2.1].map((d) => {
+    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    c.x = t.x + d;
+    c.y = t.y;
+    return c;
+  });
+
+  t.cooldown = 0;
+  stepWorld(w, DT);
+  // Exactly one shot is in flight; run it out without letting the station refire.
+  t.cooldown = 999;
+  for (let i = 0; i < 60; i++) stepWorld(w, DT);
+
+  const touched = line.filter((c) => c.hp < c.maxHp).length;
+  check(touched === 3, 'a single shot stops after pierce is spent', `${touched} of 4 hit`);
+}
+
+{
+  // Nova detonates. A cluster off to one side of the target must still take
+  // damage, and less of it than the direct hit.
+  const { w, t } = stationWorld('nova', 3, 3, 911);
+  const direct = spawnCreep(w, 'drifter', 1e6, 0);
+  direct.x = t.x + 1.5;
+  direct.y = t.y;
+  const near = spawnCreep(w, 'drifter', 1e6, 0);
+  near.x = t.x + 1.5;
+  near.y = t.y + 0.9;
+  const far = spawnCreep(w, 'drifter', 1e6, 0);
+  far.x = t.x + 1.5;
+  far.y = t.y + 4;
+
+  t.cooldown = 0;
+  for (let i = 0; i < 120; i++) stepWorld(w, DT);
+
+  check(direct.hp < direct.maxHp, 'Nova damages its target');
+  check(near.hp < near.maxHp, 'and everything inside the blast');
+  check(
+    direct.maxHp - direct.hp > near.maxHp - near.hp,
+    'with falloff — the rim takes less than the centre',
+    `${direct.maxHp - direct.hp} vs ${near.maxHp - near.hp}`,
+  );
+  check(far.hp === far.maxHp, 'and nothing outside the radius');
+}
+
+{
+  // Singularity slows. Same contact, same stretch, with and without a station.
+  const travel = (withStation: boolean): number => {
+    const w = createWorld(map, 912);
+    w.wave.phase = 'done';
+    if (withStation) {
+      w.money = 5000;
+      w.commands.push({ type: 'placeTower', defId: 'singularity', col: 3, row: 3 });
+    }
+    stepWorld(w, DT);
+    const c = spawnCreep(w, 'drifter', 1e6, 0);
+    for (let i = 0; i < 60 * 4; i++) stepWorld(w, DT);
+    return c.progress;
+  };
+
+  const free = travel(false);
+  const held = travel(true);
+  check(held < free, 'a contact in a gravity well covers less ground', `${held.toFixed(2)} vs ${free.toFixed(2)} tiles`);
+  check(
+    TOWERS.singularity.slowFactor < 1 && TOWERS.singularity.slowSeconds > 0,
+    'and the slow is real content, not a no-op',
+    `x${TOWERS.singularity.slowFactor} for ${TOWERS.singularity.slowSeconds}s`,
+  );
+}
+
+{
+  // Slows refresh, never stack — two wells must not compound into a stop.
+  const { w, t } = stationWorld('singularity', 3, 3, 913);
+  w.commands.push({ type: 'placeTower', defId: 'singularity', col: 3, row: 5 });
+  stepWorld(w, DT);
+
+  const c = spawnCreep(w, 'drifter', 1e6, 0);
+  c.x = t.x + 1;
+  c.y = t.y + 1;
+  for (let i = 0; i < 60; i++) stepWorld(w, DT);
+
+  check(
+    c.slowFactor >= TOWERS.singularity.slowFactor,
+    'two wells do not compound below a single one',
+    `x${c.slowFactor.toFixed(2)}`,
+  );
+  check(c.speed === ENEMIES.drifter.speed, 'and base speed is never mutated', `${c.speed}`);
+}
+
+{
+  // The slow must expire, or one hit would hold a contact forever.
+  const { w, t } = stationWorld('singularity', 3, 3, 914);
+  const c = spawnCreep(w, 'drifter', 1e6, 0);
+  c.x = t.x + 1;
+  c.y = t.y;
+  t.cooldown = 0;
+  // Several ticks, not one: even at 40 tiles/sec a shot covers 0.67 tiles per
+  // tick, so a contact a tile away is struck on the second tick at the earliest.
+  for (let i = 0; i < 10; i++) stepWorld(w, DT);
+  check(c.slowTimer > 0, 'a hit applies the slow', `${c.slowTimer.toFixed(2)}s left`);
+
+  // Move it out of reach and let the timer run down.
+  c.x = t.x + 40;
+  for (let i = 0; i < 60 * 3; i++) stepWorld(w, DT);
+  check(c.slowTimer === 0, 'and it expires', `${c.slowTimer}`);
+  check(c.slowFactor === 1, 'leaving the factor reset so the fields cannot disagree');
+}
+
+// ---------------------------------------------------------------------------
+section('stations — upgrade, sell, targeting');
+
+{
+  const w = createWorld(map, 77);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 3, row: 3 });
+  stepWorld(w, DT);
+
+  const t = w.towers[0]!;
+  const base = TOWERS.lance;
+  check(t.tier === 1, 'a new station is Mk I');
+  check(t.spent === base.cost, 'and has its cost recorded', `$${t.spent}`);
+  check(t.targeting === 'first', 'and targets the leader by default');
+
+  const before = w.money;
+  const cost = upgradeCost(t)!;
+  w.commands.push({ type: 'upgradeTower', id: t.id });
+  stepWorld(w, DT);
+  check(t.tier === 2, 'upgrading raises the tier');
+  check(t.damage === damageAtTier('lance', 2), 'and the damage', `${base.damage} → ${t.damage}`);
+  check(w.money === before - cost, 'and charges exactly once', `−$${cost}`);
+  check(t.spent === base.cost + cost, 'and adds to the sunk total', `$${t.spent}`);
+
+  // The escalating curve is what stops stacking one tile from dominating, so
+  // it is worth asserting rather than trusting the formula.
+  check(
+    upgradeCost(t)! > cost,
+    'the next tier costs more than the last',
+    `$${cost} → $${upgradeCost(t)!}`,
+  );
+
+  while (upgradeCost(t) !== null) {
+    w.money = 10_000;
+    w.commands.push({ type: 'upgradeTower', id: t.id });
+    stepWorld(w, DT);
+  }
+  check(t.tier === BALANCE.upgrade.maxTier, 'tiers stop at the ceiling', `Mk ${t.tier}`);
+
+  const moneyAtMax = w.money;
+  w.commands.push({ type: 'upgradeTower', id: t.id });
+  stepWorld(w, DT);
+  check(w.money === moneyAtMax, 'and a further upgrade is refused, not charged');
+  check(
+    w.events.some((e) => e.type === 'towerActionRejected' && e.reason === 'maxTier'),
+    'with a reason, not silence',
+  );
+}
+
+{
+  const w = createWorld(map, 78);
+  w.wave.phase = 'done';
+  w.money = 1000;
+  w.commands.push({ type: 'placeTower', defId: 'nova', col: 4, row: 4 });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+  w.money = 1000;
+  w.commands.push({ type: 'upgradeTower', id: t.id });
+  stepWorld(w, DT);
+
+  const expected = Math.floor(t.spent * BALANCE.sellRefund);
+  const before = w.money;
+  w.commands.push({ type: 'sellTower', id: t.id });
+  stepWorld(w, DT);
+
+  check(w.towers.length === 0, 'selling removes the station');
+  check(w.money === before + expected, 'and refunds a cut of everything sunk in', `+$${expected}`);
+  check(placementError(w, 'lance', 4, 4) === null, 'and frees the tile');
+
+  // A stale id must be refused rather than crash or refund twice.
+  const afterSale = w.money;
+  w.commands.push({ type: 'sellTower', id: t.id });
+  stepWorld(w, DT);
+  check(w.money === afterSale, 'selling the same station twice pays nothing');
+}
+
+{
+  // Each mode must actually pick a different creep. Two in reach: one far along
+  // and nearly dead, one fresh, healthier and closer — so every mode but
+  // `first` should prefer the straggler, and for a different reason each time.
+  const modes: [TargetMode, string][] = [
+    ['first', 'the leader'],
+    ['last', 'the straggler'],
+    ['strong', 'the healthiest'],
+    ['close', 'the nearest'],
+  ];
+
+  for (const [mode, label] of modes) {
+    const w = createWorld(map, 79);
+    w.wave.phase = 'done';
+    w.money = 1000;
+    w.commands.push({ type: 'placeTower', defId: 'lance', col: 3, row: 3 });
+    stepWorld(w, DT);
+    const t = w.towers[0]!;
+    w.commands.push({ type: 'setTargeting', id: t.id, mode });
+    stepWorld(w, DT);
+
+    const leader = spawnCreep(w, 'drifter');
+    leader.x = t.x + 1.6;
+    leader.y = t.y;
+    leader.progress = 30;
+    leader.hp = 5;
+    const straggler = spawnCreep(w, 'drifter');
+    straggler.x = t.x + 0.4;
+    straggler.y = t.y;
+    straggler.progress = 2;
+    straggler.hp = 40;
+
+    t.cooldown = 0;
+    stepWorld(w, DT);
+    const shot = w.projectiles[0];
+    const hit =
+      shot?.target === leader ? 'leader' : shot?.target === straggler ? 'straggler' : 'none';
+    check(hit === (mode === 'first' ? 'leader' : 'straggler'), `targeting "${mode}" picks ${label}`, hit);
+  }
+}
+
+{
+  // Counters must survive a full match and agree with each other. These feed
+  // the wave-clear, defeat and victory screens, and a screen that reports a
+  // number nobody checked is worse than one that reports nothing.
+  const w = createWorld(map, 4141);
+  w.money = 2000;
+  for (const [c, r] of [
+    [3, 1],
+    [7, 3],
+    [12, 8],
+    [18, 4],
+    [22, 10],
+  ] as [number, number][]) {
+    w.commands.push({ type: 'placeTower', defId: 'lance', col: c, row: r });
+  }
+  for (let i = 0; i < 60 * 60 * 6 && w.phase === 'playing'; i++) stepWorld(w, DT);
+
+  const perWaveKills = w.perWave.reduce((a, s) => a + (s?.kills ?? 0), 0);
+  const perWaveLeaks = w.perWave.reduce((a, s) => a + (s?.leaked ?? 0), 0);
+  check(perWaveKills === w.stats.kills, 'per-wave kills sum to the run total', `${w.stats.kills}`);
+  check(perWaveLeaks === w.stats.leaks, 'and so do leaks', `${w.stats.leaks}`);
+  check(
+    w.lives === Math.max(0, BALANCE.startingLives - w.stats.leaks),
+    'lives lost matches leaks counted',
+    `${w.lives} lives, ${w.stats.leaks} leaks`,
+  );
+
+  const towerKills = w.towers.reduce((a, t) => a + t.kills, 0);
+  check(towerKills <= w.stats.kills, 'no station claims a kill nobody made', `${towerKills}/${w.stats.kills}`);
+
+  const cov = coverage(w);
+  check(
+    cov.covered + cov.gaps.length === cov.total,
+    'coverage partitions the route',
+    `${cov.total} tiles`,
+  );
+  check(
+    cov.total === map.pathLength,
+    'and counts every route tile exactly once',
+    `${cov.total} vs ${map.pathLength}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -714,10 +1034,10 @@ section('balance probe (informational)');
   };
 
   const builds: [string, TowerId[]][] = [
-    ['arrow', ['arrow']],
-    ['cannon', ['cannon']],
-    ['frost', ['frost']],
-    ['cannon+2arrow', ['cannon', 'arrow', 'arrow']],
+    ['lance', ['lance']],
+    ['nova', ['nova']],
+    ['singularity', ['singularity']],
+    ['nova+2lance', ['nova', 'lance', 'lance']],
   ];
 
   console.log(`  \x1b[2mgreedy auto-builder · real starting money · ${SEEDS.length} seeds\x1b[0m`);

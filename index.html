@@ -8,11 +8,18 @@
   </head>
   <body>
     <div id="app">
-      <div id="game-root">
-        <!-- Pixi's canvas is injected here. World-anchored visuals live inside it. -->
+      <!--
+        Board and chrome letterbox as one unit. The stage is sized to the board
+        PLUS the height the deck reserves beneath it, and scaled once; the deck
+        therefore sits below the board rather than over it, so no route tile is
+        ever hidden by the thing you use to defend it.
+      -->
+      <div id="stage">
+        <div id="game-root">
+          <!-- Pixi's canvas is injected here. World-anchored visuals live inside it. -->
+        </div>
+        <div id="hud"></div>
       </div>
-      <!-- Screen-anchored chrome, layered on top. -->
-      <div id="hud"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -9,8 +9,34 @@ export const BALANCE = {
   startingLives: 20,
   startingMoney: 250,
 
-  /** Fraction of spend returned when a tower is sold. */
+  /** Fraction of spend returned when a tower is sold. Includes upgrade spend. */
   sellRefund: 0.7,
+
+  upgrade: {
+    /** Mk I → Mk III. The inspector draws one pip per tier. */
+    maxTier: 3,
+    /**
+     * Cost to reach the next tier is `baseCost * costFactor * currentTier`, so
+     * the second upgrade costs twice the first. Escalating rather than flat
+     * because otherwise stacking tiers on one good tile always beats spreading
+     * coverage, and coverage is the more interesting decision.
+     */
+    costFactor: 1.5,
+    /**
+     * Damage only. Range and fire rate stay put deliberately: an upgrade that
+     * grew reach would silently redraw the coverage map, and the whole appeal
+     * of upgrading a *specific* tower is that you already chose its position.
+     */
+    damageFactor: 1.5,
+  },
+
+  /**
+   * Grade thresholds, best first. The first entry whose predicate holds wins.
+   * Leaks are weighted above speed — holding the line is the game.
+   */
+  grade: {
+    perfectSeconds: 240,
+  },
 
   /** Seconds of build time before wave 1. */
   firstWaveDelay: 12,

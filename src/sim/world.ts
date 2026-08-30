@@ -39,6 +39,30 @@ export interface WaveState {
 }
 
 /**
+ * Counters, not rules.
+ *
+ * Nothing in the simulation reads these — they exist so the wave-clear, defeat
+ * and victory screens can report what actually happened rather than shrugging.
+ * Kept on the World rather than derived at the end because most of it is not
+ * recoverable after the fact: a killed creep leaves no trace to count.
+ */
+export interface RunStats {
+  kills: number;
+  leaks: number;
+  /** Cash from bounties only, excluding clear rewards and rush bonuses. */
+  bounty: number;
+  /** Cash spent on building and upgrading, before any sell refunds. */
+  spent: number;
+}
+
+/** The same three figures, per wave, so a clear can be itemised. */
+export interface WaveStats {
+  kills: number;
+  bounty: number;
+  leaked: number;
+}
+
+/**
  * The entire game state. Plain mutable objects in flat arrays — deliberately
  * not an ECS. Three fixed archetypes and a few hundred entities do not justify
  * a component registry, query machinery, and entities that are unreadable in a
@@ -65,6 +89,10 @@ export interface World {
   creeps: Creep[];
   towers: Tower[];
   projectiles: Projectile[];
+
+  stats: RunStats;
+  /** Indexed by wave. Grown lazily by `waveStats()`. */
+  perWave: WaveStats[];
 
   /** Drained at the start of each tick. See the Command doc comment. */
   commands: Command[];
@@ -95,10 +123,27 @@ export function createWorld(map: MapDef, seed: number): World {
     creeps: [],
     towers: [],
     projectiles: [],
+    stats: { kills: 0, leaks: 0, bounty: 0, spent: 0 },
+    perWave: [],
     commands: [],
     events: [],
     nextId: 1,
   };
+}
+
+/** The stats bucket for a wave, created on first touch. */
+export function waveStats(w: World, wave: number): WaveStats {
+  let s = w.perWave[wave];
+  if (s === undefined) {
+    s = { kills: 0, bounty: 0, leaked: 0 };
+    w.perWave[wave] = s;
+  }
+  return s;
+}
+
+export function towerById(w: World, id: EntityId): Tower | undefined {
+  for (const t of w.towers) if (t.id === id) return t;
+  return undefined;
 }
 
 export function spawnCreep(
@@ -122,6 +167,8 @@ export function spawnCreep(
     leg: 1,
     progress: 0,
     speed: def.speed,
+    slowTimer: 0,
+    slowFactor: 1,
     hp: health,
     maxHp: health,
     bounty: bounty ?? def.bounty,

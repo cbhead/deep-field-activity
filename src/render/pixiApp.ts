@@ -1,4 +1,5 @@
 import { Application, Container } from 'pixi.js';
+import { DECK_PX } from './constants.ts';
 import { THEME } from './theme.ts';
 
 /**
@@ -91,11 +92,29 @@ export async function createRenderer(
  * whole board would go soft.
  */
 function fitCanvas(app: Application, mount: HTMLElement): void {
+  // The deck's height is reserved beneath the board, so the two letterbox as a
+  // single stack. Fitting the board alone would put the deck back on top of the
+  // final approach, which is the one stretch that must stay visible.
+  const stackHeight = app.screen.height + DECK_PX;
   const scale = Math.min(
     1,
     mount.clientWidth / app.screen.width,
-    mount.clientHeight / app.screen.height,
+    mount.clientHeight / stackHeight,
   );
-  app.canvas.style.width = `${app.screen.width * scale}px`;
-  app.canvas.style.height = `${app.screen.height * scale}px`;
+
+  // The canvas keeps its logical CSS size; #stage applies the scale to board
+  // and chrome together. Pixi derives pointer coordinates from the canvas
+  // bounding rect, which reflects the transform, so tile picking is unaffected.
+  app.canvas.style.width = `${app.screen.width}px`;
+  app.canvas.style.height = `${app.screen.height}px`;
+
+  // The HUD is laid out at the board's *logical* size and then scaled as a
+  // whole, rather than reflowing: the deck is a fixed composition designed
+  // against 1040x600, and letting it reflow at narrow widths would clip the
+  // send control rather than shrink it.
+  const root = document.documentElement.style;
+  root.setProperty('--board-w', `${app.screen.width}px`);
+  root.setProperty('--board-h', `${app.screen.height}px`);
+  root.setProperty('--deck-h', `${DECK_PX}px`);
+  root.setProperty('--board-scale', String(scale));
 }

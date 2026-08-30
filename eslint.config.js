@@ -2,7 +2,10 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  // docs/design holds the vendored Claude Design spec and the generated runtime
+  // it needs to render. It is documentation — never built, never imported — and
+  // linting a third-party bundle produces nothing but noise.
+  { ignores: ['dist/**', 'node_modules/**', 'docs/**'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -1,4 +1,4 @@
-import type { World } from '../world.ts';
+import { waveStats, type World } from '../world.ts';
 
 /**
  * Walk every creep along the waypoint route.
@@ -7,6 +7,9 @@ import type { World } from '../world.ts';
  * fraction, so a creep can cross several short legs in one tick without
  * overshooting or losing the remainder at a corner. At 4x speed with a fast
  * enemy that is not hypothetical.
+ *
+ * A gravitational slow scales that budget and never `creep.speed` itself, which
+ * stays the base it was spawned with — see `Creep.slowTimer`.
  */
 export function moveCreeps(w: World, dt: number): void {
   const route = w.map.waypoints;
@@ -14,7 +17,19 @@ export function moveCreeps(w: World, dt: number): void {
   for (const c of w.creeps) {
     if (c.dead) continue;
 
-    let budget = c.speed * dt;
+    // Sampled once per creep, not once per leg: the budget below can cross
+    // several legs in a tick, and charging the timer inside that loop would
+    // make a slow burn off faster on a corner-heavy stretch than on a straight.
+    const speed = c.slowTimer > 0 ? c.speed * c.slowFactor : c.speed;
+    if (c.slowTimer > 0) {
+      c.slowTimer = Math.max(0, c.slowTimer - dt);
+      // Retire the factor with the timer so the two can never disagree; a stale
+      // 0.55 sitting behind an expired timer is the kind of thing that only
+      // shows up as a desync.
+      if (c.slowTimer === 0) c.slowFactor = 1;
+    }
+
+    let budget = speed * dt;
     while (budget > 0) {
       const target = route[c.leg];
 
@@ -22,6 +37,8 @@ export function moveCreeps(w: World, dt: number): void {
       if (target === undefined) {
         c.dead = true;
         w.lives = Math.max(0, w.lives - 1);
+        w.stats.leaks++;
+        waveStats(w, c.wave).leaked++;
         w.events.push({ type: 'creepLeaked', x: c.x, y: c.y });
         break;
       }

@@ -1,146 +1,564 @@
 import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
-import { css, THEME } from '../render/theme.ts';
-import { waveCount } from '../sim/wavePlan.ts';
-import type { World } from '../sim/world.ts';
+import { ENEMIES } from '../content/enemies.ts';
+import type { UiState } from '../app/uiState.ts';
+import { describeGaps, coverage, formatClock, grade, nextGradeHint } from '../sim/analysis.ts';
+import { sellValue, upgradeCost, isUnlocked, damageAtTier } from '../sim/build.ts';
+import { planWave, waveCount } from '../sim/wavePlan.ts';
+import { TARGET_MODES, type Command, type SimEvent, type TargetMode, type Tower } from '../sim/types.ts';
+import { towerById, type World } from '../sim/world.ts';
+import { stationIcon, tierPips } from './icons.ts';
 
 /**
  * DOM, not Pixi.
  *
  * A tower defense HUD is 90% text. In Pixi that means bitmap fonts and
  * hand-computed layout; in DOM it is flexbox and it is done. The boundary is
- * world-anchored visuals (ghosts, range circles, health bars) in Pixi,
+ * world-anchored visuals (ghosts, reach circles, health bars) in Pixi,
  * screen-anchored chrome here.
  *
- * Vanilla, not React: React fights a 60Hz mutable-state loop and needs
- * `useSyncExternalStore` to do properly, which is incidental complexity in week
- * one. The `update(world)` seam is identical if that changes later.
+ * **Rendering strategy.** The HUD updates at 10Hz, and at this size guarding
+ * every individual text node by hand stops being maintainable. Instead each
+ * region computes a short *key* describing everything it displays; when the key
+ * is unchanged the region is skipped entirely, and when it changes the region's
+ * markup is rebuilt in one write. That keeps the original property — a tick
+ * where nothing visible changed touches no DOM at all — while letting the
+ * markup be as large as the design needs.
+ *
+ * Because regions are rebuilt wholesale, nothing binds listeners to their
+ * contents. One delegated click handler on the root reads `data-act`, so
+ * controls survive a rebuild without any re-binding.
  */
-export interface HudCallbacks {
-  onSelect(id: TowerId | null): void;
+export interface HudPorts {
+  world: World;
+  ui: UiState;
+  dispatch(cmd: Command): void;
+  /** Live view of the loop's speed and pause flag; the HUD writes both. */
+  speed: { get(): number; set(v: number): void };
+  togglePause(): void;
+  restart(): void;
 }
 
 export interface Hud {
-  /** Call at ~10Hz, not 60. Every write is guarded by a value comparison. */
-  update(w: World, selected: TowerId | null): void;
+  /** Call at ~10Hz, not 60. Regions with an unchanged key do no work. */
+  update(): void;
+  /** Fed from the single event drain in main.ts. */
+  onEvent(ev: SimEvent): void;
 }
 
-export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
-  root.innerHTML = '';
+const SPEEDS = [1, 2, 4];
+const TARGET_LABEL: Record<TargetMode, string> = {
+  first: 'First',
+  last: 'Last',
+  strong: 'Strong',
+  close: 'Close',
+};
 
-  const stats = el('div', 'hud-stats');
-  const money = stat(stats, 'Cash');
-  const lives = stat(stats, 'Lives');
-  const wave = stat(stats, 'Wave');
+/** How long the wave-cleared summary stays up, in ms of wall clock. */
+const CLEAR_TOAST_MS = 3200;
+/**
+ * The breach banner is deliberately shorter-lived than the clear summary: it is
+ * an alarm, not a report, and one that outstayed the moment would still be on
+ * screen during the next leak.
+ */
+const BREACH_TOAST_MS = 1600;
 
-  const bar = el('div', 'hud-build');
-  const buttons = new Map<TowerId, HTMLButtonElement>();
+export function createHud(root: HTMLElement, ports: HudPorts): Hud {
+  const { world: w, ui } = ports;
 
-  for (const id of TOWER_IDS) {
-    const def = TOWERS[id];
-    const btn = document.createElement('button');
-    btn.className = 'tower-btn';
-    btn.type = 'button';
-    btn.title = def.blurb;
-    btn.innerHTML =
-      `<span class="tower-key">${def.hotkey}</span>` +
-      `<span class="tower-name">${def.name}</span>` +
-      `<span class="tower-cost">$${def.cost}</span>`;
-    btn.style.setProperty('--tint', css(THEME.towers[id]));
-    btn.addEventListener('click', () => {
-      cb.onSelect(btn.classList.contains('is-selected') ? null : id);
-    });
-    buttons.set(id, btn);
-    bar.appendChild(btn);
+  root.innerHTML =
+    '<div class="top"></div><div class="deck"></div><div class="overlay"></div>';
+  const topEl = root.querySelector<HTMLElement>('.top')!;
+  const deckEl = root.querySelector<HTMLElement>('.deck')!;
+  const overlayEl = root.querySelector<HTMLElement>('.overlay')!;
+
+  const top = region(topEl);
+  const deck = region(deckEl);
+  const overlay = region(overlayEl);
+
+  /** Latest wave-cleared summary, and when it expires. */
+  let clearToast: Extract<SimEvent, { type: 'waveCleared' }> | null = null;
+  let clearToastUntil = 0;
+  /** Lives remaining at the moment of the most recent leak, and its expiry. */
+  let breachLives = 0;
+  let breachUntil = 0;
+
+  root.addEventListener('click', (ev) => {
+    const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    if (el === null) return;
+    act(el.dataset['act']!, el.dataset);
+  });
+
+  function act(action: string, data: DOMStringMap): void {
+    switch (action) {
+      case 'arm': {
+        const id = data['id'] as TowerId;
+        ui.selected = ui.selected === id ? null : id;
+        if (ui.selected !== null) ui.inspecting = null;
+        break;
+      }
+      case 'send':
+        ports.dispatch({ type: 'startWave' });
+        break;
+      case 'deck':
+        ui.deckOpen = !ui.deckOpen;
+        break;
+      case 'speed':
+        ports.speed.set(Number(data['v']));
+        break;
+      case 'pause':
+        ports.togglePause();
+        break;
+      case 'restart':
+        ports.restart();
+        break;
+      case 'upgrade':
+        if (ui.inspecting !== null) ports.dispatch({ type: 'upgradeTower', id: ui.inspecting });
+        break;
+      case 'sell':
+        if (ui.inspecting !== null) {
+          ports.dispatch({ type: 'sellTower', id: ui.inspecting });
+          ui.inspecting = null;
+        }
+        break;
+      case 'target':
+        if (ui.inspecting !== null) {
+          ports.dispatch({
+            type: 'setTargeting',
+            id: ui.inspecting,
+            mode: data['mode'] as TargetMode,
+          });
+        }
+        break;
+      case 'pref-reach':
+        ui.prefs.reachCircles = data['v'] === 'always' ? 'always' : 'hover';
+        break;
+      case 'pref-damage':
+        ui.prefs.damageNumbers = data['v'] === 'on';
+        break;
+    }
   }
 
-  const hint = el('div', 'hud-hint');
-  hint.textContent = 'Click a tower or press 1-3 · Esc or right-click to cancel';
-  bar.appendChild(hint);
-
-  const rushHint = el('div', 'hud-rush');
-  stats.appendChild(rushHint);
-
-  root.append(stats, bar);
-
-  // Previous values, so a 10Hz tick with nothing new touches no DOM at all.
-  let lastMoney = NaN;
-  let lastLives = NaN;
-  let lastWave = '';
-  let lastRush = '';
-  let lastSelected: TowerId | null | undefined;
-
   return {
-    update(w, selected) {
-      if (w.money !== lastMoney) {
-        lastMoney = w.money;
-        money.textContent = `$${w.money}`;
-        // Affordability changes only when money does.
-        for (const [id, btn] of buttons) {
-          btn.classList.toggle('is-poor', w.money < TOWERS[id].cost);
-        }
+    onEvent(ev) {
+      if (ev.type === 'waveCleared') {
+        clearToast = ev;
+        clearToastUntil = performance.now() + CLEAR_TOAST_MS;
       }
+      if (ev.type === 'creepLeaked') {
+        // Read lives here, not at render time: several can leak inside one
+        // frame and the banner should name the count at the moment it fired.
+        breachLives = w.lives;
+        breachUntil = performance.now() + BREACH_TOAST_MS;
+      }
+      // A sold or destroyed station must not leave the inspector showing a
+      // ghost. Cheaper and more reliable than having the inspector re-check.
+      if (ev.type === 'towerSold' && ui.inspecting === ev.id) ui.inspecting = null;
+    },
 
-      if (w.lives !== lastLives) {
-        lastLives = w.lives;
-        lives.textContent = String(w.lives);
-        lives.classList.toggle('is-critical', w.lives <= 5);
-      }
+    update() {
+      const inspected = ui.inspecting === null ? undefined : towerById(w, ui.inspecting);
+      if (inspected === undefined && ui.inspecting !== null) ui.inspecting = null;
 
-      const waveText = describeWave(w);
-      if (waveText !== lastWave) {
-        lastWave = waveText;
-        wave.textContent = waveText;
-      }
+      const now = performance.now();
+      const toastLive = clearToast !== null && now < clearToastUntil;
+      const breachLive = now < breachUntil;
 
-      // The rush bonus is worthless if the player cannot see it. Showing the
-      // amount decaying in real time is what turns "press Space" into a
-      // decision rather than a hidden mechanic.
-      const rush =
-        w.wave.phase === 'intermission' && w.wave.timer > 0
-          ? `Space → send now  +$${Math.round(w.wave.timer * BALANCE.rushBonusPerSecond)}`
-          : '';
-      if (rush !== lastRush) {
-        lastRush = rush;
-        rushHint.textContent = rush;
-        rushHint.classList.toggle('is-live', rush !== '');
-      }
+      top(topKey(w, ports.speed.get(), ui.paused), () => renderTop(w, ports.speed.get(), ui.paused));
 
-      if (selected !== lastSelected) {
-        lastSelected = selected;
-        for (const [id, btn] of buttons) btn.classList.toggle('is-selected', id === selected);
-      }
+      deck(deckKey(w, ui, inspected), () => renderDeck(w, ui, inspected));
+
+      overlay(
+        `${w.phase}|${ui.paused ? 'p' : ''}|${toastLive ? clearToast!.wave : ''}|${
+          breachLive ? `b${breachLives}` : ''
+        }`,
+        () =>
+          renderOverlay(w, ui, toastLive ? clearToast : null, breachLive ? breachLives : null),
+      );
     },
   };
 }
 
-/**
- * Waves overlap, so "wave 4" alone is ambiguous — creeps from wave 3 may still
- * be alive. Report what has actually been *cleared* against the total, and what
- * is inbound alongside it.
- */
-function describeWave(w: World): string {
+/** A region that rebuilds only when its key changes. */
+function region(el: HTMLElement): (key: string, html: () => string) => void {
+  let last: string | null = null;
+  return (key, html) => {
+    if (key === last) return;
+    last = key;
+    el.innerHTML = html();
+  };
+}
+
+// ---------------------------------------------------------------- top bar
+
+function topKey(w: World, speed: number, paused: boolean): string {
+  const s = w.wave;
+  return [
+    w.money,
+    w.lives,
+    s.clearedThrough,
+    s.index,
+    s.phase,
+    Math.ceil(s.timer),
+    aliveInWave(w, s.index),
+    speed,
+    paused,
+  ].join('|');
+}
+
+function renderTop(w: World, speed: number, paused: boolean): string {
   const s = w.wave;
   const total = waveCount();
-  const cleared = s.clearedThrough + 1;
+  const cleared = Math.min(s.clearedThrough + 1, total);
 
-  if (s.phase === 'done') return cleared >= total ? 'all clear' : `${cleared}/${total} · last wave out`;
-  if (s.phase === 'spawning') return `${cleared}/${total} · ${s.index + 1} incoming`;
-  return `${cleared}/${total} · ${s.index + 1} in ${Math.ceil(s.timer)}s`;
+  let label: string;
+  let fill: number;
+  if (s.phase === 'intermission') {
+    label = `wave ${s.index + 1} · in ${Math.ceil(s.timer)}s`;
+    fill = 1 - Math.max(0, s.timer) / BALANCE.intermission;
+  } else if (s.phase === 'spawning') {
+    label = `wave ${s.index + 1} · ${aliveInWave(w, s.index)} of ${s.plan.length} alive`;
+    fill = s.plan.length === 0 ? 0 : s.spawned / s.plan.length;
+  } else {
+    label = 'last wave out';
+    fill = 1;
+  }
+
+  const speeds = SPEEDS.map(
+    (v) =>
+      `<button data-act="speed" data-v="${v}" class="${v === speed ? 'on' : ''}">${v}×</button>`,
+  ).join('');
+
+  return (
+    `<div class="stat"><label>Cash</label><b>$${w.money}</b></div>` +
+    `<div class="stat"><label>Lives</label><b class="${w.lives <= 5 ? 'crit' : ''}">${w.lives}</b></div>` +
+    `<div class="stat"><label>Waves held</label><b>${cleared} / ${total}</b></div>` +
+    `<div class="ribbon"><span>${label}</span>` +
+    `<i style="width:${(clamp01(fill) * 100).toFixed(1)}%"></i></div>` +
+    `<div class="seg speeds">${speeds}</div>` +
+    `<button class="icon" data-act="pause" title="Pause (Esc)">${paused ? '▶' : '❚❚'}</button>`
+  );
 }
 
-function el(tag: string, className: string): HTMLElement {
-  const node = document.createElement(tag);
-  node.className = className;
-  return node;
+const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+function aliveInWave(w: World, wave: number): number {
+  let n = 0;
+  for (const c of w.creeps) if (!c.dead && c.wave === wave) n++;
+  return n;
 }
 
-function stat(parent: HTMLElement, label: string): HTMLElement {
-  const wrap = el('div', 'hud-stat');
-  const l = el('span', 'hud-stat-label');
-  l.textContent = label;
-  const v = el('span', 'hud-stat-value');
-  wrap.append(l, v);
-  parent.appendChild(wrap);
-  return v;
+// ------------------------------------------------------------------- deck
+
+function deckKey(w: World, ui: UiState, inspected: Tower | undefined): string {
+  const s = w.wave;
+  return [
+    ui.deckOpen ? 'o' : 'c',
+    ui.selected ?? '-',
+    inspected ? `${inspected.id}:${inspected.tier}:${inspected.targeting}:${inspected.kills}` : '-',
+    // Affordability of every slot, plus the two buttons the inspector prices.
+    w.money,
+    s.index,
+    s.phase,
+    Math.ceil(s.timer),
+    // Only the collapsed strip shows a live enemy count. Including it
+    // unconditionally would rebuild the whole open deck on every kill.
+    ui.deckOpen ? '' : aliveInWave(w, s.index),
+  ].join('|');
+}
+
+function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string {
+  const handle =
+    `<button class="handle" data-act="deck">Deck <span>${ui.deckOpen ? '▼' : '▲'}</span>` +
+    `<kbd>Tab</kbd></button>`;
+
+  if (!ui.deckOpen) {
+    return `<div class="strip">${renderStripStatus(w)}${handle}</div>`;
+  }
+
+  return (
+    `<div class="panel">` +
+    `<section class="build"><h6>Build${ui.selected ? ' · armed' : ''}</h6>` +
+    `<div class="slots">${renderSlots(w, ui)}</div></section>` +
+    `<span class="sep"></span>` +
+    `<section class="detail">${renderDetail(w, ui, inspected)}</section>` +
+    `<span class="sep"></span>` +
+    `<section class="send">${handle}${renderSend(w)}</section>` +
+    `</div>`
+  );
+}
+
+function renderStripStatus(w: World): string {
+  const s = w.wave;
+  const dotClass = w.lives <= 5 ? 'dot crit' : 'dot';
+  const text =
+    s.phase === 'spawning'
+      ? `Wave ${s.index + 1} running — ${aliveInWave(w, s.index)} of ${s.plan.length} alive`
+      : s.phase === 'intermission'
+        ? `Wave ${s.index + 1} in ${Math.ceil(s.timer)}s`
+        : 'Last wave out';
+  return `<span class="strip-status"><i class="${dotClass}"></i>${text}</span>`;
+}
+
+function renderSlots(w: World, ui: UiState): string {
+  return TOWER_IDS.map((id) => {
+    const def = TOWERS[id];
+    if (!isUnlocked(w, id)) {
+      return (
+        `<div class="slot locked"><span>Locked<br>wave ${def.unlockWave + 1}</span></div>`
+      );
+    }
+    const poor = w.money < def.cost;
+    const cls = ['slot', `t-${id}`, ui.selected === id ? 'armed' : '', poor ? 'poor' : '']
+      .filter(Boolean)
+      .join(' ');
+    return (
+      `<button class="${cls}" data-act="arm" data-id="${id}" title="${def.blurb}">` +
+      `<kbd>${def.hotkey}</kbd>${stationIcon(30)}` +
+      `<span class="name">${def.name}</span>` +
+      `<span class="cost">$${def.cost}</span></button>`
+    );
+  }).join('');
+}
+
+// --------------------------------------------------------------- detail
+
+function renderDetail(w: World, ui: UiState, inspected: Tower | undefined): string {
+  if (inspected !== undefined) return renderInspector(w, inspected);
+  if (ui.selected !== null) return renderArmed(ui.selected);
+  return renderNextContact(w);
+}
+
+function stat(label: string, value: string, cls = ''): string {
+  return `<span class="cell"><label>${label}</label><b class="${cls}">${value}</b></span>`;
+}
+
+function renderArmed(id: TowerId): string {
+  const d = TOWERS[id];
+  return (
+    `<div class="head t-${id}">${stationIcon(26)}<b>${d.name} — placing</b>` +
+    `<span class="blurb">${d.blurb}</span></div>` +
+    `<div class="cells">${stat('Dmg', String(d.damage))}${stat(
+      'Rate',
+      (1 / d.fireInterval).toFixed(1),
+    )}${stat('Rng', d.range.toFixed(1))}${stat('Cost', `$${d.cost}`, 'accent')}</div>` +
+    `<div class="hint">Click to place · <b>Esc</b> or right-click to cancel</div>`
+  );
+}
+
+function renderInspector(w: World, t: Tower): string {
+  const d = TOWERS[t.defId];
+  const cost = upgradeCost(t);
+  const next = cost === null ? null : damageAtTier(t.defId, t.tier + 1);
+
+  const modes = TARGET_MODES.map(
+    (m) =>
+      `<button data-act="target" data-mode="${m}" class="${t.targeting === m ? 'on' : ''}">${TARGET_LABEL[m]}</button>`,
+  ).join('');
+
+  const upgrade =
+    cost === null
+      ? `<span class="btn flat">Max tier</span>`
+      : `<button class="btn primary${w.money < cost ? ' poor' : ''}" data-act="upgrade">Upgrade $${cost}</button>`;
+
+  return (
+    `<div class="head t-${t.defId}">${stationIcon(28)}` +
+    `<b>${d.name} · Mk ${'I'.repeat(t.tier)}</b>` +
+    `<span class="blurb">tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} dmg dealt</span>` +
+    tierPips(t.tier, BALANCE.upgrade.maxTier) +
+    `</div>` +
+    `<div class="cells">${stat('Dmg', next === null ? String(t.damage) : `${t.damage}`, 'accent')}${stat(
+      'Rate',
+      (1 / t.fireInterval).toFixed(1),
+    )}${stat('Rng', t.range.toFixed(1))}${stat('Kills', String(t.kills))}</div>` +
+    `<div class="actions"><div class="seg targeting">${modes}</div>` +
+    `${upgrade}<button class="btn" data-act="sell">Sell +$${sellValue(t)}</button></div>`
+  );
+}
+
+/**
+ * What is coming, drawn from `planWave` — the same pure function the spawner
+ * uses, so the preview cannot promise a wave the sim won't deliver.
+ */
+function renderNextContact(w: World): string {
+  const s = w.wave;
+  if (s.phase === 'done' && w.creeps.length === 0) {
+    return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
+  }
+
+  const plan = planWave(w.seed, s.index);
+  if (plan.length === 0) {
+    return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
+  }
+
+  const first = plan[0]!;
+  const name = ENEMIES[first.enemy].name;
+  const gap =
+    plan.length > 1 ? (plan[plan.length - 1]!.at - first.at) / (plan.length - 1) : 0;
+
+  return (
+    `<div class="head"><i class="dot contact"></i><b>Wave ${s.index + 1}</b></div>` +
+    `<div class="line">${plan.length} × ${name}, ${first.hp} hp each` +
+    (gap > 0 ? `, ${gap.toFixed(2)}s apart` : '') +
+    `.</div>` +
+    `<div class="hint">Pick a slot, or click a station to inspect it.</div>`
+  );
+}
+
+// ----------------------------------------------------------------- send
+
+function renderSend(w: World): string {
+  const s = w.wave;
+
+  if (s.phase === 'spawning') {
+    return (
+      `<span class="btn send-btn flat">Wave ${s.index + 1} running</span>` +
+      `<span class="hint">Wait for it to finish spawning</span>`
+    );
+  }
+  if (s.phase === 'done') {
+    return (
+      `<span class="btn send-btn flat">No waves left</span>` +
+      `<span class="hint">Clear the board to finish</span>`
+    );
+  }
+
+  const bonus = Math.round(Math.max(0, s.timer) * BALANCE.rushBonusPerSecond);
+  return (
+    `<button class="btn send-btn primary" data-act="send">Send wave ${s.index + 1}` +
+    (bonus > 0 ? ` <em>+$${bonus}</em>` : '') +
+    `</button>` +
+    `<span class="hint">Sending early pays the remaining timer as cash</span>`
+  );
+}
+
+// -------------------------------------------------------------- overlays
+
+function renderOverlay(
+  w: World,
+  ui: UiState,
+  toast: Extract<SimEvent, { type: 'waveCleared' }> | null,
+  breachLives: number | null,
+): string {
+  if (w.phase === 'lost') return renderDefeat(w);
+  if (w.phase === 'won') return renderVictory(w);
+  if (ui.paused) return renderPaused(w, ui);
+  // A breach outranks a clear: they can overlap when the last creep of a wave
+  // is the one that got through, and the bad news is the news.
+  if (breachLives !== null) return renderBreach(breachLives);
+  if (toast !== null) return renderClearToast(toast);
+  return '';
+}
+
+/**
+ * The leak banner. Three signals fire together — this, the goal flare, and the
+ * screen-edge rim in `effects.ts` — so a leak is legible whether the player was
+ * watching the core or the deck.
+ */
+function renderBreach(lives: number): string {
+  return (
+    `<div class="breach">` +
+    `<i class="dot crit"></i>` +
+    `<b>CORE BREACHED</b>` +
+    `<span>${lives} ${lives === 1 ? 'life' : 'lives'} remaining</span>` +
+    `</div>`
+  );
+}
+
+function renderClearToast(ev: Extract<SimEvent, { type: 'waveCleared' }>): string {
+  const item = (v: string, label: string, cls = ''): string =>
+    `<span class="item"><b class="${cls}">${v}</b><label>${label}</label></span>`;
+  return (
+    `<div class="card toast">` +
+    `<span class="eyebrow">Wave ${ev.wave + 1} cleared</span>` +
+    `<div class="items">` +
+    item(`+$${ev.bounty}`, `bounty · ${ev.kills} kills`) +
+    item(`+$${ev.reward}`, 'clear bonus', 'accent') +
+    (ev.leaked > 0 ? item(`−${ev.leaked}`, 'leaked', 'danger') : '') +
+    `</div></div>`
+  );
+}
+
+function renderPaused(w: World, ui: UiState): string {
+  const toggle = (
+    act: string,
+    opts: readonly [string, string][],
+    active: string,
+  ): string =>
+    `<div class="seg">` +
+    opts
+      .map(
+        ([v, label]) =>
+          `<button data-act="${act}" data-v="${v}" class="${v === active ? 'on' : ''}">${label}</button>`,
+      )
+      .join('') +
+    `</div>`;
+
+  return (
+    `<div class="scrim"></div><div class="card">` +
+    `<span class="eyebrow">${w.map.name}</span><h2>Paused</h2>` +
+    `<div class="rows">` +
+    `<div class="row"><span>Reach circles</span>${toggle(
+      'pref-reach',
+      [
+        ['hover', 'Hover'],
+        ['always', 'Always'],
+      ],
+      ui.prefs.reachCircles,
+    )}</div>` +
+    `<div class="row"><span>Damage numbers</span>${toggle(
+      'pref-damage',
+      [
+        ['on', 'On'],
+        ['off', 'Off'],
+      ],
+      ui.prefs.damageNumbers ? 'on' : 'off',
+    )}</div>` +
+    `</div>` +
+    `<div class="hr"></div>` +
+    `<button class="btn primary wide" data-act="pause">Resume <em>Esc</em></button>` +
+    `<button class="btn wide" data-act="restart">Restart sector</button>` +
+    `</div>`
+  );
+}
+
+function renderDefeat(w: World): string {
+  const cov = coverage(w);
+  return (
+    `<div class="scrim lost"></div><div class="card lost">` +
+    `<span class="eyebrow danger">Sector lost</span>` +
+    `<h2>The core went dark on wave ${w.wave.index + 1}</h2>` +
+    `<div class="grid3">` +
+    `${bigStat('Waves held', `${Math.max(0, w.wave.clearedThrough + 1)} / ${waveCount()}`)}` +
+    `${bigStat('Contacts killed', String(w.stats.kills))}` +
+    `${bigStat('Leaks', String(w.stats.leaks), 'danger')}` +
+    `</div>` +
+    `<div class="note danger"><span class="eyebrow danger">What broke</span>` +
+    `<p>${describeGaps(cov)}</p></div>` +
+    `<button class="btn primary wide" data-act="restart">Retry sector</button>`
+  );
+}
+
+function renderVictory(w: World): string {
+  const g = grade(w);
+  const hint = nextGradeHint(w);
+  return (
+    `<div class="scrim won"></div><div class="card won">` +
+    `<div class="head-row"><div><span class="eyebrow accent">Sector held</span>` +
+    `<h2>All ${waveCount()} waves turned back</h2></div>` +
+    `<span class="grade">${g}</span></div>` +
+    `<div class="grid3">` +
+    `${bigStat('Lives kept', `${w.lives} / ${BALANCE.startingLives}`)}` +
+    `${bigStat('Contacts killed', String(w.stats.kills))}` +
+    `${bigStat('Time', formatClock(w.time))}` +
+    `</div>` +
+    (hint === null
+      ? ''
+      : `<div class="note accent"><span class="eyebrow accent">Next grade up</span><p>${hint}</p></div>`) +
+    `<button class="btn primary wide" data-act="restart">Play again</button>`
+  );
+}
+
+function bigStat(label: string, value: string, cls = ''): string {
+  return `<span class="big"><label>${label}</label><b class="${cls}">${value}</b></span>`;
 }

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/styles.css">
+<script src="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#0b0c16;font-family:Inter,system-ui,sans-serif;color:#e9e9ed}
+a{color:#b5abfc;text-decoration:none}a:hover{color:#d2cefd}
+.pg{padding:48px 44px 64px}
+.hd{max-width:900px;margin:0 0 40px}
+.hd h1{margin:0 0 10px;font:500 26px/1.2 Inter,sans-serif;letter-spacing:-.01em}
+.hd p{margin:0;font:400 13.5px/1.7 Inter,sans-serif;color:rgba(233,233,237,.58);text-wrap:pretty}
+.grp{margin:0 0 12px;display:flex;align-items:center;gap:12px}
+.grp h2{margin:0;font:600 10.5px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#9184d9}
+.grp span{flex:1;height:1px;background:linear-gradient(to right,rgba(145,132,217,.4),rgba(145,132,217,0) 260px)}
+.row{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;max-width:2200px;margin:0 0 44px}
+.st{flex:none;display:flex;flex-direction:column;gap:8px;width:1040px;scroll-margin-top:16px}
+.st-hd{display:flex;align-items:baseline;gap:10px}
+.st-n{font:600 10px/1 ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(233,233,237,.1);color:#e9e9ed;border-radius:5px}
+.st-t{font:600 13px/1.3 Inter,sans-serif;color:#e9e9ed}
+.st-d{font:400 11.5px/1.5 Inter,sans-serif;color:rgba(233,233,237,.5);max-width:1040px;text-wrap:pretty}
+.bd{position:relative;width:1040px;height:600px;border:1px solid rgba(233,233,237,.09);border-radius:8px;overflow:hidden}
+code{font:400 11.5px ui-monospace,Menlo,monospace;color:rgba(233,233,237,.75)}
+</style>
+</helmet>
+
+<div class="pg">
+<div class="hd">
+<h1>Deep Field HUD — state set</h1>
+<p>The agreed direction built out across every state the loop actually reaches. Board and chrome are fixed; only what the state changes is different frame to frame. Values are the real ones from <code>balance.ts</code> and <code>towers.ts</code> — 20 starting lives, $250 start, 70% sell refund, $20 wave-clear bonus, 8s intermission.</p>
+</div>
+
+<div class="grp"><h2>Build phase</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="s1">
+<div class="st-hd"><span class="st-n">01</span><span class="st-t">Idle — deck open, nothing selected</span></div>
+<div class="st-d">The resting state between waves. The inspector column has no station to show, so it holds the one thing worth saying instead of an empty panel: what the next wave is and where it will hurt.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="250" lives="20" wave="3 / 10" timer="0:05" ribbon="wave 4 · rush" fill="34%"></dc-import>
+<div style="position:absolute;left:0;right:0;bottom:0;height:176px;background:linear-gradient(to bottom,rgba(7,8,15,0),rgba(7,8,15,.6) 26px)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;display:flex;align-items:center;gap:16px;padding:0 16px;background:rgba(9,10,20,.96);border-top:1px solid rgba(233,233,237,.12);box-shadow:0 -14px 44px rgba(0,0,0,.75)">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:400 9.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#75798c">Build</span>
+    <div style="display:flex;gap:8px">
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">1</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(143,196,250,.4))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#8fc4fa" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Arrow</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$60</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">2</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(252,192,138,.35))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".2"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#fcc08a" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Cannon</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$110</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">3</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(165,238,251,.35))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#a5eefb" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#a5eefb" fill-opacity=".2"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#a5eefb" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#a5eefb"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Frost</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$85</span>
+      </div>
+      <div style="width:78px;height:86px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(233,233,237,.12);border-radius:8px"><span style="font:400 10px/1.3 Inter,sans-serif;color:#595d6c;text-align:center">Locked<br>wave 5</span></div>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px;max-width:400px">
+    <span style="font:400 9.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#75798c">Next contact</span>
+    <div style="display:flex;align-items:center;gap:9px"><span style="width:12px;height:12px;border-radius:50%;background:#f9a8d4;box-shadow:0 0 8px rgba(249,168,212,.9)"></span><span style="font:600 13px/1.2 Inter,sans-serif">Wave 4 — first rush</span></div>
+    <div style="font:400 11.5px/1.6 Inter,sans-serif;color:#9397ab">8 × Grunt, 36 hp each, 0.45s apart. Twice the arrival rate of wave 3 — thin single-station coverage will leak here.</div>
+    <div style="font:400 10.5px/1 Inter,sans-serif;color:#595d6c">Pick a slot, or click a station to inspect it.</div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:9px">
+    <span style="display:flex;align-items:center;gap:7px;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Deck <span style="font-size:9px;color:#cfd3e5">▼</span> <span style="padding:1px 5px;border:1px solid rgba(233,233,237,.18);border-radius:4px;font:400 10px/1.4 ui-monospace,monospace;color:#75798c">Tab</span></span>
+    <span style="display:flex;align-items:center;gap:8px;padding:11px 18px;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 18px rgba(145,132,217,.18)">Send wave 4 <span style="font-weight:400;color:#b5abfc;font-variant-numeric:tabular-nums">+$14</span></span>
+    <span style="font:400 10.5px/1 Inter,sans-serif;color:#75798c">Sending early pays the remaining timer as cash</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="s2">
+<div class="st-hd"><span class="st-n">02</span><span class="st-t">Placing — legal and rejected, side by side</span></div>
+<div class="st-d">Armed with Arrow. A legal tile takes the station's own colour and shows its reach; a rejected tile goes red with the reason named at the cursor. Both verdicts come from <code>placementError</code>, the same function the command path uses, so what you see and what will be accepted can't drift.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;left:340px;top:260px;width:240px;height:240px;border-radius:50%;background:rgba(143,196,250,.05);border:1.5px solid rgba(143,196,250,.35)"></div>
+<div style="position:absolute;left:440px;top:360px;width:40px;height:40px;border:1.5px solid #8fc4fa;box-shadow:0 0 0 3px rgba(143,196,250,.16),0 0 18px rgba(143,196,250,.35)"></div>
+<svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;left:440px;top:360px;opacity:.6"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2" stroke="#8fc4fa" stroke-width="2"/><circle cx="20" cy="20" r="5" fill="#8fc4fa"/></svg>
+<div style="position:absolute;left:488px;top:368px;padding:5px 9px;border-radius:6px;background:rgba(9,10,20,.94);border:1px solid rgba(143,196,250,.4);font:600 11px/1 Inter,sans-serif;color:#8fc4fa">Deploy · −$60</div>
+
+<div style="position:absolute;left:640px;top:120px;width:40px;height:40px;border:1.5px solid #e06d6d;box-shadow:0 0 0 3px rgba(224,109,109,.16),0 0 18px rgba(224,109,109,.35)"></div>
+<svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;left:640px;top:120px;opacity:.6"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#e06d6d" fill-opacity=".2" stroke="#e06d6d" stroke-width="2"/><path d="M12 12 L28 28 M28 12 L12 28" stroke="#e06d6d" stroke-width="2.5" stroke-linecap="round"/></svg>
+<div style="position:absolute;left:688px;top:128px;padding:5px 9px;border-radius:6px;background:rgba(9,10,20,.94);border:1px solid rgba(224,109,109,.4);font:600 11px/1 Inter,sans-serif;color:#e06d6d">On the route</div>
+
+<div style="position:absolute;left:100px;top:200px;width:40px;height:40px;border:1.5px solid #e06d6d;opacity:.75"></div>
+<div style="position:absolute;left:148px;top:208px;padding:5px 9px;border-radius:6px;background:rgba(9,10,20,.94);border:1px solid rgba(224,109,109,.35);font:600 11px/1 Inter,sans-serif;color:#e06d6d">Nebula · no build</div>
+<div style="position:absolute;left:720px;top:320px;width:40px;height:40px;border:1.5px solid #e06d6d;opacity:.75"></div>
+<div style="position:absolute;left:768px;top:328px;padding:5px 9px;border-radius:6px;background:rgba(9,10,20,.94);border:1px solid rgba(224,109,109,.35);font:600 11px/1 Inter,sans-serif;color:#e06d6d">Occupied</div>
+
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="250" lives="20" wave="3 / 10" timer="0:05" ribbon="wave 4 · rush" fill="34%"></dc-import>
+<div style="position:absolute;left:0;right:0;bottom:0;height:176px;background:linear-gradient(to bottom,rgba(7,8,15,0),rgba(7,8,15,.6) 26px)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;display:flex;align-items:center;gap:16px;padding:0 16px;background:rgba(9,10,20,.96);border-top:1px solid rgba(233,233,237,.12)">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:400 9.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#75798c">Build · armed</span>
+    <div style="display:flex;gap:8px">
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid #8fc4fa;border-radius:8px;background:rgba(143,196,250,.12);box-shadow:0 0 16px rgba(143,196,250,.16)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#9397ab">1</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(143,196,250,.5))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#8fc4fa" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Arrow</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$60</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7);opacity:.6">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">2</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Cannon</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$110</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7);opacity:.6">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">3</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#a5eefb" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#a5eefb" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#a5eefb"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Frost</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$85</span>
+      </div>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px;max-width:420px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <svg width="26" height="26" viewBox="0 0 40 40" style="display:block;flex:none"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+      <span style="font:600 13px/1.2 Inter,sans-serif">Arrow — placing</span>
+      <span style="font:400 10.5px/1.2 Inter,sans-serif;color:#75798c">Cheap, fast, long reach. The backbone.</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-variant-numeric:tabular-nums">
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Dmg</span><span style="font:600 13px/1.1 Inter,sans-serif">6</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Rate</span><span style="font:600 13px/1.1 Inter,sans-serif">2.0</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Rng</span><span style="font:600 13px/1.1 Inter,sans-serif">3.0</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Cost</span><span style="font:600 13px/1.1 Inter,sans-serif;color:#b5abfc">$60</span></span>
+    </div>
+    <div style="font:400 10.5px/1 Inter,sans-serif;color:#595d6c">Click to place · <span style="color:#9397ab">Esc</span> or right-click to cancel</div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:9px">
+    <span style="display:flex;align-items:center;gap:8px;padding:11px 18px;border:1px solid rgba(145,132,217,.4);border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#9397ab">Send wave 4 <span style="font-weight:400;color:#75798c;font-variant-numeric:tabular-nums">+$14</span></span>
+    <span style="font:400 10.5px/1 Inter,sans-serif;color:#75798c">Finish placing first</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="s3">
+<div class="st-hd"><span class="st-n">03</span><span class="st-t">Can't afford it</span></div>
+<div class="st-d">Unaffordable, not unavailable — the slot still arms so you can plan with the reach circle, but the cost turns red and the deploy chip refuses at the cursor. The deck names the two ways out rather than just saying no.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;left:380px;top:300px;width:192px;height:192px;border-radius:50%;background:rgba(252,192,138,.04);border:1.5px dashed rgba(252,192,138,.35)"></div>
+<div style="position:absolute;left:456px;top:376px;width:40px;height:40px;border:1.5px dashed rgba(252,192,138,.6)"></div>
+<svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;left:456px;top:376px;opacity:.35"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".15" stroke="#fcc08a" stroke-width="2"/><circle cx="20" cy="20" r="5" fill="#fcc08a"/></svg>
+<div style="position:absolute;left:504px;top:384px;padding:5px 9px;border-radius:6px;background:rgba(9,10,20,.94);border:1px solid rgba(224,109,109,.4);font:600 11px/1 Inter,sans-serif;color:#e06d6d">Need $70 more</div>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="40" lives="20" wave="3 / 10" timer="0:05" ribbon="wave 4 · rush" fill="34%"></dc-import>
+<div style="position:absolute;left:0;right:0;bottom:0;height:176px;background:linear-gradient(to bottom,rgba(7,8,15,0),rgba(7,8,15,.6) 26px)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;display:flex;align-items:center;gap:16px;padding:0 16px;background:rgba(9,10,20,.96);border-top:1px solid rgba(233,233,237,.12)">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:400 9.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#75798c">Build</span>
+    <div style="display:flex;gap:8px">
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">1</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(143,196,250,.4))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Arrow</span><span style="font:400 11px/1 Inter,sans-serif;color:#e06d6d;font-variant-numeric:tabular-nums">$60</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid #fcc08a;border-radius:8px;background:rgba(252,192,138,.08);opacity:.55">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">2</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Cannon</span><span style="font:400 11px/1 Inter,sans-serif;color:#e06d6d;font-variant-numeric:tabular-nums">$110</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7);opacity:.45">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">3</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#a5eefb" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#a5eefb" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#a5eefb"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Frost</span><span style="font:400 11px/1 Inter,sans-serif;color:#e06d6d;font-variant-numeric:tabular-nums">$85</span>
+      </div>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="flex:1;display:flex;flex-direction:column;gap:9px;max-width:420px">
+    <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:#e06d6d;box-shadow:0 0 8px rgba(224,109,109,.8)"></span><span style="font:600 13px/1.2 Inter,sans-serif;color:#e9e9ed">$40 — not enough for anything</span></div>
+    <div style="font:400 11.5px/1.6 Inter,sans-serif;color:#9397ab">Cheapest station is Arrow at $60. Reach is still shown so you can plan the buy.</div>
+    <div style="display:flex;gap:7px">
+      <span style="padding:6px 12px;border:1px solid rgba(233,233,237,.16);border-radius:7px;font:600 11.5px/1.2 Inter,sans-serif;color:#cfd3e5">Sell a station · +$42</span>
+      <span style="padding:6px 12px;border:1px solid rgba(233,233,237,.16);border-radius:7px;font:600 11.5px/1.2 Inter,sans-serif;color:#cfd3e5">Clear wave 4 · +$20</span>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:9px">
+    <span style="display:flex;align-items:center;gap:8px;padding:11px 18px;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 18px rgba(145,132,217,.18)">Send wave 4 <span style="font-weight:400;color:#b5abfc;font-variant-numeric:tabular-nums">+$14</span></span>
+    <span style="font:400 10.5px/1 Inter,sans-serif;color:#75798c">Early send is the fastest cash right now</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="s4">
+<div class="st-hd"><span class="st-n">04</span><span class="st-t">Station selected — inspector</span></div>
+<div class="st-d">Clicking a placed station fills the inspector: tier pips, live stats with the upgrade delta, targeting mode, and the two irreversible actions kept apart from each other. Sell shows the actual refund (70% of spend) rather than a percentage.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;left:620px;top:220px;width:240px;height:240px;border-radius:50%;background:rgba(143,196,250,.05);border:1.5px solid rgba(143,196,250,.35)"></div>
+<div style="position:absolute;left:720px;top:320px;width:40px;height:40px;border:1.5px solid #b5abfc;box-shadow:0 0 0 3px rgba(145,132,217,.18),0 0 18px rgba(181,171,252,.4)"></div>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="250" lives="20" wave="3 / 10" timer="0:05" ribbon="wave 4 · rush" fill="34%"></dc-import>
+<div style="position:absolute;left:0;right:0;bottom:0;height:176px;background:linear-gradient(to bottom,rgba(7,8,15,0),rgba(7,8,15,.6) 26px)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;display:flex;align-items:center;gap:16px;padding:0 16px;background:rgba(9,10,20,.96);border-top:1px solid rgba(233,233,237,.12)">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:400 9.5px/1 Inter,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#75798c">Build</span>
+    <div style="display:flex;gap:8px">
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">1</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(143,196,250,.4))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Arrow</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$60</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">2</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(252,192,138,.35))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Cannon</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$110</span>
+      </div>
+      <div style="position:relative;width:78px;height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(233,233,237,.12);border-radius:8px;background:rgba(35,37,50,.7)">
+        <span style="position:absolute;left:5px;top:4px;font:600 9.5px/1 ui-monospace,monospace;color:#75798c">3</span>
+        <svg width="30" height="30" viewBox="0 0 40 40" style="display:block;filter:drop-shadow(0 0 6px rgba(165,238,251,.35))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#a5eefb" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#a5eefb" fill-opacity=".2"/><circle cx="20" cy="20" r="5.5" fill="#a5eefb"/></svg>
+        <span style="font:600 11.5px/1 Inter,sans-serif">Frost</span><span style="font:400 11px/1 Inter,sans-serif;color:#cfd3e5;font-variant-numeric:tabular-nums">$85</span>
+      </div>
+      <div style="width:78px;height:86px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(233,233,237,.12);border-radius:8px"><span style="font:400 10px/1.3 Inter,sans-serif;color:#595d6c;text-align:center">Locked<br>wave 5</span></div>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px;max-width:400px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <svg width="28" height="28" viewBox="0 0 40 40" style="display:block;flex:none;filter:drop-shadow(0 0 6px rgba(143,196,250,.45))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#0d0f1c" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#8fc4fa" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+      <span style="font:600 13px/1.2 Inter,sans-serif">Arrow · Mk II</span>
+      <span style="font:400 10.5px/1.2 Inter,sans-serif;color:#75798c">tile 18,8 · 1,204 dmg dealt</span>
+      <span style="margin-left:auto;display:flex;gap:3px"><span style="width:6px;height:6px;border-radius:50%;background:#8fc4fa"></span><span style="width:6px;height:6px;border-radius:50%;background:#8fc4fa"></span><span style="width:6px;height:6px;border-radius:50%;border:1px solid #595d6c"></span></span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;font-variant-numeric:tabular-nums">
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Dmg</span><span style="font:600 13px/1.1 Inter,sans-serif;color:#b5abfc">9</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Rate</span><span style="font:600 13px/1.1 Inter,sans-serif">2.0</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Rng</span><span style="font:600 13px/1.1 Inter,sans-serif">3.0</span></span>
+      <span style="display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(35,37,50,.75)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Kills</span><span style="font:600 13px/1.1 Inter,sans-serif">37</span></span>
+    </div>
+    <div style="display:flex;gap:7px;align-items:center">
+      <div style="display:inline-flex;flex:1;border:1px solid rgba(233,233,237,.14);border-radius:7px;overflow:hidden">
+        <span style="flex:1;text-align:center;padding:5px 0;font:600 10.5px/1.2 Inter,sans-serif;color:#0d0f1c;background:#9184d9">First</span>
+        <span style="flex:1;text-align:center;padding:5px 0;font:400 10.5px/1.2 Inter,sans-serif;color:#9397ab;border-left:1px solid rgba(233,233,237,.1)">Last</span>
+        <span style="flex:1;text-align:center;padding:5px 0;font:400 10.5px/1.2 Inter,sans-serif;color:#9397ab;border-left:1px solid rgba(233,233,237,.1)">Strong</span>
+        <span style="flex:1;text-align:center;padding:5px 0;font:400 10.5px/1.2 Inter,sans-serif;color:#9397ab;border-left:1px solid rgba(233,233,237,.1)">Close</span>
+      </div>
+      <span style="padding:5px 12px;border:1px solid #9184d9;border-radius:7px;font:600 11.5px/1.2 Inter,sans-serif;color:#d2cefd">Upgrade $90</span>
+      <span style="padding:5px 11px;border:1px solid rgba(233,233,237,.14);border-radius:7px;font:600 11.5px/1.2 Inter,sans-serif;color:#cfd3e5">Sell +$42</span>
+    </div>
+  </div>
+  <span style="width:1px;height:110px;background:linear-gradient(to bottom,transparent,rgba(233,233,237,.14),transparent)"></span>
+  <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:9px">
+    <span style="display:flex;align-items:center;gap:7px;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Deck <span style="font-size:9px;color:#cfd3e5">▼</span> <span style="padding:1px 5px;border:1px solid rgba(233,233,237,.18);border-radius:4px;font:400 10px/1.4 ui-monospace,monospace;color:#75798c">Tab</span></span>
+    <span style="display:flex;align-items:center;gap:8px;padding:11px 18px;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 18px rgba(145,132,217,.18)">Send wave 4 <span style="font-weight:400;color:#b5abfc;font-variant-numeric:tabular-nums">+$14</span></span>
+    <span style="font:400 10.5px/1 Inter,sans-serif;color:#75798c">8 × Grunt · 36 hp ea · 0.45s apart</span>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="grp"><h2>Combat</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="s5">
+<div class="st-hd"><span class="st-n">05</span><span class="st-t">Wave running at 2×, deck closed</span></div>
+<div class="st-d">The deck is away, so the sky is uninterrupted. Fire reads as a lit tracer in the firing station's colour, hits as a brief flash and a damage number, and the ribbon becomes a live count of what's left rather than a countdown.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<svg width="1040" height="600" viewBox="0 0 1040 600" style="position:absolute;left:0;top:0">
+<defs><filter id="fx" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<g filter="url(#fx)" stroke-linecap="round">
+<path d="M745 335 L768 320" stroke="#8fc4fa" stroke-width="2" opacity=".4"/><circle cx="768" cy="320" r="3.2" fill="#cfe4ff"/>
+<path d="M508 218 L532 222" stroke="#fcc08a" stroke-width="2.4" opacity=".4"/><circle cx="532" cy="222" r="4" fill="#ffe0bd"/>
+<path d="M266 136 L214 110" stroke="#8fc4fa" stroke-width="2" opacity=".4"/><circle cx="214" cy="110" r="3.2" fill="#cfe4ff"/>
+<path d="M576 214 L548 220" stroke="#a5eefb" stroke-width="2" opacity=".4"/><circle cx="548" cy="220" r="3" fill="#d9f7ff"/>
+<path d="M812 412 L790 420" stroke="#fcc08a" stroke-width="2.4" opacity=".4"/><circle cx="790" cy="420" r="4" fill="#ffe0bd"/>
+</g>
+<g filter="url(#fx)"><circle cx="540" cy="224" r="15" fill="#fff" opacity=".35"/><circle cx="192" cy="100" r="12" fill="#fff" opacity=".22"/></g>
+<g font-family="Inter,system-ui,sans-serif" font-weight="600" font-size="13">
+<text x="548" y="196" fill="#ffd7a8" opacity=".95">−20</text>
+<text x="200" y="76" fill="#cfe4ff" opacity=".8">−9</text>
+<text x="788" y="296" fill="#cfe4ff" opacity=".6">−9</text>
+<text x="798" y="398" fill="#ffd7a8" opacity=".5">−20</text>
+</g>
+<g><rect x="176" y="80" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="176" y="80" width="11" height="4" rx="2" fill="#f472b6"/>
+<rect x="284" y="184" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="284" y="184" width="24" height="4" rx="2" fill="#f472b6"/>
+<rect x="384" y="280" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="384" y="280" width="19" height="4" rx="2" fill="#f472b6"/>
+<rect x="636" y="120" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="636" y="120" width="29" height="4" rx="2" fill="#f472b6"/>
+<rect x="764" y="296" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="764" y="296" width="8" height="4" rx="2" fill="#e06d6d"/>
+<rect x="888" y="440" width="32" height="4" rx="2" fill="#0b0c16" opacity=".8"/><rect x="888" y="440" width="5" height="4" rx="2" fill="#e06d6d"/></g>
+</svg>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="104" lives="20" wave="4 / 10" timer="6 left" ribbon="wave 4 · running" fill="62%" s1fg="#9397ab" s1bg="transparent" s2fg="#0d0f1c" s2bg="#9184d9"></dc-import>
+<div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);display:flex;align-items:stretch;border-radius:10px 10px 0 0;overflow:hidden;background:rgba(9,10,20,.94);border:1px solid rgba(233,233,237,.14);border-bottom:0;box-shadow:0 -10px 34px rgba(0,0,0,.7)">
+  <span style="display:flex;align-items:center;gap:9px;padding:11px 16px"><span style="width:11px;height:11px;border-radius:50%;background:#f9a8d4;box-shadow:0 0 8px rgba(249,168,212,.9)"></span><span style="font:400 12px/1 Inter,sans-serif;color:#cfd3e5">Wave 4 running — 6 of 8 alive</span></span>
+  <span style="width:1px;background:rgba(233,233,237,.12)"></span>
+  <span style="display:flex;align-items:center;gap:7px;padding:11px 16px;font:400 12px/1 Inter,sans-serif;color:#75798c">Wave 5 unlocks after clear</span>
+  <span style="width:1px;background:rgba(233,233,237,.12)"></span>
+  <span style="display:flex;align-items:center;gap:7px;padding:11px 14px;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Deck <span style="font-size:9px;color:#cfd3e5">▲</span> <span style="padding:1px 5px;border:1px solid rgba(233,233,237,.18);border-radius:4px;font:400 10px/1.4 ui-monospace,monospace;color:#75798c">Tab</span></span>
+</div>
+</div>
+</div>
+
+<div class="st" id="s6">
+<div class="st-hd"><span class="st-n">06</span><span class="st-t">Leak — a contact reaches the core</span></div>
+<div class="st-d">The most important feedback in the game and the one the current build only logs to the console. Three signals at once: the pulsar flares red, an edge rim pulses inward, and the lives figure counts down in place — so it's legible whether you were watching the core or the deck.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;inset:0;box-shadow:inset 0 0 90px rgba(224,109,109,.45),inset 0 0 200px rgba(224,109,109,.18)"></div>
+<svg width="1040" height="600" viewBox="0 0 1040 600" style="position:absolute;left:0;top:0">
+<defs><filter id="fy" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<g filter="url(#fy)"><circle cx="1020" cy="460" r="72" fill="#e06d6d" opacity=".28"/><circle cx="1020" cy="460" r="44" fill="none" stroke="#e06d6d" stroke-width="2.5" opacity=".8"/><circle cx="1020" cy="460" r="22" fill="none" stroke="#ffb4b4" stroke-width="3"/><circle cx="1020" cy="460" r="9" fill="#ffdede"/></g>
+<text x="906" y="404" fill="#ffb4b4" font-family="Inter,system-ui,sans-serif" font-weight="600" font-size="26" opacity=".95">−1</text>
+</svg>
+<div style="position:absolute;left:50%;top:132px;transform:translateX(-50%);display:flex;align-items:center;gap:11px;padding:10px 18px;border-radius:8px;background:rgba(9,10,20,.92);border:1px solid rgba(224,109,109,.5);box-shadow:0 0 30px rgba(224,109,109,.25),0 10px 30px rgba(0,0,0,.6)">
+  <span style="width:9px;height:9px;border-radius:50%;background:#e06d6d;box-shadow:0 0 10px rgba(224,109,109,.9)"></span>
+  <span style="font:600 13px/1 Inter,sans-serif;letter-spacing:.06em;color:#ffb4b4">CORE BREACHED</span>
+  <span style="font:400 12px/1 Inter,sans-serif;color:#cfd3e5">19 lives remaining</span>
+</div>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="108" lives="19" livesColor="#e06d6d" wave="4 / 10" timer="5 left" ribbon="wave 4 · running" fill="68%" s1fg="#9397ab" s1bg="transparent" s2fg="#0d0f1c" s2bg="#9184d9"></dc-import>
+<div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);display:flex;align-items:stretch;border-radius:10px 10px 0 0;overflow:hidden;background:rgba(9,10,20,.94);border:1px solid rgba(233,233,237,.14);border-bottom:0">
+  <span style="display:flex;align-items:center;gap:9px;padding:11px 16px"><span style="width:11px;height:11px;border-radius:50%;background:#e06d6d;box-shadow:0 0 8px rgba(224,109,109,.9)"></span><span style="font:400 12px/1 Inter,sans-serif;color:#cfd3e5">Wave 4 running — 5 of 8 alive · 1 leaked</span></span>
+  <span style="width:1px;background:rgba(233,233,237,.12)"></span>
+  <span style="display:flex;align-items:center;gap:7px;padding:11px 14px;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Deck <span style="font-size:9px;color:#cfd3e5">▲</span> <span style="padding:1px 5px;border:1px solid rgba(233,233,237,.18);border-radius:4px;font:400 10px/1.4 ui-monospace,monospace;color:#75798c">Tab</span></span>
+</div>
+</div>
+</div>
+
+<div class="st" id="s7">
+<div class="st-hd"><span class="st-n">07</span><span class="st-t">Wave cleared — intermission</span></div>
+<div class="st-d">The reward moment. Bonus and bounty are itemised rather than folded into one number, because "where did my money come from" is the question a player asks while deciding what to build next. The 8s intermission runs on the ribbon and the handle at once.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;inset:0;box-shadow:inset 0 0 100px rgba(145,132,217,.22)"></div>
+<div style="position:absolute;left:50%;top:120px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 30px;border-radius:10px;background:rgba(9,10,20,.9);border:1px solid rgba(145,132,217,.45);box-shadow:0 0 40px rgba(145,132,217,.2),0 14px 40px rgba(0,0,0,.6)">
+  <span style="font:600 11px/1 Inter,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#b5abfc">Wave 4 cleared</span>
+  <div style="display:flex;align-items:baseline;gap:20px">
+    <span style="display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:600 24px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;color:#e9e9ed">+$52</span><span style="font:400 10px/1 Inter,sans-serif;color:#75798c">bounty · 13 kills</span></span>
+    <span style="width:1px;height:30px;background:rgba(233,233,237,.16)"></span>
+    <span style="display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:600 24px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;color:#d2cefd">+$20</span><span style="font:400 10px/1 Inter,sans-serif;color:#75798c">clear bonus</span></span>
+    <span style="width:1px;height:30px;background:rgba(233,233,237,.16)"></span>
+    <span style="display:flex;flex-direction:column;align-items:center;gap:3px"><span style="font:600 24px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;color:#e06d6d">−1</span><span style="font:400 10px/1 Inter,sans-serif;color:#75798c">leaked</span></span>
+  </div>
+</div>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="180" lives="19" livesColor="#e06d6d" wave="4 / 10" timer="0:08" ribbon="wave 5 · two clusters" fill="8%"></dc-import>
+<div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);display:flex;align-items:stretch;border-radius:10px 10px 0 0;overflow:hidden;background:rgba(9,10,20,.94);border:1px solid rgba(233,233,237,.14);border-bottom:0;box-shadow:0 -10px 34px rgba(0,0,0,.7)">
+  <span style="display:flex;align-items:center;gap:9px;padding:11px 16px"><span style="width:11px;height:11px;border-radius:50%;background:#f9a8d4;box-shadow:0 0 8px rgba(249,168,212,.9)"></span><span style="font:400 12px/1 Inter,sans-serif;color:#cfd3e5">Wave 5 — 8 + 8 Grunt, one breath between</span><span style="font:600 12px/1 Inter,sans-serif;color:#b5abfc;font-variant-numeric:tabular-nums">0:08</span></span>
+  <span style="width:1px;background:rgba(233,233,237,.12)"></span>
+  <span style="display:flex;align-items:center;gap:7px;padding:11px 16px;font:600 12px/1 Inter,sans-serif;color:#d2cefd">Send now <span style="font-weight:400;color:#b5abfc">+$22</span></span>
+  <span style="width:1px;background:rgba(233,233,237,.12)"></span>
+  <span style="display:flex;align-items:center;gap:7px;padding:11px 14px;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Deck <span style="font-size:9px;color:#cfd3e5">▲</span> <span style="padding:1px 5px;border:1px solid rgba(233,233,237,.18);border-radius:4px;font:400 10px/1.4 ui-monospace,monospace;color:#75798c">Tab</span></span>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="grp"><h2>System &amp; resolution</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="s8">
+<div class="st-hd"><span class="st-n">08</span><span class="st-t">Paused</span></div>
+<div class="st-d">The board dims but stays visible — pausing to look at the map is a legitimate use of pause in a tower defense. Settings that matter mid-run live here rather than behind another screen.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;inset:0;background:rgba(7,8,15,.72);backdrop-filter:blur(2px)"></div>
+<dc-import name="TDTopBar" hint-size="1040px,42px" cash="180" lives="19" livesColor="#e06d6d" wave="4 / 10" timer="0:08" ribbon="wave 5 · two clusters" fill="8%"></dc-import>
+<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:380px;display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:14px;background:rgba(20,22,36,.97);box-shadow:0 0 0 1px rgba(147,151,171,.5),0 16px 40px rgba(0,0,0,.75)">
+  <div style="display:flex;flex-direction:column;gap:3px"><span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Sector 01 · Switchback</span><span style="font:500 21px/1.2 Inter,sans-serif">Paused</span></div>
+  <div style="display:flex;flex-direction:column;gap:9px">
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:400 12px/1 Inter,sans-serif;color:#9397ab">Game speed</span>
+      <div style="display:inline-flex;border:1px solid rgba(233,233,237,.16);border-radius:8px;overflow:hidden"><span style="padding:5px 13px;font:600 11.5px/1 Inter,sans-serif;color:#9397ab">1×</span><span style="padding:5px 13px;font:600 11.5px/1 Inter,sans-serif;color:#0d0f1c;background:#9184d9">2×</span></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:400 12px/1 Inter,sans-serif;color:#9397ab">Reach circles</span>
+      <div style="display:inline-flex;border:1px solid rgba(233,233,237,.16);border-radius:8px;overflow:hidden"><span style="padding:5px 11px;font:600 11.5px/1 Inter,sans-serif;color:#9397ab">Hover</span><span style="padding:5px 11px;font:600 11.5px/1 Inter,sans-serif;color:#0d0f1c;background:#9184d9">Always</span></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:400 12px/1 Inter,sans-serif;color:#9397ab">Damage numbers</span>
+      <div style="display:inline-flex;border:1px solid rgba(233,233,237,.16);border-radius:8px;overflow:hidden"><span style="padding:5px 13px;font:600 11.5px/1 Inter,sans-serif;color:#0d0f1c;background:#9184d9">On</span><span style="padding:5px 13px;font:600 11.5px/1 Inter,sans-serif;color:#9397ab">Off</span></div></div>
+  </div>
+  <div style="height:1px;background:linear-gradient(to right,transparent,rgba(233,233,237,.16) 48px,rgba(233,233,237,.16) calc(100% - 48px),transparent)"></div>
+  <div style="display:flex;flex-direction:column;gap:7px">
+    <span style="text-align:center;padding:10px 0;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd">Resume <span style="font-weight:400;color:#b5abfc">Esc</span></span>
+    <div style="display:flex;gap:7px">
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#cfd3e5">Restart sector</span>
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#9397ab">Quit to menu</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="s9">
+<div class="st-hd"><span class="st-n">09</span><span class="st-t">Defeat — core lost</span></div>
+<div class="st-d">Ends on the diagnosis, not the verdict: which wave broke you, where the leaks came through, and how much of the route was uncovered when it happened. The retry is the loud button because that's the action the state exists to offer.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;inset:0;background:radial-gradient(circle at 98% 77%,rgba(224,109,109,.22),rgba(7,8,15,.9) 55%)"></div>
+<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:440px;display:flex;flex-direction:column;gap:16px;padding:24px;border-radius:14px;background:rgba(20,16,20,.97);box-shadow:0 0 0 1px rgba(224,109,109,.4),0 16px 46px rgba(0,0,0,.8)">
+  <div style="display:flex;flex-direction:column;gap:4px"><span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#e06d6d">Sector lost</span><span style="font:500 25px/1.15 Inter,sans-serif">The core went dark on wave 7</span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-variant-numeric:tabular-nums">
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Waves held</span><span style="font:600 19px/1.1 Inter,sans-serif">6 / 10</span></span>
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Contacts killed</span><span style="font:600 19px/1.1 Inter,sans-serif">71</span></span>
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Leaks</span><span style="font:600 19px/1.1 Inter,sans-serif;color:#e06d6d">20</span></span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:6px;padding:11px 12px;border-radius:8px;background:rgba(224,109,109,.08);box-shadow:inset 0 0 0 1px rgba(224,109,109,.22)">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#e06d6d">What broke</span>
+    <span style="font:400 12px/1.6 Inter,sans-serif;color:#cfd3e5">14 of 43 route tiles had no station in reach — most of them on the last approach. The wave-7 sustained rush walked straight through it.</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:7px">
+    <span style="text-align:center;padding:11px 0;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 20px rgba(145,132,217,.2)">Retry sector</span>
+    <div style="display:flex;gap:7px">
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#cfd3e5">Review the map</span>
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#9397ab">Quit to menu</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="s10">
+<div class="st-hd"><span class="st-n">10</span><span class="st-t">Victory — sector held</span></div>
+<div class="st-d">Same shape as defeat so the two read as one moment with two outcomes. The grade gives a reason to replay a sector you already beat, and it's computed from things the sim already tracks: lives kept, cash unspent, leaks.</div>
+<div class="bd">
+<dc-import name="TDBoardDeepField" hint-size="1040px,600px" style="position:absolute;left:0;top:0;width:1040px;height:600px"></dc-import>
+<div style="position:absolute;inset:0;background:radial-gradient(circle at 98% 77%,rgba(145,132,217,.28),rgba(7,8,15,.88) 55%)"></div>
+<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:440px;display:flex;flex-direction:column;gap:16px;padding:24px;border-radius:14px;background:rgba(18,20,36,.97);box-shadow:0 0 0 1px rgba(145,132,217,.45),0 16px 46px rgba(0,0,0,.8)">
+  <div style="display:flex;align-items:flex-start;gap:14px">
+    <div style="display:flex;flex-direction:column;gap:4px;flex:1"><span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#b5abfc">Sector held</span><span style="font:500 25px/1.15 Inter,sans-serif">All ten waves turned back</span></div>
+    <span style="display:grid;place-items:center;width:56px;height:56px;flex:none;border-radius:50%;border:2px solid #9184d9;font:500 26px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 24px rgba(145,132,217,.3)">A</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-variant-numeric:tabular-nums">
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Lives kept</span><span style="font:600 19px/1.1 Inter,sans-serif">17 / 20</span></span>
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Contacts killed</span><span style="font:600 19px/1.1 Inter,sans-serif">116</span></span>
+    <span style="display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;background:rgba(35,37,50,.7)"><span style="font:400 9px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#75798c">Time</span><span style="font:600 19px/1.1 Inter,sans-serif">4:12</span></span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:7px;padding:11px 12px;border-radius:8px;background:rgba(145,132,217,.08);box-shadow:inset 0 0 0 1px rgba(145,132,217,.22)">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#b5abfc">Next grade at S</span>
+    <span style="font:400 12px/1.6 Inter,sans-serif;color:#cfd3e5">Hold all 20 lives and finish under 4:00. Sending waves early does both at once.</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:7px">
+    <span style="text-align:center;padding:11px 0;border:1px solid #9184d9;border-radius:8px;font:600 13px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 20px rgba(145,132,217,.2)">Next sector</span>
+    <div style="display:flex;gap:7px">
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#cfd3e5">Replay for S</span>
+      <span style="flex:1;text-align:center;padding:9px 0;border:1px solid rgba(233,233,237,.16);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#9397ab">Quit to menu</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+</x-dc>
+</body>
+</html>

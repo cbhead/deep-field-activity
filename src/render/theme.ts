@@ -39,6 +39,15 @@ export interface Theme {
     readonly pathEdge: number | null;
     readonly spawn: number;
     readonly goal: number;
+    /** Starfield. Most stars are `star`; a scattered few are `starBright`. */
+    readonly star: number;
+    readonly starBright: number;
+    /**
+     * Ground tiles draw at this alpha so the starfield shows through open
+     * space. The route stays fully opaque, which is what makes it read as a
+     * structure laid over the void rather than another shade of tile.
+     */
+    readonly groundAlpha: number;
   };
 
   /**
@@ -50,14 +59,32 @@ export interface Theme {
 
   readonly feedback: {
     /**
-     * Rejected placement. There is deliberately no matching `valid` colour: a
-     * legal ghost is drawn in the tint of the tower being placed, which says
-     * *which* tower as well as *yes*.
+     * Rejected placement. There is deliberately no `valid` counterpart: a legal
+     * ghost is drawn in the tint of the tower being placed, which says *which*
+     * tower as well as *yes*.
      */
     readonly invalid: number;
+    /** Ring around the tower the inspector is showing. */
+    readonly selected: number;
     readonly rangeFillAlpha: number;
     readonly rangeStrokeAlpha: number;
     readonly tileOutlineAlpha: number;
+  };
+
+  /** Transient combat feedback, drawn by `effects.ts` and `worldView.ts`. */
+  readonly fx: {
+    /** A struck contact's tint is lerped toward this. Applied in `worldView`. */
+    readonly hitFlash: number;
+    /** Floating damage numbers, when no firing tower colour applies. */
+    readonly damageText: number;
+    readonly hpFull: number;
+    readonly hpLow: number;
+    readonly hpTrack: number;
+    /** The goal flare and screen-edge rim when a creep gets through. */
+    readonly leak: number;
+    readonly leakBright: number;
+    /** Ring drawn around a contact held in a gravity well. */
+    readonly slowRing: number;
   };
 
   /**
@@ -65,17 +92,41 @@ export interface Theme {
    * `createTextures` draws, so they only take effect at load.
    */
   readonly shape: {
+    /** Tower silhouette. `hex` is the Deep Field station; `roundRect` was v1. */
+    readonly tower: 'hex' | 'roundRect';
     readonly towerPad: number;
     readonly towerCorner: number;
     /** Barrel hub radius, as a fraction of the tile. */
     readonly hubRatio: number;
     readonly towerFillAlpha: number;
+    /** Internal bracing lines on the hex station. 0 disables them. */
+    readonly towerStrutAlpha: number;
     readonly strokeWidth: number;
     readonly outline: number;
     readonly outlineAlpha: number;
-    /** Projectile halo radius as a multiple of the core, and its alpha. */
+    /** Soft ring baked around a creep. Radius multiple, then alpha. 0 = off. */
+    readonly glowRatio: number;
+    readonly glowAlpha: number;
+    /** Projectile halo: radius multiple of the core, then alpha. */
     readonly haloRatio: number;
     readonly haloAlpha: number;
+
+    /**
+     * Tier marks baked into the station, as fractions of the tile.
+     *
+     * A row of pips low on the hex, one per tier, plus a core that grows and
+     * gains a halo. Both are baked in `BAKE_NEUTRAL` so they take the station's
+     * own tint like everything else — a higher tier must read as a *stronger*
+     * station, never as a different one.
+     */
+    readonly pipRadius: number;
+    readonly pipRowY: number;
+    readonly pipSpacing: number;
+    /** Core radius multiplier per tier above the first. */
+    readonly tierHubGrowth: number;
+    /** Halo radius as a multiple of the core, and its alpha per tier above the first. */
+    readonly tierGlowRatio: number;
+    readonly tierGlowAlpha: number;
   };
 
   /** Screen-anchored chrome. Emitted as CSS custom properties at boot. */
@@ -83,11 +134,18 @@ export interface Theme {
     readonly bg: number;
     readonly panel: number;
     readonly panelEdge: number;
+    readonly slot: number;
     readonly text: number;
+    /** Slightly dimmer than `text`, for values that aren't the headline. */
+    readonly bright: number;
     readonly muted: number;
+    /** Dimmest legible tier — hints, disabled labels. */
+    readonly dim: number;
     readonly danger: number;
-    /** Fallback tint for a build button before its tower colour is applied. */
+    readonly dangerBright: number;
     readonly accent: number;
+    readonly accentSoft: number;
+    readonly accentBright: number;
   };
 }
 
@@ -97,69 +155,119 @@ export interface Theme {
  */
 export const BAKE_NEUTRAL = 0xffffff;
 
-export const DEFAULT_THEME: Theme = {
-  id: 'slate',
-  name: 'Slate',
+/**
+ * Deep Field — the direction that came back from the design session.
+ *
+ * The board is a starfield, stations are hexagonal emplacements, and the
+ * contacts are the only warm thing on screen. That last part is the contrast
+ * hierarchy doing its job: everything structural sits in the blue-black end of
+ * the range, so a pink creep is the brightest object in any frame it occupies.
+ */
+export const DEEP_FIELD: Theme = {
+  id: 'deep-field',
+  name: 'Deep Field',
 
   board: {
-    bg: 0x0f172a,
-    ground: 0x1a2e2a,
-    groundAlt: 0x182a26,
-    gridLine: 0x24413a,
-    blocked: 0x334155,
-    blockedEdge: 0x475569,
-    path: 0x3f3a2f,
+    bg: 0x07080f,
+    // The checker has to survive `groundAlpha` compositing it back toward `bg`.
+    // These were 2-4/255 apart, which after the alpha was ~1.5 — invisible, and
+    // leaving the grid stroke to do the whole job of making tiles placeable.
+    // Widened until the checker actually reads without competing with a star.
+    ground: 0x0f1222,
+    groundAlt: 0x0b0d19,
+    gridLine: 0x1a1d33,
+    blocked: 0x232532,
+    blockedEdge: 0x2f3245,
+    // The route reads *lighter* than the field it crosses, so the path is
+    // legible in greyscale rather than relying on hue.
+    path: 0x1b1f36,
     pathEdge: null,
-    spawn: 0xf87171,
-    goal: 0x38bdf8,
+    spawn: 0xf9a8d4,
+    goal: 0xb5abfc,
+    star: 0x6f7699,
+    starBright: 0xd7dcf0,
+    groundAlpha: 0.72,
   },
 
   towers: {
-    arrow: 0x60a5fa,
-    cannon: 0xfb923c,
-    frost: 0x67e8f9,
+    lance: 0x8fc4fa,
+    nova: 0xfcc08a,
+    singularity: 0xa5eefb,
   },
 
   enemies: {
-    grunt: 0xf472b6,
+    drifter: 0xf472b6,
   },
 
   feedback: {
-    invalid: 0xef4444,
-    rangeFillAlpha: 0.08,
-    rangeStrokeAlpha: 0.55,
+    invalid: 0xe06d6d,
+    selected: 0xb5abfc,
+    rangeFillAlpha: 0.05,
+    rangeStrokeAlpha: 0.35,
     tileOutlineAlpha: 0.9,
   },
 
+  fx: {
+    hitFlash: 0xffffff,
+    damageText: 0xcfe4ff,
+    hpFull: 0xf472b6,
+    hpLow: 0xe06d6d,
+    hpTrack: 0x0b0c16,
+    leak: 0xe06d6d,
+    leakBright: 0xffb4b4,
+    slowRing: 0xa5eefb,
+  },
+
   shape: {
-    towerPad: 4,
+    tower: 'hex',
+    towerPad: 3,
     towerCorner: 7,
-    hubRatio: 0.19,
-    towerFillAlpha: 0.32,
-    strokeWidth: 2,
+    hubRatio: 0.1375,
+    towerFillAlpha: 0.2,
+    towerStrutAlpha: 0.3,
+    strokeWidth: 2.2,
     outline: 0x000000,
     outlineAlpha: 0.35,
+    glowRatio: 1.75,
+    glowAlpha: 0.22,
     haloRatio: 1.9,
     haloAlpha: 0.22,
+    pipRadius: 0.045,
+    pipRowY: 0.795,
+    pipSpacing: 0.15,
+    tierHubGrowth: 0.24,
+    tierGlowRatio: 2.3,
+    tierGlowAlpha: 0.17,
   },
 
   hud: {
-    bg: 0x0f172a,
-    panel: 0x1e293b,
-    panelEdge: 0x334155,
-    text: 0xe2e8f0,
-    muted: 0x94a3b8,
-    danger: 0xef4444,
-    accent: 0x60a5fa,
+    bg: 0x090a14,
+    panel: 0x141624,
+    panelEdge: 0x2a2d40,
+    slot: 0x232532,
+    text: 0xe9e9ed,
+    bright: 0xcfd3e5,
+    muted: 0x9397ab,
+    dim: 0x75798c,
+    danger: 0xe06d6d,
+    dangerBright: 0xffb4b4,
+    accent: 0x9184d9,
+    accentSoft: 0xb5abfc,
+    accentBright: 0xd2cefd,
   },
 };
 
 /** The active theme. One binding, so swapping themes is a one-line change. */
-export const THEME: Theme = DEFAULT_THEME;
+export const THEME: Theme = DEEP_FIELD;
 
 /** `0x60a5fa` → `"#60a5fa"`, for the DOM half of the HUD. */
 export function css(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
+}
+
+/** `(0x60a5fa, 0.4)` → `"rgba(96,165,250,0.4)"`, for glows and washes. */
+export function rgba(color: number, alpha: number): string {
+  return `rgba(${(color >> 16) & 255},${(color >> 8) & 255},${color & 255},${alpha})`;
 }
 
 /**
@@ -171,11 +279,11 @@ export function css(color: number): string {
  */
 export function applyHudTheme(theme: Theme = THEME): void {
   const { style } = document.documentElement;
-  style.setProperty('--bg', css(theme.hud.bg));
-  style.setProperty('--panel', css(theme.hud.panel));
-  style.setProperty('--panel-edge', css(theme.hud.panelEdge));
-  style.setProperty('--text', css(theme.hud.text));
-  style.setProperty('--muted', css(theme.hud.muted));
-  style.setProperty('--danger', css(theme.hud.danger));
-  style.setProperty('--accent', css(theme.hud.accent));
+  for (const [key, value] of Object.entries(theme.hud)) {
+    // panelEdge → --panel-edge
+    style.setProperty(`--${key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`, css(value));
+  }
+  for (const [id, value] of Object.entries(theme.towers)) {
+    style.setProperty(`--tower-${id}`, css(value));
+  }
 }

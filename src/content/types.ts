@@ -34,8 +34,33 @@ export interface TowerDef {
   readonly fireInterval: number;
   /** Tiles per second. A high value simulates hitscan without a second system. */
   readonly projectileSpeed: number;
+
+  /**
+   * Behaviour, one field per mechanic. All five are required rather than
+   * optional so that every station's full behaviour is readable in one place —
+   * a `0` is a statement ("this one does not splash"), where an absent optional
+   * field is a question.
+   */
+
+  /** Extra contacts a shot passes through. `0` expires on the first hit. */
+  readonly pierce: number;
+  /** Splash radius in tiles at the point of impact. `0` is single-target. */
+  readonly splashRadius: number;
+  /** Damage factor at the very edge of the splash. `1` is no falloff. */
+  readonly splashFalloff: number;
+  /** Speed multiplier applied to a contact on hit. `1` is no slow. */
+  readonly slowFactor: number;
+  /** Seconds the slow lasts. Refreshed on re-hit, never stacked. */
+  readonly slowSeconds: number;
+
   /** Number key that selects this tower. */
   readonly hotkey: string;
+  /**
+   * First wave index (0-based) at which this type may be built. 0 means
+   * available from the start. The deck renders anything still locked as a
+   * disabled slot naming the wave it opens on.
+   */
+  readonly unlockWave: number;
 }
 
 /** One burst of identical enemies inside a wave. */

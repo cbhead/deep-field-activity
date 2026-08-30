@@ -3,6 +3,7 @@ import { createTextures } from './render/textures.ts';
 import { buildMapLayer } from './render/mapLayer.ts';
 import { WorldView } from './render/worldView.ts';
 import { Overlay } from './render/overlay.ts';
+import { Effects } from './render/effects.ts';
 import { tilesToPx } from './render/constants.ts';
 import { applyHudTheme } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
@@ -47,36 +48,76 @@ async function main(): Promise<void> {
   const world = createWorld(map, seed);
   const ui = createUiState();
 
-  const { app, layers } = await createRenderer(mount, tilesToPx(map.cols), tilesToPx(map.rows));
+  const boardW = tilesToPx(map.cols);
+  const boardH = tilesToPx(map.rows);
+  const { app, layers } = await createRenderer(mount, boardW, boardH);
 
   const textures = createTextures(app.renderer);
   layers.map.addChild(buildMapLayer(map, textures));
 
   const view = new WorldView(layers, textures);
   const overlay = new Overlay(layers, textures);
+  const effects = new Effects(layers, boardW, boardH);
+
+  function togglePause(): void {
+    ui.paused = !ui.paused;
+    loop.paused = ui.paused;
+  }
+
   const hud = createHud(hudRoot, {
-    onSelect: (id) => {
-      ui.selected = id;
+    world,
+    ui,
+    dispatch: (cmd) => world.commands.push(cmd),
+    speed: {
+      get: () => loop.speed,
+      set: (v) => {
+        loop.speed = v;
+      },
+    },
+    togglePause,
+    // A full reload is the honest restart: it re-runs seed resolution, rebuilds
+    // the world and resets every renderer pool, with no chance of a stale
+    // reference surviving into the new run. Cheap, and impossible to get wrong.
+    restart: () => {
+      location.reload();
     },
   });
 
   // main.ts is the only place that knows about both halves. The sim has no
   // reference to the view; the view only ever reads the world.
   let hudDue = 0;
-  const loop = createLoop(world, () => {
-    view.sync(world);
-    overlay.sync(world, ui.selected, ui.hover);
+  let lastRenderMs = performance.now();
 
+  const loop = createLoop(world, () => {
     const now = performance.now();
+    // Wall-clock delta, clamped: effects decay at the same rate at 1x and 4x,
+    // and a backgrounded tab must not fast-forward them on return.
+    const dt = Math.min(0.1, (now - lastRenderMs) / 1000);
+    lastRenderMs = now;
+
+    // One drain, three consumers. Whichever ran first would otherwise starve
+    // the others, which is exactly the bug that made the HUD miss wave clears.
+    effects.beginFrame();
+    for (const ev of world.events) {
+      view.onEvent(ev);
+      effects.onEvent(ev, ui.prefs);
+      hud.onEvent(ev);
+    }
+    world.events.length = 0;
+
+    view.sync(world, dt);
+    overlay.sync(world, ui.selected, ui.hover, ui.inspecting);
+    effects.update(world, dt, ui.prefs);
+
     if (now >= hudDue) {
-      hud.update(world, ui.selected);
+      hud.update();
       hudDue = now + HUD_INTERVAL_MS;
     }
 
     app.render();
   });
 
-  attachInput(app, world, ui);
+  attachInput(app, world, ui, togglePause);
   loop.start();
 
   console.info(
@@ -90,7 +131,9 @@ async function main(): Promise<void> {
   // `td.loop.speed` from devtools is worth far more here than in a typical app,
   // because the interesting bugs are all "what is the sim actually doing".
   if (import.meta.env.DEV) {
-    (globalThis as Record<string, unknown>)['td'] = { world, loop, view, overlay, ui, map, app, layers };
+    (globalThis as Record<string, unknown>)['td'] = {
+      world, loop, view, overlay, effects, ui, map, app, layers,
+    };
   }
 }
 

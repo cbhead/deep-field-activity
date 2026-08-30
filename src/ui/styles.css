@@ -1,9 +1,11 @@
-/* --bg, --panel, --panel-edge, --text, --muted, --danger and --accent are set
-   by applyHudTheme() at boot, from src/render/theme.ts. This file deliberately
-   declares no colour of its own: one palette, one source, no drift.
+/* Colours are set by applyHudTheme() at boot, from src/render/theme.ts. This
+   file deliberately declares none of its own: one palette, one source, no
+   drift. `color-scheme: dark` covers the frame before that runs, so the gap
+   reads as dark rather than as a white flash.
 
-   `color-scheme: dark` covers the frame before that runs, so the gap reads as
-   dark rather than as a white flash. */
+   Inter is listed first but never downloaded — if the machine has it, the HUD
+   gets the design's typeface; if not it falls through to the system stack. */
+
 * { box-sizing: border-box; }
 
 html { color-scheme: dark; }
@@ -13,148 +15,480 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
 }
 
-#app {
-  position: relative;
-  width: 100%;
-  height: 100%;
+#app { position: relative; width: 100%; height: 100%; }
+
+/* Board and chrome are one letterboxed unit: the stage is the board plus the
+   deck's reserved strip beneath it, laid out at logical size and scaled once by
+   --board-scale (set in fitCanvas). Scaling here rather than reflowing is
+   deliberate — the deck is a fixed composition designed against 1040x600, and
+   reflowing it at narrow widths clips the send control rather than shrinking
+   it. */
+#stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--board-w, 100%);
+  height: calc(var(--board-h, 100%) + var(--deck-h, 0px));
+  transform: translate(-50%, -50%) scale(var(--board-scale, 1));
 }
 
-/* The canvas fills the window and letterboxes itself (see fitCanvas). */
+/* The board occupies the top of the stage; the reserved strip below it is the
+   deck's, so no route tile is ever behind the deck. */
 #game-root {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  left: 0;
+  top: 0;
+  width: var(--board-w, 100%);
+  height: var(--board-h, 100%);
 }
-
 #game-root canvas { display: block; }
 
-/* The HUD floats over the board. Transparent to the pointer except on the
-   controls themselves, so clicks fall through to the canvas. */
+/* Covers the whole stack — board area and reserved strip. Transparent to the
+   pointer except on the controls themselves, so clicks fall through to the
+   canvas. */
 #hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 16px;
-}
-
-.hud-stats,
-.hud-build {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
-}
-
-.hud-stats {
-  align-self: flex-start;
-  display: flex;
-  gap: 22px;
-  padding: 8px 16px;
-}
-
-.hud-stat { display: flex; flex-direction: column; }
-
-.hud-stat-label {
-  font-size: 10px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.hud-stat-value {
-  font-size: 19px;
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.hud-stat-value.is-critical { color: var(--danger); }
-
-.hud-build {
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-}
-
-.tower-btn {
-  /* Overwritten inline per button with the tower's own colour. */
-  --tint: var(--accent);
-  display: grid;
-  grid-template-areas: "key name" "key cost";
-  grid-template-columns: auto 1fr;
-  gap: 0 9px;
-  align-items: center;
-  min-width: 116px;
-  padding: 8px 12px;
-  border: 1px solid var(--panel-edge);
-  border-left: 3px solid var(--tint);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--text);
+/* Element-level, deliberately NOT scoped under #hud. An id in this selector
+   would score higher than every class rule below it and silently win: the
+   station tints, the segmented-control highlight and the primary-button colour
+   would all resolve to `inherit`/`none` with no warning anywhere. At (0,0,1)
+   it loses to everything, which is what a reset should do. */
+button {
   font: inherit;
-  text-align: left;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: none;
+  border: 0;
   cursor: pointer;
 }
 
-.tower-btn:hover { border-color: var(--tint); }
-
-.tower-btn.is-selected {
-  background: color-mix(in srgb, var(--tint) 22%, var(--bg));
-  border-color: var(--tint);
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  font: 400 10px/1.4 ui-monospace, Menlo, monospace;
+  color: var(--dim);
 }
 
-/* Unaffordable, not unavailable — still selectable, so the range circle can be
-   used to plan the next purchase. */
-.tower-btn.is-poor { opacity: 0.45; }
-.tower-btn.is-poor .tower-cost { color: var(--danger); }
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow: 0 0 8px currentColor;
+  flex: none;
+}
+.dot.contact { background: var(--tower-singularity); }
+.dot.crit { background: var(--danger); }
 
-.tower-key {
-  grid-area: key;
+/* ------------------------------------------------------------------ top */
+
+.top {
+  pointer-events: auto;
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 14px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+  box-shadow: inset 0 -1px 0 var(--panel-edge);
+}
+
+.top .stat { display: flex; flex-direction: column; gap: 1px; }
+.top .stat label {
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.top .stat b { font-size: 17px; font-weight: 600; }
+.top .stat b.crit { color: var(--danger); }
+
+.ribbon {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  overflow: hidden;
+}
+.ribbon span { position: relative; z-index: 1; font-size: 11.5px; color: var(--bright); }
+/* The fill sits under the label rather than beside it, so the bar is a
+   progress indicator and a caption in the same 26px. */
+.ribbon i {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  transition: width .2s linear;
+}
+
+.seg { display: inline-flex; border: 1px solid var(--panel-edge); border-radius: 7px; overflow: hidden; }
+.seg button {
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.seg button + button { border-left: 1px solid var(--panel-edge); }
+.seg button:hover { color: var(--text); }
+.seg button.on { background: var(--accent); color: var(--bg); }
+
+.top .icon {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 30px; height: 26px;
   border: 1px solid var(--panel-edge);
-  border-radius: 5px;
+  border-radius: 7px;
+  font-size: 10px;
   color: var(--muted);
-  font-size: 11px;
+}
+.top .icon:hover { color: var(--text); border-color: var(--accent); }
+
+/* ----------------------------------------------------------------- deck */
+
+/* The reserved strip beneath the board — see fitCanvas. The deck never
+   overlaps the play area, so nothing on the route can hide behind it. */
+.deck {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--board-h, auto);
+  height: var(--deck-h, 150px);
 }
 
-.tower-name { grid-area: name; font-weight: 600; }
-
-.tower-cost {
-  grid-area: cost;
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.deck .panel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  border-top: 1px solid var(--panel-edge);
+  box-shadow: 0 -14px 44px rgb(0 0 0 / .75);
 }
 
-.hud-hint {
-  max-width: 190px;
-  padding-left: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+.deck h6 {
+  margin: 0 0 8px;
+  font: 400 9.5px/1 inherit;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
-/* Rush prompt: only present while sending early is actually possible, so its
-   absence is itself the signal that the option has gone. */
-.hud-rush {
-  align-self: center;
-  min-width: 168px;
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.sep {
+  width: 1px;
+  height: 110px;
+  background: linear-gradient(to bottom, transparent, var(--panel-edge), transparent);
 }
 
-.hud-rush.is-live { color: var(--accent); }
+.slots { display: flex; gap: 8px; }
+
+.slot {
+  position: relative;
+  width: 78px; height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--slot) 70%, transparent);
+}
+.slot kbd { position: absolute; left: 4px; top: 3px; border: 0; padding: 0; }
+.slot .glyph { filter: drop-shadow(0 0 6px currentColor); }
+.slot .name { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.slot .cost { font-size: 11px; color: var(--bright); }
+.slot:hover { border-color: currentColor; }
+
+.slot.armed {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, currentColor 16%, transparent);
+}
+/* Unaffordable, not unavailable — the slot still arms so the reach circle can
+   be used to plan the next purchase. */
+.slot.poor { opacity: .55; }
+.slot.poor .cost { color: var(--danger); }
+
+.slot.locked {
+  border-style: dashed;
+  background: none;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* Tower tints. `currentColor` carries them into the SVG glyph and the armed
+   border, so a slot needs exactly one colour declaration. */
+.t-lance { color: var(--tower-lance); }
+.t-nova { color: var(--tower-nova); }
+.t-singularity { color: var(--tower-singularity); }
+
+/* --------------------------------------------------------------- detail */
+
+.detail { flex: 1; max-width: 430px; display: flex; flex-direction: column; gap: 8px; }
+
+.detail .head { display: flex; align-items: center; gap: 9px; }
+.detail .head b { font-size: 13px; color: var(--text); }
+.detail .head .blurb { font-size: 10.5px; color: var(--dim); }
+.detail .line { font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.detail .hint { font-size: 10.5px; color: var(--dim); }
+.detail .hint b { color: var(--muted); font-weight: 400; }
+
+.pips { margin-left: auto; display: flex; gap: 3px; }
+.pips i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--dim); }
+.pips i.on { background: currentColor; border-color: currentColor; }
+
+.cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slot) 75%, transparent);
+}
+.cell label {
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.cell b { font-size: 13px; font-weight: 600; color: var(--text); }
+.cell b.accent { color: var(--accent-soft); }
+
+.actions { display: flex; gap: 7px; align-items: center; }
+.actions .targeting { flex: 1; min-width: 0; }
+/* min-width:0 matters: without it each label sets a flex floor and the four
+   modes run together into "FirstLastStrongClose". */
+.actions .targeting button { flex: 1; min-width: 0; padding: 5px 4px; font-size: 10.5px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--bright);
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--muted); color: var(--text); }
+.btn.primary { border-color: var(--accent); color: var(--accent-bright); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.btn.primary em { font-style: normal; font-weight: 400; color: var(--accent-soft); }
+/* Affordable-but-not-now: still shown, still priced, just clearly refused. */
+.btn.poor { opacity: .5; }
+.btn.flat { color: var(--dim); cursor: default; }
+.btn.flat:hover { border-color: var(--panel-edge); color: var(--dim); }
+
+/* ----------------------------------------------------------------- send */
+
+.send { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
+.send .send-btn { padding: 11px 18px; font-size: 13px; border-radius: 8px; }
+.send .send-btn.primary { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent); }
+.send .hint { font-size: 10.5px; color: var(--dim); }
+
+.handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.handle span { font-size: 9px; color: var(--bright); }
+.handle:hover { color: var(--text); }
+
+/* Collapsed deck: a single strip so the sky is uninterrupted mid-wave. Anchored
+   to the TOP of the reserved strip so it still reads as attached to the board
+   rather than floating at the bottom of empty space. */
+.deck .strip {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%; top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 16px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  border: 1px solid var(--panel-edge);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 -10px 34px rgb(0 0 0 / .7);
+}
+.strip-status { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--bright); }
+
+/* ------------------------------------------------------------- overlays */
+
+/* Centred on the board, not on the whole stack — a result card belongs over the
+   thing it is reporting on, not straddling the deck. */
+.overlay {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  height: var(--board-h, 100%);
+  display: grid;
+  place-items: center;
+}
+.overlay:empty { display: none; }
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+.scrim.lost {
+  background: radial-gradient(circle at 98% 77%,
+    color-mix(in srgb, var(--danger) 22%, transparent),
+    color-mix(in srgb, var(--bg) 90%, transparent) 55%);
+}
+.scrim.won {
+  background: radial-gradient(circle at 98% 77%,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    color-mix(in srgb, var(--bg) 88%, transparent) 55%);
+}
+
+.card {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 97%, transparent);
+  box-shadow: 0 0 0 1px var(--panel-edge), 0 16px 46px rgb(0 0 0 / .8);
+}
+.card.lost { box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 40%, transparent), 0 16px 46px rgb(0 0 0 / .8); }
+.card.won { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 16px 46px rgb(0 0 0 / .8); }
+
+.card h2 { margin: 0; font: 500 24px/1.15 inherit; letter-spacing: -.01em; }
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.eyebrow.danger { color: var(--danger); }
+.eyebrow.accent { color: var(--accent-soft); }
+
+.head-row { display: flex; align-items: flex-start; gap: 14px; }
+.head-row > div { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.grade {
+  display: grid;
+  place-items: center;
+  width: 56px; height: 56px;
+  flex: none;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  font: 500 26px/1 inherit;
+  color: var(--accent-bright);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.big {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--slot) 70%, transparent);
+}
+.big label {
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.big b { font-size: 19px; font-weight: 600; }
+.big b.danger { color: var(--danger); }
+
+.note { display: flex; flex-direction: column; gap: 6px; padding: 11px 12px; border-radius: 8px; }
+.note p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--bright); }
+.note.danger {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.note.accent {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.rows { display: flex; flex-direction: column; gap: 9px; }
+.row { display: flex; align-items: center; justify-content: space-between; }
+.row span { font-size: 12px; color: var(--muted); }
+
+.hr { height: 1px; background: linear-gradient(to right, transparent, var(--panel-edge) 48px, var(--panel-edge) calc(100% - 48px), transparent); }
+
+.btn.wide { justify-content: center; padding: 10px 0; font-size: 13px; border-radius: 8px; }
+
+/* The wave-cleared summary is a toast, not a modal — it must never take the
+   pointer, because the intermission it announces is build time. */
+.card.toast {
+  width: auto;
+  align-self: start;
+  margin-top: 96px;
+  pointer-events: none;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 30px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 14px 40px rgb(0 0 0 / .6);
+}
+.card.toast .items { display: flex; align-items: baseline; gap: 20px; }
+.card.toast .item { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.card.toast .item b { font-size: 24px; font-weight: 600; }
+.card.toast .item b.accent { color: var(--accent-bright); }
+.card.toast .item b.danger { color: var(--danger); }
+.card.toast .item label { font-size: 10px; color: var(--dim); }
+
+/* Breach alarm. Anchored near the top so it never collides with the deck, and
+   pointer-transparent because it fires mid-wave while the player is building. */
+.breach {
+  align-self: start;
+  margin-top: 132px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 18px;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--danger) 25%, transparent),
+              0 10px 30px rgb(0 0 0 / .6);
+}
+.breach b { font-size: 13px; letter-spacing: .06em; color: var(--danger-bright); }
+.breach span { font-size: 12px; color: var(--bright); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ribbon i { transition: none; }
+}

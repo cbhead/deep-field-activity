@@ -71,7 +71,19 @@ export interface Creep {
    */
   progress: number;
 
+  /** Base speed in tiles/sec. Never mutated — see `slowTimer`. */
   speed: number;
+  /**
+   * Seconds of gravitational slow remaining, and the multiplier while it lasts.
+   *
+   * Kept separate from `speed` rather than scaling it in place: a slow that
+   * mutated the base could never expire cleanly, and two overlapping wells
+   * would compound into a permanent crawl. Movement reads an *effective* speed
+   * from these; the strongest active slow wins and a re-hit refreshes the timer
+   * rather than stacking.
+   */
+  slowTimer: number;
+  slowFactor: number;
   hp: number;
   maxHp: number;
   /** Money paid on kill. Baked in at spawn, since it scales per wave. */
@@ -88,6 +100,19 @@ export interface Creep {
   dead: boolean;
 }
 
+/**
+ * Which creep a tower shoots when several are in reach.
+ *
+ * `first` is the default and the only one that is right by default: the creep
+ * furthest along the route is the one closest to costing a life. The others
+ * exist because the right answer changes with what a tower is *for* — a Nova
+ * covering a corner wants `strong`, a Singularity trimming stragglers wants
+ * `last`.
+ */
+export type TargetMode = 'first' | 'last' | 'strong' | 'close';
+
+export const TARGET_MODES: readonly TargetMode[] = ['first', 'last', 'strong', 'close'];
+
 export interface Tower {
   readonly id: EntityId;
   readonly defId: TowerId;
@@ -99,24 +124,50 @@ export interface Tower {
   readonly x: number;
   readonly y: number;
 
+  /** 1-based. Mk I is tier 1; `BALANCE.upgrade.maxTier` is the ceiling. */
+  tier: number;
+
   range: number;
   damage: number;
   fireInterval: number;
   projectileSpeed: number;
 
+  targeting: TargetMode;
+
   /** Seconds until this tower may fire again. */
   cooldown: number;
 
-  /** Total money sunk in, for the M7 sell refund. */
+  /** Total money sunk in, including upgrades. The sell refund is a cut of this. */
   spent: number;
+
+  /** Lifetime attribution, for the inspector. Presentation only — no rule reads them. */
+  kills: number;
+  damageDealt: number;
 }
 
 export interface Projectile {
   readonly id: EntityId;
   readonly defId: TowerId;
+  /**
+   * Who fired it. An id rather than a reference because the tower can be sold
+   * mid-flight, and attribution to a tower that no longer exists should simply
+   * find nothing rather than resurrect it.
+   */
+  readonly towerId: EntityId;
 
   x: number;
   y: number;
+
+  /**
+   * Contacts this shot may still pass through, and the ids it has already
+   * damaged so it cannot hit the same one twice.
+   *
+   * A piercing shot flies *straight* — see `stepProjectiles`. One that homed
+   * would curve back into a contact it had just passed, which is why the
+   * branch is on flight behaviour rather than on damage.
+   */
+  pierce: number;
+  readonly hits: EntityId[];
 
   /**
    * A direct reference, not an id.
@@ -149,6 +200,9 @@ export type Command =
   /** Send the next wave now, forfeiting the rest of the intermission. */
   | { type: 'startWave' }
   | { type: 'placeTower'; defId: TowerId; col: number; row: number }
+  | { type: 'upgradeTower'; id: EntityId }
+  | { type: 'sellTower'; id: EntityId }
+  | { type: 'setTargeting'; id: EntityId; mode: TargetMode }
   /** Debug scaffolding: drop a single creep on the path. */
   | { type: 'spawnDebugCreep' };
 
@@ -159,7 +213,22 @@ export type Command =
  * value UI in the game and "you can't" is much worse feedback than "not on the
  * road" or "you can't afford that".
  */
-export type PlacementError = 'offBoard' | 'notBuildable' | 'occupied' | 'tooPoor';
+export type PlacementError =
+  | 'offBoard'
+  /**
+   * Split from a single `notBuildable` because the ghost names the reason at
+   * the cursor, and "on the route" and "that's scenery" are different pieces of
+   * advice — one says move off the road, the other says this tile never works.
+   */
+  | 'onRoute'
+  | 'blocked'
+  | 'occupied'
+  | 'tooPoor'
+  /** The type exists but has not been unlocked at this wave yet. */
+  | 'locked';
+
+/** Why an upgrade or sell was refused. `null` means it went through. */
+export type TowerActionError = 'noSuchTower' | 'maxTier' | 'tooPoor';
 
 /**
  * Discrete instants, pushed by the sim and drained by the renderer once per
@@ -170,13 +239,40 @@ export type PlacementError = 'offBoard' | 'notBuildable' | 'occupied' | 'tooPoor
 export type SimEvent =
   | { type: 'creepLeaked'; x: number; y: number }
   | { type: 'waveStarted'; wave: number; count: number }
+  /**
+   * Every landed hit, not just fatal ones — this is what floating damage
+   * numbers and hit flashes are drawn from. It is the highest-frequency event
+   * in the game (~50/sec at full board), so the renderer caps how many it will
+   * turn into effects rather than the sim deciding for it.
+   */
+  | {
+      type: 'creepDamaged';
+      /**
+       * Which contact was hit. Carried so the renderer can flash exactly the
+       * right sprite — without it the only option is matching by proximity,
+       * which lights the wrong contact when two overlap and drops the effect
+       * entirely after a hitch moves them further than the match radius.
+       */
+      id: EntityId;
+      x: number;
+      y: number;
+      amount: number;
+      defId: TowerId | null;
+    }
   | { type: 'creepKilled'; x: number; y: number; bounty: number }
   | { type: 'waveRushed'; wave: number; bonus: number; secondsSaved: number }
   /** A startWave that could not be honoured. Silence would read as a bug. */
   | { type: 'waveRejected'; reason: 'spawning' | 'done' }
-  | { type: 'waveCleared'; wave: number }
+  /**
+   * Itemised rather than a single number, because "where did my money come
+   * from" is the question a player asks while deciding what to build next.
+   */
+  | { type: 'waveCleared'; wave: number; kills: number; bounty: number; leaked: number; reward: number }
   | { type: 'towerPlaced'; id: EntityId; col: number; row: number }
   | { type: 'buildRejected'; reason: PlacementError }
+  | { type: 'towerUpgraded'; id: EntityId; tier: number; cost: number }
+  | { type: 'towerSold'; id: EntityId; col: number; row: number; refund: number }
+  | { type: 'towerActionRejected'; reason: TowerActionError }
   | { type: 'gameOver'; won: boolean };
 
 /** Whole-match state. The sim stops stepping once this leaves 'playing'. */

@@ -1,4 +1,5 @@
-import type { Creep } from '../types.ts';
+import { TOWERS } from '../../content/towers.ts';
+import type { Creep, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
 /**
@@ -21,22 +22,7 @@ export function fireTowers(w: World, dt: number): void {
     t.cooldown -= dt;
     if (t.cooldown > 0) continue;
 
-    const r2 = t.range * t.range;
-    let best: Creep | undefined;
-    let bestProgress = -1;
-
-    for (const c of w.creeps) {
-      if (c.dead) continue;
-      const dx = c.x - t.x;
-      const dy = c.y - t.y;
-      if (dx * dx + dy * dy > r2) continue;
-      // Furthest along the path wins: the creep closest to costing a life is
-      // the one worth shooting.
-      if (c.progress > bestProgress) {
-        bestProgress = c.progress;
-        best = c;
-      }
-    }
+    const best = pickTarget(w, t);
 
     if (best === undefined) {
       // Nothing in range. Clamp rather than letting cooldown run negative, or
@@ -46,16 +32,25 @@ export function fireTowers(w: World, dt: number): void {
       continue;
     }
 
+    const def = TOWERS[t.defId];
+    const aim = aimPoint(t, best, def.pierce > 0);
+
     w.projectiles.push({
       id: w.nextId++,
       defId: t.defId,
+      towerId: t.id,
       x: t.x,
       y: t.y,
       target: best,
-      tx: best.x,
-      ty: best.y,
+      tx: aim.x,
+      ty: aim.y,
       speed: t.projectileSpeed,
       damage: t.damage,
+      // Pierce is a property of the station type, not of the tier: upgrading
+      // raises damage only, so a Mk III Lance passes through the same number
+      // of contacts as a Mk I and simply hurts each of them more.
+      pierce: def.pierce,
+      hits: [],
       age: 0,
       dead: false,
     });
@@ -65,4 +60,73 @@ export function fireTowers(w: World, dt: number): void {
     // and every balance number would be quietly wrong.
     t.cooldown += t.fireInterval;
   }
+}
+
+/**
+ * Where the shot is headed.
+ *
+ * A homing shot aims at the contact and re-aims every tick. A piercing one aims
+ * at the edge of the station's reach *along the same bearing*, so it crosses the
+ * whole covered stretch instead of stopping wherever the first contact happened
+ * to be standing — which is what makes lining contacts up worth doing.
+ *
+ * Reusing `tx`/`ty` as "aim point" rather than adding a velocity vector keeps
+ * `Projectile` one field lighter and means both flight modes share the same
+ * move-toward-a-point maths.
+ */
+function aimPoint(t: Tower, target: Creep, piercing: boolean): { x: number; y: number } {
+  if (!piercing) return { x: target.x, y: target.y };
+
+  const dx = target.x - t.x;
+  const dy = target.y - t.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  // A contact standing exactly on the station has no bearing to extend along.
+  if (d === 0) return { x: target.x, y: target.y };
+
+  return { x: t.x + (dx / d) * t.range, y: t.y + (dy / d) * t.range };
+}
+
+/**
+ * The score a candidate is ranked by, highest wins. One scan whatever the mode,
+ * so switching targeting costs nothing at runtime.
+ *
+ * `close` negates the squared distance rather than taking a root — ordering is
+ * all that matters and the root would be pure cost in the hot loop.
+ */
+function score(mode: TargetMode, c: Creep, d2: number): number {
+  switch (mode) {
+    case 'first':
+      return c.progress;
+    case 'last':
+      return -c.progress;
+    case 'strong':
+      return c.hp;
+    case 'close':
+      return -d2;
+  }
+}
+
+function pickTarget(w: World, t: Tower): Creep | undefined {
+  const r2 = t.range * t.range;
+  let best: Creep | undefined;
+  let bestScore = -Infinity;
+
+  for (const c of w.creeps) {
+    if (c.dead) continue;
+    const dx = c.x - t.x;
+    const dy = c.y - t.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > r2) continue;
+
+    const s = score(t.targeting, c, d2);
+    // Strictly greater, so ties go to the creep found first. That keeps the
+    // choice deterministic given a deterministic creep array, which is what
+    // Race-mode fairness rests on.
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+
+  return best;
 }
