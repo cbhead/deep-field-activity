@@ -53,7 +53,7 @@ export const ENEMIES = {
   monolith: {
     id: 'monolith',
     name: 'Monolith',
-    hp: 140,
+    hp: 150,
     speed: 0.85,
     bounty: 34,
     radius: 0.46,

@@ -57,7 +57,7 @@ export const BALANCE = {
    * next wave on top of one you have not finished killing. In Race mode it is
    * the main way to pull ahead, since ranking is waves cleared first.
    */
-  rushBonusPerSecond: 4,
+  rushBonusPerSecond: 2.5,
 
   /**
    * Per-wave multipliers, compounding: wave N enemies have

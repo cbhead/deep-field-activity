@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "zsh scripts/typecheck.sh",
     "lint": "zsh scripts/lint.sh .",
-    "check": "zsh scripts/check.sh"
+    "check": "zsh scripts/check.sh",
+    "sweep": "zsh scripts/sweep.sh"
   },
   "dependencies": {
     "pixi.js": "^8.20.1"
