@@ -19,6 +19,7 @@ import { grade } from './sim/analysis.ts';
 import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
 import { createMenuScreen } from './ui/menuScreen.ts';
+import { createHomeScreen } from './ui/homeScreen.ts';
 import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
@@ -231,9 +232,32 @@ async function startSinglePlayer(
   const level = named !== null ? levelById(named) : params.has('seed') ? CAMPAIGN[0] : undefined;
 
   if (level === undefined) {
-    createMenuScreen(mount, {
-      onLaunch: (chosen, difficulty, seed) => {
-        location.search = runQuery(chosen, difficulty, seed);
+    const menu = (): void => {
+      createMenuScreen(mount, {
+        onLaunch: (chosen, difficulty, seed) => {
+          location.search = runQuery(chosen, difficulty, seed);
+        },
+        onRace: () => {
+          location.search = '?race';
+        },
+      });
+    };
+
+    // The home screen sits ahead of the picker, so booting no longer lands on
+    // a file dialog. `?sectors` skips it — the picker is still a place you can
+    // link to, and Continue is a shortcut rather than a gate.
+    if (params.has('sectors')) {
+      menu();
+      return;
+    }
+
+    const home = createHomeScreen(mount, {
+      onPlay: (chosen, difficulty) => {
+        location.search = runQuery(chosen, difficulty, '');
+      },
+      onCampaign: () => {
+        home.destroy();
+        menu();
       },
       onRace: () => {
         location.search = '?race';

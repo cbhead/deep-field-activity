@@ -23,6 +23,20 @@ function load(): SeriesStore {
   }
 }
 
+/**
+ * Every series on record, most-played first.
+ *
+ * The front door needs this: a standing record against a named friend is the
+ * single strongest reason to open the game twice, and it was invisible until
+ * you were already mid-lobby. Sorted by games played so the card shows the
+ * opponent you actually race, not whoever happens to be first in the object.
+ */
+export function readSeries(): { opponent: string; rec: SeriesRecord }[] {
+  return Object.entries(load())
+    .map(([opponent, rec]) => ({ opponent, rec }))
+    .sort((a, b) => b.rec.w + b.rec.l + b.rec.t - (a.rec.w + a.rec.l + a.rec.t));
+}
+
 /** Fold one result in and return the updated record. */
 export function recordSeries(opponent: string, outcome: 'w' | 'l' | 't'): SeriesRecord {
   const store = load();

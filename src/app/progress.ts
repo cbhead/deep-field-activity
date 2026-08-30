@@ -48,6 +48,26 @@ export interface Progress {
   levels: Record<string, LevelRecord>;
   /** Preselected on the difficulty picker, so the usual choice is one click. */
   lastDifficulty: DifficultyId;
+  /**
+   * The sector most recently *played*, which is what Continue resumes.
+   *
+   * **This is the one piece of state the front door adds**, and it is worth
+   * naming as a deliberate exception rather than letting it pass. Everything
+   * else on that screen is derived: `furthestUnlocked` is a pure function of the
+   * records, and unlock state is never stored precisely so it cannot disagree
+   * with them.
+   *
+   * Furthest-unlocked was the free option and it is the wrong one. The two
+   * diverge the moment a player goes back to farm a better grade — and then
+   * "Continue" resumes a sector they deliberately left, which reads as the
+   * button ignoring them. Last-played is more literal and never surprising.
+   *
+   * Absent on a fresh install and on any record written before this field
+   * existed, which is exactly the first-run case: Continue is hidden, not
+   * broken. No version bump, because an older save is still readable — it
+   * simply has no last-played sector, which is true.
+   */
+  lastLevel?: string;
 }
 
 const empty = (): Progress => ({ version: VERSION, levels: {}, lastDifficulty: DEFAULT_DIFFICULTY });
@@ -73,6 +93,9 @@ function read(): Progress {
       version: VERSION,
       levels: p.levels,
       lastDifficulty: p.lastDifficulty ?? DEFAULT_DIFFICULTY,
+      // A level that has since been removed would otherwise leave Continue
+      // pointing at nothing; the caller resolves it and hides the button.
+      ...(p.lastLevel === undefined ? {} : { lastLevel: p.lastLevel }),
     };
   } catch {
     return empty();
@@ -127,6 +150,9 @@ export function recordRun(
 
   p.levels[levelId] = next;
   p.lastDifficulty = difficulty;
+  // Recorded whether the run was won or lost. A defeat is still the sector you
+  // were last playing, and it is the one you are most likely to want back.
+  p.lastLevel = levelId;
   write(p);
   return p;
 }
