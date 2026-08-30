@@ -26,7 +26,7 @@ import { createUiState } from './app/uiState.ts';
 import { createHud, type CampaignPorts } from './ui/hud.ts';
 import { planWave } from './sim/wavePlan.ts';
 import { serverUrl } from './net/NetClient.ts';
-import { DEFAULT_PORT } from './net/protocol.ts';
+import { relayHost } from './net/relay.ts';
 import { MatchController } from './net/MatchController.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
@@ -69,15 +69,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Race mode: `?race` opens the lobby screen, `?race=CODE` deep-links into a
-  // room. Where the relay lives depends on who served this page: under Vite the
-  // page comes from the dev server while the relay listens separately, so
-  // DEFAULT_PORT has to be named; in the `npm run play` build one process serves
-  // both, so the page's own origin IS the relay and location.host is the whole
-  // answer. Deriving it from location.host rather than the port /info reports
-  // is what keeps `PORT=` working and survives a tunnel, where the port the
-  // browser reached is not the port the server bound.
-  const relayHost = import.meta.env.DEV ? `${location.hostname}:${DEFAULT_PORT}` : location.host;
+  // `?race` opens the lobby, `?race=CODE` deep-links into a room. The host is
+  // derived in one place — `net/relay.ts` — because the front door probes the
+  // same relay this dials, and a probe aimed at a different port than the socket
+  // is worse than no probe at all.
+  const host = relayHost();
 
   let controller: MatchController;
   let raceHud: RaceHud | null = null;
@@ -99,12 +95,12 @@ async function main(): Promise<void> {
 
   const lobby = createLobbyScreen(mount, {
     ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
-    relayHost,
+    relayHost: host,
     onReady: (ready) => controller.ready(ready),
     onSubmit: (name, room, choice) => {
       playerName = name;
       controller = new MatchController({
-        url: serverUrl(relayHost, location.protocol === 'https:'),
+        url: serverUrl(host, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
         ...(choice === undefined ? {} : { choice }),
@@ -125,7 +121,12 @@ async function main(): Promise<void> {
           },
           onResult: (winnerId, standings, reason) => {
             const outcome = winnerId === null ? 't' : winnerId === controller.playerId ? 'w' : 'l';
-            const series = formatSeries(opponentName, recordSeries(opponentName, outcome));
+            // The sector goes in too, so the front door can say what happened
+            // rather than only how the rivalry stands.
+            const series = formatSeries(
+              opponentName,
+              recordSeries(opponentName, outcome, matchSector),
+            );
             showResults(mount, {
               myId: controller.playerId,
               winnerId,

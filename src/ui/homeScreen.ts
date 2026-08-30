@@ -24,7 +24,8 @@
 import { CAMPAIGN, levelById, type LevelDef } from '../content/levels.ts';
 import { DIFFICULTIES, type DifficultyId } from '../content/difficulty.ts';
 import { furthestUnlocked, levelRecord, loadProgress, type Progress } from '../app/progress.ts';
-import { readSeries, formatSeries } from '../app/raceSeries.ts';
+import { readSeries, formatSeries, describeLast } from '../app/raceSeries.ts';
+import { probeRelay } from '../net/relay.ts';
 import { boardThumb } from './boardThumb.ts';
 
 export interface HomeOptions {
@@ -87,6 +88,15 @@ const STYLE = `
 #home-screen .hm-ghost{padding:12px 18px;border:1px solid #23263a;border-radius:9px;
   background:none;color:#9397ab;font:400 13px/1 Inter,sans-serif;cursor:pointer}
 #home-screen .hm-ghost:hover{color:#e9e9ed;border-color:#4b4570}
+#home-screen .hm-last{font-size:11px;color:#5d6070;margin-top:1px}
+/* Relay state as a dot on the card that needs it. Grey until probed, so it
+   never claims "up" on a stale check — an unanswered question looks different
+   from an answered one. */
+#home-screen .hm-relay{display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:#4b4e5e;vertical-align:middle;margin-left:7px;text-indent:-9999px;overflow:hidden}
+#home-screen .hm-relay.up{background:#86e39b;box-shadow:0 0 8px #86e39b}
+#home-screen .hm-relay.down{background:#e06d6d;box-shadow:0 0 8px #e06d6d}
+#home-screen .hm-relaynote{max-width:640px;font-size:11.5px;color:#e06d6d;min-height:1em}
 `;
 
 export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeScreen {
@@ -111,6 +121,36 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
     `<div class="hm-scrim"></div>` +
     `<div class="hm-bar"><span class="hm-mark">Deep Field</span></div>` +
     `<div class="hm-wrap">${cleared === 0 ? firstRun() : returning(progress, resume, cleared)}</div>`;
+
+  // Probed when the Race card is first pointed at or focused — never on load.
+  // A solo player who never races would otherwise meet a red dot every boot,
+  // reporting a server they never wanted, which makes an offline single-player
+  // launch feel broken. This still runs comfortably before anyone types a name,
+  // which is all "relay honesty" actually asks for.
+  let probed = false;
+  const raceCard = el.querySelector<HTMLElement>('#hm-race');
+  const checkRelay = (): void => {
+    if (probed) return;
+    probed = true;
+    void probeRelay().then((status) => {
+      const dot = el.querySelector<HTMLElement>('#hm-relay');
+      const note = el.querySelector<HTMLElement>('#hm-relaynote');
+      if (dot !== null) {
+        dot.className = `hm-relay ${status}`;
+        dot.title = status === 'up' ? 'Relay is up' : 'Relay is not answering';
+      }
+      // The Tailscale requirement is stated once, here, where it is actionable
+      // — rather than after a name has been typed and a connection has failed.
+      if (note !== null) {
+        note.textContent =
+          status === 'up'
+            ? ''
+            : 'Relay is not answering — start it with `npm run play`, and your friend needs Tailscale up.';
+      }
+    });
+  };
+  raceCard?.addEventListener('pointerenter', checkRelay);
+  raceCard?.addEventListener('focus', checkRelay);
 
   el.addEventListener('click', (ev) => {
     const act = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset['act'];
@@ -196,7 +236,8 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
     `<p>${CAMPAIGN.length} sectors</p>` +
     `<span class="hm-score">${cleared} held${best === null ? '' : ` <em>· best ${best}</em>`}</span>` +
     `</button>` +
-    `<button class="hm-card" data-act="race"><h2>Race</h2>` +
+    `<button class="hm-card hm-race" data-act="race" id="hm-race">` +
+    `<h2>Race <i class="hm-relay" id="hm-relay" title="Checking the relay">·</i></h2>` +
     // With no history the card shows the mode's pitch rather than an empty
     // 0–0 — the same rule as first-run Continue: never open on a zero.
     (top === undefined
@@ -204,8 +245,12 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
       : `<p>vs ${top.opponent}</p>` +
         `<span class="hm-score" title="${formatSeries(top.opponent, top.rec)}">` +
         `${top.rec.w}–${top.rec.l}${top.rec.t > 0 ? ` <em>· ${top.rec.t} tie${top.rec.t === 1 ? '' : 's'}</em>` : ''}` +
-        `</span>`) +
-    `</button></div>`
+        `</span>` +
+        // What happened, not just how it stands. This is the half that makes
+        // someone want a rematch.
+        (describeLast(top.rec) === null ? '' : `<p class="hm-last">last: ${describeLast(top.rec)}</p>`)) +
+    `</button></div>` +
+    `<div class="hm-relaynote" id="hm-relaynote"></div>`
   );
 }
 

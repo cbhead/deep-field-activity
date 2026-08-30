@@ -9,6 +9,15 @@ export interface SeriesRecord {
   w: number;
   l: number;
   t: number;
+  /**
+   * The most recent result, for the front door's one-line recap.
+   *
+   * "3–2" says how the rivalry stands; "last: won on Pincer" says what happened
+   * and is the half that makes someone want a rematch. Optional because every
+   * record written before this existed has none — the card simply omits the
+   * line rather than inventing one.
+   */
+  last?: { outcome: 'w' | 'l' | 't'; sector: string };
 }
 
 const KEY = 'race-series';
@@ -38,14 +47,25 @@ export function readSeries(): { opponent: string; rec: SeriesRecord }[] {
 }
 
 /** Fold one result in and return the updated record. */
-export function recordSeries(opponent: string, outcome: 'w' | 'l' | 't'): SeriesRecord {
+export function recordSeries(
+  opponent: string,
+  outcome: 'w' | 'l' | 't',
+  sector?: string,
+): SeriesRecord {
   const store = load();
   const rec = store[opponent] ?? { w: 0, l: 0, t: 0 };
   rec[outcome]++;
+  if (sector !== undefined) rec.last = { outcome, sector };
   store[opponent] = rec;
   localStorage.setItem(KEY, JSON.stringify(store));
   return rec;
 }
+
+/** "won on Pincer" — the half of the record that invites a rematch. */
+export const describeLast = (rec: SeriesRecord): string | null =>
+  rec.last === undefined
+    ? null
+    : `${rec.last.outcome === 'w' ? 'won' : rec.last.outcome === 'l' ? 'lost' : 'tied'} on ${rec.last.sector}`;
 
 /** "Series vs Vela: 3–2" (+ " (1 tie)" when there are any). */
 export const formatSeries = (opponent: string, rec: SeriesRecord): string =>
