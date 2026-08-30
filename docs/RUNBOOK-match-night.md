@@ -1,7 +1,7 @@
 # Runbook: Race Match Night
 
 **Owner:** Chandler (host) | **Frequency:** As needed
-**Last Updated:** 2026-08-30 | **Last Run:** _never end-to-end across the internet — see Open Item_
+**Last Updated:** 2026-08-30 | **Last Run:** 2026-08-30 — first confirmed cross-internet match
 
 ## Purpose
 
@@ -9,14 +9,20 @@ Host a two-player Race-mode session of tower-defense for a friend over Tailscale
 One process, one port, one URL. Use this every time you want to play together;
 follow it start to finish the first time, then skim the bold lines after that.
 
-**Open item:** the cross-internet run has never been confirmed. The friend has
-not yet joined the tailnet. Step 0 is the part that is actually unproven.
+The whole path — tailnet invite through `[result]` — was confirmed working
+across the internet on 2026-08-30.
+
+Throughout this runbook, `<tailscale-ip>` means the host machine's tailnet
+address. Get yours from `tailscale ip -4`, or read it off the banner
+`npm run play` prints at startup.
 
 ## Prerequisites
 
+Setup (clone, install, Node version) is covered in the [README](../README.md)
+— this runbook assumes `npm run play` already works on the host. Beyond that:
+
 - [ ] Tailscale running on the host — `tailscale status` shows the host online
 - [ ] Friend is **on your tailnet** and their device shows up in `tailscale status`
-- [ ] Node ≥ 20.19 available via nvm (the npm scripts handle this; see Troubleshooting)
 - [ ] Working tree in a state you're happy to build — `npm run play` builds `dist/` fresh
 - [ ] Optional: a Discord channel webhook URL if you want to send the invite that way
 
@@ -41,17 +47,19 @@ tailscale status
 ### Step 1 — Start the host
 
 ```
-cd ~/dev/tower-defense && caffeinate -i npm run play
+cd <your clone> && caffeinate -i npm run play
 ```
 
 `caffeinate -i` keeps the Mac awake for the whole match; without it the server
-dies mid-game when the machine sleeps. `npm run play` builds the client, then
-serves `dist/` **and** the WebSocket from one process.
+dies mid-game when the machine sleeps (Linux hosts: skip it). `npm run play`
+builds the client, then serves `dist/` **and** the WebSocket from one process.
 
-**Expected result:** the build finishes, then:
+**Expected result:** the build finishes, then a banner like:
 
 ```
-race server on 0.0.0.0:8787 — ws at /ws, http sanity line at /
+race server listening on 0.0.0.0:8787
+  Single-player:       http://localhost:8787
+  Race with a friend:  http://<tailscale-ip>:8787/?race
 ```
 
 **If it fails:** see Troubleshooting. Most first-run failures are the Node version.
@@ -63,10 +71,10 @@ race server on 0.0.0.0:8787 — ws at /ws, http sanity line at /
 From the host, in a second terminal:
 
 ```
-curl -s http://100.96.85.82:8787/info
+curl -s http://<tailscale-ip>:8787/info
 ```
 
-**Expected result:** `{"tailscaleIp":"100.96.85.82","port":8787}` — a non-null
+**Expected result:** `{"tailscaleIp":"<tailscale-ip>","port":8787}` — a non-null
 `tailscaleIp` is what makes the in-game invite link carry an address the friend
 can actually reach.
 
@@ -81,14 +89,14 @@ Tailscale up and restart the server.
 Host opens:
 
 ```
-http://100.96.85.82:8787/?race
+http://<tailscale-ip>:8787/?race
 ```
 
 Use the **tailnet IP, not localhost** — it costs nothing and it means the invite
 link and the URL bar agree.
 
 **Expected result:** the lobby screen, with a big room code and a pre-filled
-invite link of the form `http://100.96.85.82:8787/?race=<ROOM>`.
+invite link of the form `http://<tailscale-ip>:8787/?race=<ROOM>`.
 Both fields select on click (the relay is plain http on the tailnet, where the
 browser refuses clipboard access — so click-to-select, then ⌘C).
 
@@ -139,7 +147,7 @@ the machine can sleep again.
 
 ## Verification
 
-- [ ] `curl -s http://100.96.85.82:8787/info` returns a non-null `tailscaleIp`
+- [ ] `curl -s http://<tailscale-ip>:8787/info` returns a non-null `tailscaleIp`
 - [ ] Friend can load the invite link from **their own network**, not just yours
 - [ ] Server log shows `[hello]` from an IP that is not `127.0.0.1`
 - [ ] `[start] room <CODE> seed=<N>` prints once, and both screens run the same wave layout
@@ -176,7 +184,7 @@ play` rebuilds `dist/` every time, so the previous good commit is one stash away
 
 ## Known gaps (don't file these as bugs mid-match)
 
-- The **results screen has not been redesigned** â the design spec covered lobby states L1âL7 only.
+- The **results screen has not been redesigned** — the design spec covered lobby states L1–L7 only.
 - The spec's **"Forfeit instead" button was deliberately not built**; it needs a
   protocol message to be fair. Forfeits only happen via the 90s timeout.
 
@@ -186,4 +194,5 @@ play` rebuilds `dist/` every time, so the previous good commit is one stash away
 
 | Date | Run by | Notes |
 |---|---|---|
-| 2026-08-30 | — | Runbook written. Cross-internet run with friend still **pending** — Step 0 unproven. |
+| 2026-08-30 | Chandler | Runbook written. |
+| 2026-08-30 | Chandler | First confirmed cross-internet match over Tailscale — full path verified, Step 0 through `[result]`. |
