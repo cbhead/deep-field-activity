@@ -25,7 +25,8 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } from '../src/net/protocol.ts';
 
 const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
-const COUNTDOWN_MS = 3000;
+/** Env-overridable, like FORFEIT_MS: visual checks need to hold the countdown. */
+const COUNTDOWN_MS = Number(process.env['COUNTDOWN_MS'] ?? 3000);
 const HEARTBEAT_MS = 15_000;
 /** Env-overridable so the forfeit path can be exercised in seconds in tests. */
 const FORFEIT_MS = Number(process.env['FORFEIT_MS'] ?? 90_000);
@@ -214,8 +215,8 @@ wss.on('connection', (ws: WebSocket, req) => {
 
       case 'ready': {
         if (!me || !room || room.started) return;
-        console.log(`[ready] ${me.name} (${me.id}) in room ${room.code}`);
-        me.ready = true;
+        me.ready = msg.ready ?? true;
+        console.log(`[ready] ${me.name} (${me.id}) ${me.ready ? 'ready' : 'un-readied'} in room ${room.code}`);
         broadcastLobby(room);
         if (room.players.length === 2 && room.players.every((p) => p.ready)) {
           room.started = true;

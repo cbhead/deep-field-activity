@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/styles.css">
+<script src="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#0b0c16;font-family:Inter,system-ui,sans-serif;color:#e9e9ed}
+a{color:#b5abfc;text-decoration:none}a:hover{color:#d2cefd}
+.pg{padding:48px 44px 64px}
+.hd{max-width:920px;margin:0 0 40px}
+.hd h1{margin:0 0 10px;font:500 26px/1.2 Inter,sans-serif;letter-spacing:-.01em}
+.hd p{margin:0 0 8px;font:400 13.5px/1.7 Inter,sans-serif;color:rgba(233,233,237,.58);text-wrap:pretty}
+.grp{margin:0 0 12px;display:flex;align-items:center;gap:12px}
+.grp h2{margin:0;font:600 10.5px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#9184d9}
+.grp span{flex:1;height:1px;background:linear-gradient(to right,rgba(145,132,217,.4),rgba(145,132,217,0) 260px)}
+.row{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;max-width:2700px;margin:0 0 44px}
+.st{flex:none;display:flex;flex-direction:column;gap:8px;width:1280px;scroll-margin-top:16px}
+.st-hd{display:flex;align-items:baseline;gap:10px}
+.st-n{font:600 10px/1 ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(233,233,237,.1);color:#e9e9ed;border-radius:5px}
+.st-t{font:600 13px/1.3 Inter,sans-serif;color:#e9e9ed}
+.st-d{font:400 11.5px/1.5 Inter,sans-serif;color:rgba(233,233,237,.5);max-width:1280px;text-wrap:pretty}
+.bd{position:relative;width:1280px;height:760px;border:1px solid rgba(233,233,237,.09);border-radius:8px;overflow:hidden}
+code{font:400 11.5px ui-monospace,Menlo,monospace;color:rgba(233,233,237,.75)}
+</style>
+</helmet>
+
+<div class="pg">
+<div class="hd">
+<h1>Race lobby</h1>
+<p>A facelift for <code>ui/lobbyScreen.ts</code>, in the deep-field language of the in-game HUD. Every state the file actually reaches is here, in the order a player meets them. Copy leans on facts the code already guarantees — one seed drives both boards, status goes over the wire at 2Hz, a dropped socket can reclaim its seat.</p>
+<p>Two constraints kept: the room code stays a select-on-click field rather than a copy button (over Tailscale the page is plain http, so <code>navigator.clipboard</code> fails everywhere except localhost), and the screen carries its own styling — it lives and dies before the game exists.</p>
+</div>
+
+<div class="grp"><h2>Entry</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="l1">
+<div class="st-hd"><span class="st-n">L1</span><span class="st-t">Entry — create or join</span></div>
+<div class="st-d">Create is the loud path; joining is a four-character code, which is the whole reason the code is four characters. The right column earns its place by answering the three things a new racer actually wonders about, all of them true of the current build.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Race relay</span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#b5abfc;box-shadow:0 0 8px rgba(181,171,252,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">relay reachable · :8787</span></span>
+</div>
+
+<div style="position:absolute;left:88px;top:140px;width:452px;display:flex;flex-direction:column;gap:26px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#b5abfc">Sector 01</span>
+    <span style="font:500 62px/1 Inter,sans-serif;letter-spacing:-.03em">Race</span>
+    <span style="font:400 14px/1.7 Inter,sans-serif;color:#9397ab;max-width:390px;text-wrap:pretty">Two pilots, one seed. Identical waves on separate skies — you're racing their run, not fighting it.</span>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Callsign</span>
+    <div style="display:flex;align-items:center;height:44px;padding:0 14px;border-radius:8px;background:rgba(35,37,50,.72);box-shadow:inset 0 0 0 1px rgba(233,233,237,.16)">
+      <span style="font:400 15px/1 Inter,sans-serif;color:#e9e9ed">Halcyon</span>
+      <span style="width:1.5px;height:18px;margin-left:2px;background:#9184d9"></span>
+      <span style="margin-left:auto;font:400 11px/1 Inter,sans-serif;color:#75798c">saved locally</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <span style="display:flex;align-items:center;justify-content:center;height:46px;border:1px solid #9184d9;border-radius:8px;font:600 14px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 22px rgba(145,132,217,.2)">Create a room</span>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="flex:1;height:1px;background:linear-gradient(to right,transparent,rgba(233,233,237,.16))"></span>
+      <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">or join one</span>
+      <span style="flex:1;height:1px;background:linear-gradient(to left,transparent,rgba(233,233,237,.16))"></span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div style="display:flex;align-items:center;height:46px;padding:0 16px;border-radius:8px;background:rgba(35,37,50,.72);box-shadow:inset 0 0 0 1px rgba(233,233,237,.16)">
+        <span style="font:600 20px/1 ui-monospace,Menlo,monospace;letter-spacing:.42em;color:#595d6c">CODE</span>
+      </div>
+      <span style="flex:1;display:flex;align-items:center;justify-content:center;height:46px;border:1px solid rgba(233,233,237,.18);border-radius:8px;font:600 13.5px/1 Inter,sans-serif;color:#cfd3e5">Join</span>
+    </div>
+  </div>
+</div>
+
+<div style="position:absolute;left:760px;top:196px;width:400px;display:flex;flex-direction:column;gap:22px">
+  <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#75798c">How a race works</span>
+  <div style="display:flex;gap:14px">
+    <span style="font:400 11px/1.3 ui-monospace,Menlo,monospace;color:#9184d9;padding-top:2px">01</span>
+    <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1.4 Inter,sans-serif">One seed, two boards</span><span style="font:400 12px/1.65 Inter,sans-serif;color:#9397ab">The relay hands both pilots the same seed, so every wave arrives in the same order with the same jitter. Nothing about the board is luck.</span></span>
+  </div>
+  <div style="display:flex;gap:14px">
+    <span style="font:400 11px/1.3 ui-monospace,Menlo,monospace;color:#9184d9;padding-top:2px">02</span>
+    <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1.4 Inter,sans-serif">Ahead or behind, live</span><span style="font:400 12px/1.65 Inter,sans-serif;color:#9397ab">Wave, lives and elapsed time cross the wire twice a second. You see their standing, never their board.</span></span>
+  </div>
+  <div style="display:flex;gap:14px">
+    <span style="font:400 11px/1.3 ui-monospace,Menlo,monospace;color:#9184d9;padding-top:2px">03</span>
+    <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 13px/1.4 Inter,sans-serif">Your seat is held</span><span style="font:400 12px/1.65 Inter,sans-serif;color:#9397ab">Lose the connection and you can reclaim the same seat and carry on. Walk away and it's a forfeit.</span></span>
+  </div>
+  <div style="height:1px;background:linear-gradient(to right,rgba(233,233,237,.16) 0,rgba(233,233,237,.16) 220px,transparent 320px)"></div>
+  <span style="font:400 11.5px/1.6 Inter,sans-serif;color:#75798c">Ranked on waves cleared, then lives kept, then time.</span>
+</div>
+</div>
+</div>
+
+<div class="st" id="l2">
+<div class="st-hd"><span class="st-n">L2</span><span class="st-t">Deep link — <code>?race=7KQD</code></span></div>
+<div class="st-d">Arriving from a shared link. The code is settled, so the screen collapses to the one thing still unknown and shows the room it's about to put you in — the current build asks for a name against an unlabelled room string.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Race relay</span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#b5abfc;box-shadow:0 0 8px rgba(181,171,252,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">relay reachable · :8787</span></span>
+</div>
+<div style="position:absolute;left:88px;top:212px;width:520px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#b5abfc">Invited to a race</span>
+    <span style="font:500 44px/1.1 Inter,sans-serif;letter-spacing:-.02em">Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.14em;color:#d2cefd">7KQD</span></span>
+    <span style="font:400 14px/1.7 Inter,sans-serif;color:#9397ab;max-width:420px">Sector 01 · Switchback — ten waves, twenty lives, one seed shared with your opponent.</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Callsign</span>
+    <div style="display:flex;align-items:center;height:44px;padding:0 14px;border-radius:8px;background:rgba(35,37,50,.72);box-shadow:inset 0 0 0 1px rgba(233,233,237,.16)">
+      <span style="font:400 15px/1 Inter,sans-serif;color:#e9e9ed">Halcyon</span><span style="width:1.5px;height:18px;margin-left:2px;background:#9184d9"></span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px">
+    <span style="display:flex;align-items:center;justify-content:center;width:180px;height:46px;border:1px solid #9184d9;border-radius:8px;font:600 14px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 22px rgba(145,132,217,.2)">Join room</span>
+    <span style="font:400 12px/1 Inter,sans-serif;color:#75798c">or <span style="color:#b5abfc">start your own instead</span></span>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="grp"><h2>Room</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="l3">
+<div class="st-hd"><span class="st-n">L3</span><span class="st-t">Room open — waiting for an opponent</span></div>
+<div class="st-d">The room code is the whole screen, because passing it to someone is the only job here. The joinable URL sits under it as a second select-on-click field for people who'd rather send a link. Two seats are drawn from the start so the empty one reads as a slot, not an absence.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Race relay</span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#b5abfc;box-shadow:0 0 8px rgba(181,171,252,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">connected</span></span>
+</div>
+
+<div style="position:absolute;left:88px;top:170px;width:560px;display:flex;flex-direction:column;gap:22px">
+  <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#75798c">Room code — click to select</span>
+  <div style="display:flex;align-items:center;height:112px;padding:0 28px;border-radius:10px;background:rgba(35,37,50,.6);box-shadow:inset 0 0 0 1px rgba(145,132,217,.4),0 0 40px rgba(145,132,217,.1)">
+    <span style="font:500 64px/1 ui-monospace,Menlo,monospace;letter-spacing:.28em;color:#e9e9ed;text-shadow:0 0 26px rgba(181,171,252,.45)">7KQD</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">or send the link</span>
+    <div style="display:flex;align-items:center;height:40px;padding:0 14px;border-radius:8px;background:rgba(35,37,50,.55);box-shadow:inset 0 0 0 1px rgba(233,233,237,.12)">
+      <span style="font:400 12.5px/1 ui-monospace,Menlo,monospace;color:#9397ab">http://100.84.19.2:8787/?race=7KQD</span>
+    </div>
+  </div>
+  <span style="font:400 11.5px/1.7 Inter,sans-serif;color:#9397ab;max-width:440px">Both fields select on click — the relay runs over plain http on your tailnet, where the browser refuses clipboard access.</span>
+</div>
+
+<div style="position:absolute;left:760px;top:170px;width:432px;display:flex;flex-direction:column;gap:16px">
+  <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#75798c">Pilots</span>
+  <div style="display:flex;align-items:center;gap:14px;height:66px;padding:0 16px;border-radius:8px;background:rgba(35,37,50,.7);box-shadow:inset 0 0 0 1px rgba(143,196,250,.35)">
+    <svg width="26" height="26" viewBox="0 0 40 40" style="display:block;flex:none;filter:drop-shadow(0 0 6px rgba(143,196,250,.45))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+    <span style="display:flex;flex-direction:column;gap:2px"><span style="font:600 15px/1.2 Inter,sans-serif">Halcyon</span><span style="font:400 11px/1.2 Inter,sans-serif;color:#75798c">you · seat 1</span></span>
+    <span style="margin-left:auto;font:400 11.5px/1 Inter,sans-serif;color:#9397ab">not ready</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;height:66px;padding:0 16px;border-radius:8px;background:rgba(20,22,36,.4);box-shadow:inset 0 0 0 1px rgba(233,233,237,.1)">
+    <span style="display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(233,233,237,.18)"><span style="width:6px;height:6px;border-radius:50%;background:rgba(233,233,237,.25)"></span></span>
+    <span style="display:flex;flex-direction:column;gap:2px"><span style="font:400 15px/1.2 Inter,sans-serif;color:#9397ab">Empty seat</span><span style="font:400 11px/1.2 Inter,sans-serif;color:#9397ab">waiting for someone to join…</span></span>
+    <span style="margin-left:auto;display:flex;gap:4px"><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.8)"></span><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.4)"></span><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.18)"></span></span>
+  </div>
+  <div style="height:1px;background:linear-gradient(to right,rgba(233,233,237,.14) 0,rgba(233,233,237,.14) 240px,transparent 340px);margin:6px 0"></div>
+  <div style="display:flex;flex-direction:column;gap:9px;max-width:280px">
+    <div style="display:flex;justify-content:space-between;font:400 11.5px/1 Inter,sans-serif"><span style="color:#75798c">Sector</span><span style="color:#cfd3e5">01 · Switchback</span></div>
+    <div style="display:flex;justify-content:space-between;font:400 11.5px/1 Inter,sans-serif"><span style="color:#75798c">Waves</span><span style="color:#cfd3e5">10</span></div>
+    <div style="display:flex;justify-content:space-between;font:400 11.5px/1 Inter,sans-serif"><span style="color:#75798c">Starting lives</span><span style="color:#cfd3e5">20</span></div>
+    <div style="display:flex;justify-content:space-between;font:400 11.5px/1 Inter,sans-serif"><span style="color:#75798c">Ranked by</span><span style="color:#cfd3e5">waves · lives · time</span></div>
+  </div>
+  <span style="margin-top:8px;font:400 12px/1 Inter,sans-serif;color:#75798c">Leave the room</span>
+</div>
+</div>
+</div>
+
+<div class="st" id="l4">
+<div class="st-hd"><span class="st-n">L4</span><span class="st-t">Both seats filled — ready up</span></div>
+<div class="st-d">The moment the second pilot lands, the room code demotes and the ready action takes the emphasis. Both readiness states are visible, so waiting on someone is never a mystery.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">7KQD</span></span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#b5abfc;box-shadow:0 0 8px rgba(181,171,252,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">both connected</span></span>
+</div>
+
+<div style="position:absolute;left:88px;top:186px;width:1104px;display:flex;flex-direction:column;gap:30px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#b5abfc">Room full</span>
+    <span style="font:500 46px/1.1 Inter,sans-serif;letter-spacing:-.02em">Two pilots on the line</span>
+  </div>
+
+  <div style="display:flex;align-items:stretch;gap:22px">
+    <div style="flex:1;display:flex;align-items:center;gap:16px;height:96px;padding:0 22px;border-radius:10px;background:rgba(35,37,50,.7);box-shadow:inset 0 0 0 1px rgba(143,196,250,.4)">
+      <svg width="34" height="34" viewBox="0 0 40 40" style="display:block;flex:none;filter:drop-shadow(0 0 8px rgba(143,196,250,.5))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#8fc4fa" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+      <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 19px/1.2 Inter,sans-serif">Halcyon</span><span style="font:400 11.5px/1.2 Inter,sans-serif;color:#75798c">you · seat 1</span></span>
+      <span style="margin-left:auto;padding:5px 11px;border-radius:6px;background:rgba(233,233,237,.08);font:600 11px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#9397ab">Not ready</span>
+    </div>
+    <span style="display:grid;place-items:center;width:44px;font:400 11px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#75798c">vs</span>
+    <div style="flex:1;display:flex;align-items:center;gap:16px;height:96px;padding:0 22px;border-radius:10px;background:rgba(35,37,50,.7);box-shadow:inset 0 0 0 1px rgba(252,192,138,.35)">
+      <svg width="34" height="34" viewBox="0 0 40 40" style="display:block;flex:none;filter:drop-shadow(0 0 8px rgba(252,192,138,.4))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".2" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#fcc08a" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a"/></svg>
+      <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 19px/1.2 Inter,sans-serif">Vela</span><span style="font:400 11.5px/1.2 Inter,sans-serif;color:#75798c">opponent · seat 2</span></span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:7px;padding:5px 11px;border-radius:6px;background:rgba(145,132,217,.14);font:600 11px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#b5abfc"><span style="width:5px;height:5px;border-radius:50%;background:#b5abfc;box-shadow:0 0 6px rgba(181,171,252,.9)"></span>Ready</span>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:24px">
+    <span style="display:flex;align-items:center;justify-content:center;width:260px;height:52px;border:1px solid #9184d9;border-radius:8px;font:600 15px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 26px rgba(145,132,217,.24)">Ready</span>
+    <span style="font:400 12.5px/1.7 Inter,sans-serif;color:#75798c;max-width:420px">Both ready starts a three-second countdown. The seed is issued at that point, not before — nobody gets a head start on the board.</span>
+    <span style="font:400 12px/1 Inter,sans-serif;color:#75798c">Leave the room</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="l5">
+<div class="st-hd"><span class="st-n">L5</span><span class="st-t">You readied — waiting on them</span></div>
+<div class="st-d">Same frame, roles reversed. The button becomes a statement rather than disappearing, so the screen doesn't lose its centre of gravity while you wait.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">7KQD</span></span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#b5abfc;box-shadow:0 0 8px rgba(181,171,252,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">both connected</span></span>
+</div>
+<div style="position:absolute;left:88px;top:186px;width:1104px;display:flex;flex-direction:column;gap:30px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#b5abfc">Standing by</span>
+    <span style="font:500 46px/1.1 Inter,sans-serif;letter-spacing:-.02em">Waiting on Vela</span>
+  </div>
+  <div style="display:flex;align-items:stretch;gap:22px">
+    <div style="flex:1;display:flex;align-items:center;gap:16px;height:96px;padding:0 22px;border-radius:10px;background:rgba(35,37,50,.7);box-shadow:inset 0 0 0 1px rgba(145,132,217,.45)">
+      <svg width="34" height="34" viewBox="0 0 40 40" style="display:block;flex:none;filter:drop-shadow(0 0 8px rgba(143,196,250,.5))"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#8fc4fa" fill-opacity=".2" stroke="#8fc4fa" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="#8fc4fa" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="#8fc4fa"/></svg>
+      <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 19px/1.2 Inter,sans-serif">Halcyon</span><span style="font:400 11.5px/1.2 Inter,sans-serif;color:#75798c">you · seat 1</span></span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:7px;padding:5px 11px;border-radius:6px;background:rgba(145,132,217,.14);font:600 11px/1 Inter,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#b5abfc"><span style="width:5px;height:5px;border-radius:50%;background:#b5abfc;box-shadow:0 0 6px rgba(181,171,252,.9)"></span>Ready</span>
+    </div>
+    <span style="display:grid;place-items:center;width:44px;font:400 11px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#75798c">vs</span>
+    <div style="flex:1;display:flex;align-items:center;gap:16px;height:96px;padding:0 22px;border-radius:10px;background:rgba(35,37,50,.7);box-shadow:inset 0 0 0 1px rgba(233,233,237,.12)">
+      <svg width="34" height="34" viewBox="0 0 40 40" style="display:block;flex:none"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#fcc08a" fill-opacity=".14" stroke="#fcc08a" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="#fcc08a" fill-opacity=".6"/></svg>
+      <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 19px/1.2 Inter,sans-serif;color:#cfd3e5">Vela</span><span style="font:400 11.5px/1.2 Inter,sans-serif;color:#75798c">opponent · seat 2</span></span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:8px"><span style="display:flex;gap:4px"><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.8)"></span><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.4)"></span><span style="width:5px;height:5px;border-radius:50%;background:rgba(181,171,252,.18)"></span></span><span style="font:400 11.5px/1 Inter,sans-serif;color:#9397ab">deciding</span></span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:24px">
+    <span style="display:flex;align-items:center;justify-content:center;gap:10px;width:260px;height:52px;border:1px solid rgba(145,132,217,.35);border-radius:8px;font:600 14px/1 Inter,sans-serif;color:#9397ab">You're ready</span>
+    <span style="font:400 12.5px/1.7 Inter,sans-serif;color:#75798c;max-width:420px">The countdown starts the instant they confirm. You can un-ready until then.</span>
+    <span style="font:400 12px/1 Inter,sans-serif;color:#75798c">Leave the room</span>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+
+<div class="grp"><h2>Start &amp; failure</h2><span></span></div>
+<div class="row">
+
+<div class="st" id="l6">
+<div class="st-hd"><span class="st-n">L6</span><span class="st-t">Countdown</span></div>
+<div class="st-d">Three seconds, measured locally against a relative delay — clocks are never compared across machines. The seed is shown because it's the proof of fairness the whole mode rests on, and because it's what you'd quote when reporting a bad board.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 46%,rgba(145,132,217,.16),rgba(6,7,13,.72) 62%)"></div>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">7KQD</span></span>
+</div>
+<div style="position:absolute;left:0;right:0;top:190px;display:flex;flex-direction:column;align-items:center;gap:26px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.3em;text-transform:uppercase;color:#b5abfc">Both ready</span>
+  <div style="position:relative;display:grid;place-items:center;width:220px;height:220px">
+    <span style="position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(181,171,252,.28),0 0 60px rgba(145,132,217,.22)"></span>
+    <span style="position:absolute;inset:26px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(181,171,252,.14)"></span>
+    <span style="font:500 108px/1 Inter,sans-serif;color:#f5f4ff;text-shadow:0 0 40px rgba(181,171,252,.55)">3</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:20px">
+    <span style="display:flex;align-items:center;gap:9px"><span style="width:8px;height:8px;border-radius:50%;background:#8fc4fa;box-shadow:0 0 8px rgba(143,196,250,.9)"></span><span style="font:600 14px/1 Inter,sans-serif">Halcyon</span></span>
+    <span style="font:400 11px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#75798c">vs</span>
+    <span style="display:flex;align-items:center;gap:9px"><span style="width:8px;height:8px;border-radius:50%;background:#fcc08a;box-shadow:0 0 8px rgba(252,192,138,.9)"></span><span style="font:600 14px/1 Inter,sans-serif">Vela</span></span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:7px">
+    <span style="font:400 11.5px/1 ui-monospace,Menlo,monospace;color:#9397ab">seed 0x5F3A1C · 10 waves · 20 lives</span>
+    <span style="font:400 11.5px/1 Inter,sans-serif;color:#9397ab">Identical waves on both boards.</span>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="st" id="l7">
+<div class="st-hd"><span class="st-n">L7</span><span class="st-t">Failure — room full, and the reconnect case</span></div>
+<div class="st-d">The current build prints <code>race error: {reason}</code> and offers a link back. Every reason the relay can send gets a plain sentence and a way forward instead; the strip along the bottom is the mid-race variant, where the socket dropped and the seat is being reclaimed rather than lost.</div>
+<div class="bd">
+<dc-import name="TDSky" hint-size="1280px,760px" style="position:absolute;left:0;top:0;width:1280px;height:760px"></dc-import>
+<div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 44%,rgba(224,109,109,.12),rgba(6,7,13,.78) 62%)"></div>
+<div style="position:absolute;left:0;top:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 40px">
+  <span style="font:600 10.5px/1 Inter,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#9184d9">Switchback</span>
+  <span style="width:1px;height:14px;background:rgba(233,233,237,.16)"></span>
+  <span style="font:400 10.5px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#75798c">Race relay</span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:7px"><span style="width:6px;height:6px;border-radius:50%;background:#e06d6d;box-shadow:0 0 8px rgba(224,109,109,.8)"></span><span style="font:400 10.5px/1 Inter,sans-serif;color:#9397ab">refused</span></span>
+</div>
+
+<div style="position:absolute;left:88px;top:150px;width:600px;display:flex;flex-direction:column;gap:22px">
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:#e06d6d">Couldn't join</span>
+    <span style="font:500 44px/1.12 Inter,sans-serif;letter-spacing:-.02em">Room 7KQD already has two pilots</span>
+    <span style="font:400 14px/1.7 Inter,sans-serif;color:#9397ab;max-width:470px">A race is two seats and both are taken. Start your own room and send the code, or wait for theirs to finish.</span>
+  </div>
+  <div style="display:flex;gap:12px">
+    <span style="display:flex;align-items:center;justify-content:center;width:200px;height:46px;border:1px solid #9184d9;border-radius:8px;font:600 13.5px/1 Inter,sans-serif;color:#d2cefd;box-shadow:0 0 22px rgba(145,132,217,.2)">Create a room</span>
+    <span style="display:flex;align-items:center;justify-content:center;width:150px;height:46px;border:1px solid rgba(233,233,237,.18);border-radius:8px;font:600 13.5px/1 Inter,sans-serif;color:#cfd3e5">Try another code</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:9px;padding-top:6px">
+    <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#75798c">Other refusals</span>
+    <div style="display:flex;gap:10px;font:400 11.5px/1.6 Inter,sans-serif;color:#9397ab"><span style="color:#cfd3e5;min-width:96px">no such room</span><span>That code has expired or was mistyped — codes are four characters.</span></div>
+    <div style="display:flex;gap:10px;font:400 11.5px/1.6 Inter,sans-serif;color:#9397ab"><span style="color:#cfd3e5;min-width:96px">version</span><span>One of you is running an older build. Reload both tabs.</span></div>
+    <div style="display:flex;gap:10px;font:400 11.5px/1.6 Inter,sans-serif;color:#9397ab"><span style="color:#cfd3e5;min-width:96px">relay down</span><span>Nothing is listening on :8787 — the server isn't running.</span></div>
+  </div>
+</div>
+
+<div style="position:absolute;left:88px;right:88px;bottom:56px;display:flex;flex-direction:column;gap:12px">
+  <span style="font:600 10px/1 Inter,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#75798c">Mid-race variant — connection dropped</span>
+  <div style="display:flex;align-items:center;gap:16px;height:70px;padding:0 20px;border-radius:10px;background:rgba(35,37,50,.8);box-shadow:inset 0 0 0 1px rgba(252,192,138,.35)">
+    <span style="display:flex;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#fcc08a"></span><span style="width:6px;height:6px;border-radius:50%;background:rgba(252,192,138,.5)"></span><span style="width:6px;height:6px;border-radius:50%;background:rgba(252,192,138,.22)"></span></span>
+    <span style="display:flex;flex-direction:column;gap:3px"><span style="font:600 14px/1.2 Inter,sans-serif">Reclaiming your seat in 7KQD…</span><span style="font:400 11.5px/1.2 Inter,sans-serif;color:#9397ab">Your run is paused, not lost. Vela keeps playing — you'll rejoin at the wave you left.</span></span>
+    <span style="margin-left:auto;display:flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border:1px solid rgba(233,233,237,.18);border-radius:8px;font:600 12px/1 Inter,sans-serif;color:#9397ab">Forfeit instead</span>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+
+</x-dc>
+</body>
+</html>

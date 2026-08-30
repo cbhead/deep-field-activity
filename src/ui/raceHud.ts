@@ -23,7 +23,7 @@ export interface RaceHud {
 
 const TOAST_MS = 3000;
 
-export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHud {
+export function createRaceHud(parent: HTMLElement, opponentName: string, room: string): RaceHud {
   const el = document.createElement('div');
   el.id = 'race-hud';
   el.style.cssText =
@@ -49,6 +49,23 @@ export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHu
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let peerOnline = true;
   let selfOnline = true;
+
+  // Reconnect banner, from the Race Lobby design's mid-race variant. One copy
+  // correction vs the spec: the local sim keeps running through a drop — only
+  // the reporting stops — so it says "your run continues", not "paused".
+  const bannerEl = document.createElement('div');
+  bannerEl.id = 'race-reconnect';
+  bannerEl.style.cssText =
+    'position:absolute;left:50%;bottom:96px;transform:translateX(-50%);z-index:6;display:none;' +
+    'align-items:center;gap:16px;height:64px;padding:0 20px;border-radius:10px;' +
+    'background:rgba(35,37,50,0.9);box-shadow:inset 0 0 0 1px rgba(252,192,138,0.35);' +
+    'color:#e9e9ed;font:13px/1.4 Inter,system-ui,sans-serif;pointer-events:none;white-space:nowrap';
+  bannerEl.innerHTML =
+    `<span style="display:flex;flex-direction:column;gap:3px">` +
+    `<span style="font-weight:600;font-size:14px">Reclaiming your seat in ${room}…</span>` +
+    `<span style="font-size:11.5px;color:#9397ab">Your run continues — reporting resumes the moment the relay is back. ` +
+    `${opponentName} sees you offline until then.</span></span>`;
+  parent.appendChild(bannerEl);
 
   function toast(text: string): void {
     toastEl.textContent = text;
@@ -95,12 +112,14 @@ export function createRaceHud(parent: HTMLElement, opponentName: string): RaceHu
     },
     selfConn(connected) {
       selfOnline = connected;
+      bannerEl.style.display = connected ? 'none' : 'flex';
       render();
     },
     remove() {
       if (toastTimer !== null) clearTimeout(toastTimer);
       el.remove();
       toastEl.remove();
+      bannerEl.remove();
     },
   };
 }

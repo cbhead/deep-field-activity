@@ -14,7 +14,8 @@ import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
 import { createHud } from './ui/hud.ts';
-import { planWave } from './sim/wavePlan.ts';
+import { planWave, waveCount } from './sim/wavePlan.ts';
+import { BALANCE } from './content/balance.ts';
 import { serverUrl } from './net/NetClient.ts';
 import { DEFAULT_PORT } from './net/protocol.ts';
 import { MatchController } from './net/MatchController.ts';
@@ -76,7 +77,8 @@ async function main(): Promise<void> {
 
   const lobby = createLobbyScreen(mount, {
     ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
-    onReady: () => controller.ready(),
+    facts: { sector: LEVEL01.name, waves: waveCount(), lives: BALANCE.startingLives },
+    onReady: (ready) => controller.ready(ready),
     onSubmit: (name, room) => {
       playerName = name;
       controller = new MatchController({
@@ -88,9 +90,9 @@ async function main(): Promise<void> {
           onLobby: (roomCode, players) => {
             currentRoom = roomCode;
             opponentName = players.find((p) => p.playerId !== controller.playerId)?.name ?? 'opponent';
-            lobby.showRoster(roomCode, players);
+            lobby.showRoster(roomCode, players, controller.playerId);
           },
-          onCountdown: (ms) => lobby.showCountdown(ms),
+          onCountdown: (ms, seed) => lobby.showCountdown(ms, seed),
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),
           onPeerConn: (connected) => raceHud?.peerConn(connected),
@@ -110,7 +112,7 @@ async function main(): Promise<void> {
           boot: (seed) => {
             lobby.remove();
             void startGame(mount, hudRoot, seed).then(({ world }) => {
-              raceHud = createRaceHud(mount, opponentName);
+              raceHud = createRaceHud(mount, opponentName, currentRoom);
               const bootAt = performance.now();
               const sample = (): Parameters<typeof controller.finish>[0] => ({
                 wave: world.wave.clearedThrough + 1,

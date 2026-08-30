@@ -26,8 +26,9 @@ export interface RaceStatus {
 export interface RaceHooks {
   /** Called once joined, and again whenever the lobby roster changes. */
   onLobby(room: string, players: LobbyPlayer[]): void;
-  /** Countdown has begun; boot() fires when it reaches zero. */
-  onCountdown(ms: number): void;
+  /** Countdown has begun; boot() fires when it reaches zero. The seed rides
+   *  along for display — it's the proof of fairness the mode rests on. */
+  onCountdown(ms: number, seed: number): void;
   /** Build the world with the server's seed and start the loop. */
   boot(seed: number): void;
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
@@ -116,8 +117,8 @@ export class MatchController {
     })();
   }
 
-  ready(): void {
-    this.client.send({ t: 'ready' });
+  ready(flag = true): void {
+    this.client.send(flag ? { t: 'ready' } : { t: 'ready', ready: false });
   }
 
   private pump: ReturnType<typeof setInterval> | null = null;
@@ -160,7 +161,7 @@ export class MatchController {
         hooks.onLobby(this.room, msg.players);
         break;
       case 'start':
-        hooks.onCountdown(msg.countdownMs);
+        hooks.onCountdown(msg.countdownMs, msg.seed);
         // Relative delay on purpose — wall clocks are never compared across
         // machines, so "start in 3000ms" is fair under any clock skew.
         setTimeout(() => hooks.boot(msg.seed), msg.countdownMs);

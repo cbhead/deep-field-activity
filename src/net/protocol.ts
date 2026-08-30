@@ -23,7 +23,8 @@ export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
  *  `resume` is a prior playerId: reclaim that seat after a dropped socket. */
 export type C2S =
   | { t: 'hello'; v: number; name: string; room?: string; resume?: string }
-  | { t: 'ready' }
+  /** ready:false un-readies — allowed until the countdown is dealt. */
+  | { t: 'ready'; ready?: boolean }
   /** `hidden` rides along on visibility changes: the sim freezes with the tab. */
   | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean }
   /** The run is over — defeat or full clear alike. lives>0 means a clear. */
