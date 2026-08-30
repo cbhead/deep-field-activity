@@ -22,6 +22,7 @@ import { MatchController } from './net/MatchController.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
 import { showResults } from './ui/resultsScreen.ts';
+import { getWebhook, matchReport, postToDiscord } from './ui/discord.ts';
 
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
   let opponentName = 'opponent';
   let currentRoom = '';
   let playerName = '';
+  let matchSeed = 0;
 
   // A rematch reloads the page with {name, room} stashed, then rejoins and
   // readies up without touching the form. Cleared immediately so a plain
@@ -108,8 +110,20 @@ async function main(): Promise<void> {
                 location.reload();
               },
             });
+            // Log the match to the shared channel — the webhook doubles as
+            // the match ledger. Only browsers with a webhook configured post
+            // (normally just the host's), so results arrive once.
+            if (getWebhook() !== null) {
+              void postToDiscord(
+                matchReport(LEVEL01.name, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit'),
+              ).then((ok) => {
+                const log = document.getElementById('results-log');
+                if (log) log.textContent = ok ? 'match logged to Discord ✓' : "couldn't log to Discord — check the webhook";
+              });
+            }
           },
           boot: (seed) => {
+            matchSeed = seed;
             lobby.remove();
             void startGame(mount, hudRoot, seed).then(({ world }) => {
               raceHud = createRaceHud(mount, opponentName, currentRoom);

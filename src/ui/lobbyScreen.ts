@@ -16,6 +16,7 @@
  */
 import { DEFAULT_PORT, type LobbyPlayer } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
+import { getWebhook, postToDiscord, saveWebhook } from './discord.ts';
 
 export interface LobbyScreen {
   showRoster(room: string, players: LobbyPlayer[], myId: string): void;
@@ -172,39 +173,27 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
    */
   function sendToDiscord(room: string): void {
     const btn = el.querySelector('#race-discord') as HTMLButtonElement | null;
-    const hook = localStorage.getItem('discord-webhook');
-    if (!hook) {
+    if (getWebhook() === null) {
       (el.querySelector('#race-discord-cfg') as HTMLElement).style.display = 'flex';
       el.querySelector<HTMLInputElement>('#race-webhook')?.focus();
       return;
     }
     if (btn) btn.textContent = 'Sending…';
-    void fetch(hook, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        content: `Race me in ${opts.facts.sector} — room **${room}**\n${inviteLink(room)}\n(Needs Tailscale up; the link only works on our tailnet.)`,
-      }),
-    }).then(
-      (r) => {
-        if (btn) btn.textContent = r.ok ? 'Sent to Discord ✓' : 'Discord refused it — check the webhook';
-      },
-      () => {
-        if (btn) btn.textContent = "Couldn't reach Discord — check the webhook";
-      },
-    );
+    void postToDiscord(
+      `Race me in ${opts.facts.sector} — room **${room}**\n${inviteLink(room)}\n(Needs Tailscale up; the link only works on our tailnet.)`,
+    ).then((ok) => {
+      if (btn) btn.textContent = ok ? 'Sent to Discord ✓' : "Couldn't send — check the webhook";
+    });
   }
 
   function wireDiscord(room: string): void {
     el.querySelector('#race-discord')?.addEventListener('click', () => sendToDiscord(room));
     el.querySelector('#race-webhook-save')?.addEventListener('click', () => {
       const input = el.querySelector('#race-webhook') as HTMLInputElement;
-      const url = input.value.trim();
-      if (!url.startsWith('https://discord.com/api/webhooks/')) {
+      if (!saveWebhook(input.value.trim())) {
         input.style.boxShadow = 'inset 0 0 0 1px rgba(224,109,109,.6)';
         return;
       }
-      localStorage.setItem('discord-webhook', url);
       (el.querySelector('#race-discord-cfg') as HTMLElement).style.display = 'none';
       sendToDiscord(room);
     });
@@ -219,7 +208,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     `placeholder="https://discord.com/api/webhooks/…" value="${localStorage.getItem('discord-webhook') ?? ''}">` +
     `<div style="display:flex;align-items:center;gap:12px">` +
     `<button id="race-webhook-save" class="lb-btn dim" style="height:36px;font-size:12px">Save & send</button>` +
-    `<span class="lb-fine">Discord: channel → Edit → Integrations → Webhooks → New Webhook → Copy URL. Stays in this browser.</span>` +
+    `<span class="lb-fine">Discord: channel → Edit → Integrations → Webhooks → New Webhook → Copy URL. Stays in this browser. ` +
+    `Match results post to the same channel — set this on one machine only, or they arrive twice.</span>` +
     `</div></div>`;
 
   const bar = (sub: string, conn: string, bad = false): string =>

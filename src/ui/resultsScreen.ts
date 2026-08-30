@@ -18,7 +18,7 @@ export interface ResultsOptions {
   onRematch(): void;
 }
 
-const fmtTime = (ms: number): string => {
+export const fmtTime = (ms: number): string => {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
@@ -51,7 +51,8 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
     `<div style="font-size:26px;letter-spacing:3px">${headline}</div>` +
     `<div>${rows}</div>` +
     `<button id="race-rematch" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.3);color:inherit;font:inherit;padding:8px 14px;border-radius:4px;cursor:pointer">rematch</button>` +
-    `<a href="?race" style="color:inherit;opacity:0.7">leave</a></div>`;
+    `<a href="?race" style="color:inherit;opacity:0.7">leave</a>` +
+    `<div id="results-log" style="font-size:11.5px;color:#75798c;min-height:15px"></div></div>`;
 
   el.querySelector('#race-rematch')!.addEventListener('click', opts.onRematch);
 }
