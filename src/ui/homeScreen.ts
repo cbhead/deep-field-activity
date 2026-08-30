@@ -113,6 +113,12 @@ const STYLE = `
    share a container rather than each growing their own screen. */
 #home-screen .hm-sheet{position:absolute;inset:0;z-index:20;display:grid;place-items:center;
   background:rgba(4,5,10,.82);padding:32px}
+/* The display:grid above beats the hidden attribute's default display:none, so
+   without this rule the sheet — an 82%-black full-bleed backdrop — covers the
+   home screen permanently. DOM tests could not see it: the markup underneath
+   was correct, and a programmatic click fires straight through an overlay. It
+   showed up only in a screenshot. */
+#home-screen .hm-sheet[hidden]{display:none}
 #home-screen .hm-sheet-in{position:relative;max-width:760px;max-height:88%;overflow-y:auto;
   padding:26px 30px;border:1px solid #23263a;border-radius:14px;background:#0b0d16}
 #home-screen .hm-sheet h2{margin:0 0 6px;font:500 24px/1.2 Inter,sans-serif;color:#f2f3f8}

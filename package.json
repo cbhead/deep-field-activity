@@ -1,6 +1,6 @@
 {
   "name": "tower-defense",
-  "description": "Deep Field — a tower defense game with a two-player Race mode over Tailscale",
+  "description": "Deep Field \u2014 a tower defense game with a two-player Race mode over Tailscale",
   "license": "MIT",
   "private": true,
   "version": "0.0.0",
@@ -19,7 +19,8 @@
     "server": "zsh scripts/server.sh",
     "play": "zsh scripts/play.sh",
     "sweep": "zsh scripts/sweep.sh",
-    "campaign": "zsh scripts/campaign.sh"
+    "campaign": "zsh scripts/campaign.sh",
+    "shots": "zsh scripts/shots.sh"
   },
   "dependencies": {
     "pixi.js": "^8.20.1",

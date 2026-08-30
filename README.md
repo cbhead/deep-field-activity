@@ -4,7 +4,7 @@ A tower defense game for your browser — hold the line through a three-sector
 campaign, or race a friend head-to-head on the same seed and see who survives
 longer.
 
-![Wave 10 under fire on Switchback: five station types ringing the route, contacts taking damage as they run the gauntlet, and the build deck along the bottom](docs/media/gameplay.png)
+![Switchback under fire: the route lit from dim at the spawn to bright at the pulsar, six stations ringing it, contacts mid-run, and the build deck along the bottom](docs/media/gameplay.png)
 
 Five station types across three sectors — Switchback, Cascade and Pincer, 34
 waves in all — at three difficulty tiers. The simulation is deterministic: a
@@ -88,16 +88,27 @@ No Tailscale, no friend, no setup beyond the clone:
 npm run play
 ```
 
-Open <http://localhost:8787> and start the campaign. Three sectors, three
-difficulties — Recon (30 lives), Standard (20), and Blackout (14 lives and
-tougher contacts). Money you finish a sector with carries into the next one.
+Open <http://localhost:8787>. The home screen picks up where you left off —
+Continue resumes the sector you last played, at the difficulty you last used:
+
+![The Deep Field home screen: the game's name over a dimmed board, a Continue button showing the sector it resumes, and Campaign and Race cards side by side](docs/media/home.png)
+
+Three sectors, three difficulties — Recon (30 lives), Standard (20), and
+Blackout (14 lives and tougher contacts). Each card draws its own board, so you
+can see the shape you are choosing rather than read about it; a locked sector
+shows its board dimmed rather than hiding it. Difficulty is on the card, so
+launching is one click:
+
+![The sector picker: three cards, each showing its real board as a thumbnail, with waves, road length and turn count as numerals, difficulty inline, and the third sector locked but still showing its board](docs/media/sectors.png)
+
+Money you finish a sector with carries into the next one.
 
 Every station upgrades along three independent paths, and the board shows which
 one you've committed to. Select a station to see what it's actually doing —
 damage dealt, kills, and what it does to the contact type currently on the
 board:
 
-![A Nova station selected: its range ring on the board, and an inspector panel showing damage, rate, range and kills alongside three upgrade options — damage, range and blast](docs/media/upgrades.png)
+![A Singularity station selected: its reach ring on the board, and an inspector showing the station wearing its upgrade collar at full size, its slow figures as numeral chips, and three upgrade cards](docs/media/inspector.png)
 
 Progress saves in your browser (localStorage), so use the same browser to
 continue a run.
@@ -112,7 +123,18 @@ npm run lint        # ESLint
 npm run check       # headless simulation gates — the balance test suite
 npm run campaign    # explore the campaign arc headlessly
 npm run sweep       # balance sweeps
+npm run shots       # re-take the README screenshots (needs `npm run dev` running)
 ```
+
+The screenshots above are scripted rather than taken by hand — see
+`tools/shots.ts`. They went stale the moment the board was rebuilt and nothing
+caught it, because a screenshot has no typechecker; making them one command
+means they can be refreshed as part of landing a visual change instead of when
+somebody remembers. It drives a real Chrome over the DevTools protocol, so the
+simulation actually runs, and it fails loudly if a screen it expected is not on
+screen. The two race captures are still taken by hand: they need two clients and
+a relay between them, and faking that would photograph something the game does
+not do.
 
 `npm run play` is the single-port build: it bundles the client and serves both
 the page and the WebSocket relay from one process, so the socket follows
