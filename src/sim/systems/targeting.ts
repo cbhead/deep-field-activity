@@ -41,6 +41,8 @@ export function fireTowers(w: World, dt: number): void {
       towerId: t.id,
       x: t.x,
       y: t.y,
+      ox: t.x,
+      oy: t.y,
       target: best,
       tx: aim.x,
       ty: aim.y,

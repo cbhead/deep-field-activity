@@ -205,6 +205,7 @@ export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): C
     speed: def.speed,
     slowTimer: 0,
     slowFactor: 1,
+    slowMax: 0,
     hp: health,
     maxHp: health,
     shield,

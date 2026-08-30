@@ -52,10 +52,11 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
   // heavy shot is not wasted on a thin shield the way it would be if the shield
   // simply ate the whole hit.
   let toHull = effective;
+  let toShield = 0;
   if (c.shield > 0) {
-    const absorbed = Math.min(c.shield, toHull);
-    c.shield -= absorbed;
-    toHull -= absorbed;
+    toShield = Math.min(c.shield, toHull);
+    c.shield -= toShield;
+    toHull -= toShield;
     if (c.shield === 0) w.events.push({ type: 'shieldBroke', x: c.x, y: c.y });
   }
 
@@ -71,6 +72,7 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
     x: c.x,
     y: c.y,
     amount: landed,
+    toShield,
     defId: source?.defId ?? null,
   });
 

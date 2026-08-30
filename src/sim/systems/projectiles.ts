@@ -148,6 +148,11 @@ function detonate(w: World, p: Projectile, def: TowerDef, source: Tower | undefi
   const r = def.splashRadius;
   const r2 = r * r;
 
+  // Announced before the damage loop, and unconditionally: a detonation that
+  // caught nothing is exactly the one the player most needs to see, because it
+  // is the one telling them the station is mistimed or misplaced.
+  w.events.push({ type: 'blast', x: p.x, y: p.y, radius: r, defId: p.defId });
+
   for (const c of w.creeps) {
     // The direct hit was already paid in full by the caller.
     if (c.dead || c === p.target) continue;
@@ -174,6 +179,10 @@ function applySlow(c: Creep, def: TowerDef): void {
 
   if (c.slowTimer <= 0 || def.slowFactor < c.slowFactor) c.slowFactor = def.slowFactor;
   c.slowTimer = Math.max(c.slowTimer, def.slowSeconds);
+  // The ring reads `slowTimer / slowMax`, so the denominator has to grow with a
+  // refresh that extended the slow — otherwise a re-hit would show an arc
+  // stuck at full and the countdown would stop meaning anything.
+  c.slowMax = Math.max(c.slowMax, c.slowTimer);
 }
 
 /** Squared distance from a point to a segment. No `sqrt` — ordering is all we need. */

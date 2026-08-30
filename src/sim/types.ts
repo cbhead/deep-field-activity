@@ -84,6 +84,15 @@ export interface Creep {
    */
   slowTimer: number;
   slowFactor: number;
+  /**
+   * What `slowTimer` started at, so the renderer can show how much of the slow
+   * is *left* rather than merely that there is one.
+   *
+   * Carried on the contact rather than looked up from the station that applied
+   * it, because that station can be sold, upgraded or outranged before the slow
+   * expires — and the ring has to keep counting down truthfully regardless.
+   */
+  slowMax: number;
   hp: number;
   maxHp: number;
 
@@ -181,6 +190,15 @@ export interface Projectile {
   readonly hits: EntityId[];
 
   /**
+   * Where this shot was fired from. Only meaningful for a piercing shot, which
+   * is drawn as the whole line it has crossed rather than as a dot with a stub
+   * of tail — pierce is a mechanic you pay a premium for and could not
+   * previously see working.
+   */
+  readonly ox: number;
+  readonly oy: number;
+
+  /**
    * A direct reference, not an id.
    *
    * An id would mean an O(creeps) lookup per projectile per tick, which is
@@ -268,8 +286,26 @@ export type SimEvent =
       x: number;
       y: number;
       amount: number;
+      /**
+       * How much of `amount` the overshield ate.
+       *
+       * Split out because "my stations are firing and it will not die" has two
+       * completely different causes — no damage, or all of it landing on a
+       * shield that regenerates — and the floating numbers could not tell them
+       * apart. A Warden soaking a volley now reads as a wall of shield-coloured
+       * numbers instead of looking like stations doing nothing.
+       */
+      toShield: number;
       defId: TowerId | null;
     }
+  /**
+   * A detonation, emitted whether or not it caught anything.
+   *
+   * Carries the radius so the ring drawn is the blast that actually happened —
+   * the alternative is the renderer looking the station's splash up itself,
+   * which would quietly start lying the moment splash varies by tier.
+   */
+  | { type: 'blast'; x: number; y: number; radius: number; defId: TowerId }
   | { type: 'creepKilled'; x: number; y: number; bounty: number; defId: EnemyId }
   /** A contact broke apart. Carries the children's type so the burst matches. */
   | { type: 'creepSplit'; x: number; y: number; into: EnemyId; count: number }
