@@ -19,8 +19,6 @@ export interface EnemyDef {
   readonly bounty: number;
   /** Draw and hit radius, in tiles. */
   readonly radius: number;
-  /** Sprite tint. Presentational, but it belongs with the rest of the def. */
-  readonly color: number;
 }
 
 export interface TowerDef {
@@ -36,7 +34,6 @@ export interface TowerDef {
   readonly fireInterval: number;
   /** Tiles per second. A high value simulates hitscan without a second system. */
   readonly projectileSpeed: number;
-  readonly color: number;
   /** Number key that selects this tower. */
   readonly hotkey: string;
 }

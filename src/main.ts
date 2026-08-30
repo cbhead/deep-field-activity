@@ -4,6 +4,7 @@ import { buildMapLayer } from './render/mapLayer.ts';
 import { WorldView } from './render/worldView.ts';
 import { Overlay } from './render/overlay.ts';
 import { tilesToPx } from './render/constants.ts';
+import { applyHudTheme } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
 import { parseMap } from './sim/util/grid.ts';
 import { hashSeed, formatSeed } from './sim/util/rng.ts';
@@ -30,6 +31,11 @@ function resolveSeed(): number {
 
 /** The HUD is text; 10Hz is indistinguishable from 60 and does a sixth the work. */
 const HUD_INTERVAL_MS = 100;
+
+// Before main(), not inside it: main is async and the stylesheet resolves every
+// colour through these properties, so deferring them to the first await would
+// paint an unstyled HUD.
+applyHudTheme();
 
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');

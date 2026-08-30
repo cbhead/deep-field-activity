@@ -9,10 +9,10 @@
   "scripts": {
     "dev": "zsh scripts/dev.sh",
     "dev:raw": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "zsh scripts/build.sh",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "typecheck": "zsh scripts/typecheck.sh",
+    "lint": "zsh scripts/lint.sh .",
     "check": "zsh scripts/check.sh"
   },
   "dependencies": {

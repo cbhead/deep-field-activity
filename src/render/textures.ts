@@ -1,5 +1,6 @@
 import { Graphics, type Renderer, type Texture } from 'pixi.js';
-import { TILE_PX, COLORS } from './constants.ts';
+import { TILE_PX } from './constants.ts';
+import { BAKE_NEUTRAL, THEME } from './theme.ts';
 
 /**
  * Every repeated visual is baked into a GPU texture once, then instanced as
@@ -53,10 +54,10 @@ function bake(renderer: Renderer, draw: (g: Graphics) => void): Texture {
  * reads as one continuous road.
  */
 const flatTile =
-  (fill: number, edge?: number) =>
+  (fill: number, edge: number | null) =>
   (g: Graphics): void => {
     g.rect(0, 0, TILE_PX, TILE_PX).fill(fill);
-    if (edge !== undefined) {
+    if (edge !== null) {
       // Inset by half a pixel so the 1px stroke lands on the pixel, not across two.
       g.rect(0.5, 0.5, TILE_PX - 1, TILE_PX - 1).stroke({ width: 1, color: edge, alpha: 0.6 });
     }
@@ -64,41 +65,45 @@ const flatTile =
 
 export function createTextures(renderer: Renderer): Textures {
   const r = CREEP_BAKE_RADIUS * TILE_PX;
+  const { board, shape } = THEME;
+
   return {
     creep: bake(renderer, (g) => {
       g.circle(r, r, r - 1)
-        .fill(0xffffff)
-        .stroke({ width: 2, color: 0x000000, alpha: 0.35 });
+        .fill(BAKE_NEUTRAL)
+        .stroke({ width: shape.strokeWidth, color: shape.outline, alpha: shape.outlineAlpha });
     }),
 
     // A plinth with a barrel hub, so a tower reads as built rather than as a
-    // coloured tile. Drawn white; the tint carries the type.
+    // coloured tile. Drawn neutral; the tint carries the type.
     tower: bake(renderer, (g) => {
-      const pad = 4;
-      const size = TILE_PX - pad * 2;
-      g.roundRect(pad, pad, size, size, 7)
-        .fill({ color: 0xffffff, alpha: 0.32 })
-        .stroke({ width: 2, color: 0xffffff });
-      g.circle(TILE_PX / 2, TILE_PX / 2, TILE_PX * 0.19).fill(0xffffff);
+      const size = TILE_PX - shape.towerPad * 2;
+      g.roundRect(shape.towerPad, shape.towerPad, size, size, shape.towerCorner)
+        .fill({ color: BAKE_NEUTRAL, alpha: shape.towerFillAlpha })
+        .stroke({ width: shape.strokeWidth, color: BAKE_NEUTRAL });
+      g.circle(TILE_PX / 2, TILE_PX / 2, TILE_PX * shape.hubRatio).fill(BAKE_NEUTRAL);
     }),
 
     projectile: bake(renderer, (g) => {
       const pr = PROJECTILE_RADIUS * TILE_PX;
       // A soft halo under a hard core: at this size a plain dot disappears
       // against the board, and the halo is what makes fire legible.
-      g.circle(pr * 2, pr * 2, pr * 1.9).fill({ color: 0xffffff, alpha: 0.22 });
-      g.circle(pr * 2, pr * 2, pr).fill(0xffffff);
+      g.circle(pr * 2, pr * 2, pr * shape.haloRatio).fill({
+        color: BAKE_NEUTRAL,
+        alpha: shape.haloAlpha,
+      });
+      g.circle(pr * 2, pr * 2, pr).fill(BAKE_NEUTRAL);
     }),
-    ground: bake(renderer, flatTile(COLORS.ground, COLORS.gridLine)),
-    groundAlt: bake(renderer, flatTile(COLORS.groundAlt, COLORS.gridLine)),
-    path: bake(renderer, flatTile(COLORS.path)),
+    ground: bake(renderer, flatTile(board.ground, board.gridLine)),
+    groundAlt: bake(renderer, flatTile(board.groundAlt, board.gridLine)),
+    path: bake(renderer, flatTile(board.path, board.pathEdge)),
     blocked: bake(
       renderer,
       (g) => {
-        g.rect(0, 0, TILE_PX, TILE_PX).fill(COLORS.ground);
+        g.rect(0, 0, TILE_PX, TILE_PX).fill(board.ground);
         g.roundRect(3, 3, TILE_PX - 6, TILE_PX - 6, 5)
-          .fill(COLORS.blocked)
-          .stroke({ width: 1, color: COLORS.blockedEdge });
+          .fill(board.blocked)
+          .stroke({ width: 1, color: board.blockedEdge });
       },
     ),
   };

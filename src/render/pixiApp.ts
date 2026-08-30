@@ -1,5 +1,5 @@
 import { Application, Container } from 'pixi.js';
-import { COLORS } from './constants.ts';
+import { THEME } from './theme.ts';
 
 /**
  * Draw layers, back to front. Keeping these as named containers means z-order is
@@ -32,7 +32,7 @@ export async function createRenderer(
   await app.init({
     width,
     height,
-    background: COLORS.bg,
+    background: THEME.board.bg,
 
     // Crisp on retina without changing our logical coordinate space.
     resolution: window.devicePixelRatio || 1,

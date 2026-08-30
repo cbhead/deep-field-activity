@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
-import { TILE_PX, COLORS } from './constants.ts';
+import { TILE_PX } from './constants.ts';
+import { THEME } from './theme.ts';
 import type { Textures } from './textures.ts';
 
 /**
@@ -54,12 +55,12 @@ function buildEndMarkers(map: MapDef): Graphics {
   g.moveTo(ax + dx * r, ay + dy * r)
     .lineTo(ax - dx * r + dy * r, ay - dy * r + dx * r)
     .lineTo(ax - dx * r - dy * r, ay - dy * r - dx * r)
-    .fill({ color: COLORS.spawn, alpha: 0.85 });
+    .fill({ color: THEME.board.spawn, alpha: 0.85 });
 
   const gx = map.goal.x * TILE_PX;
   const gy = map.goal.y * TILE_PX;
-  g.circle(gx, gy, TILE_PX * 0.34).stroke({ width: 3, color: COLORS.goal, alpha: 0.9 });
-  g.circle(gx, gy, TILE_PX * 0.14).fill({ color: COLORS.goal, alpha: 0.6 });
+  g.circle(gx, gy, TILE_PX * 0.34).stroke({ width: 3, color: THEME.board.goal, alpha: 0.9 });
+  g.circle(gx, gy, TILE_PX * 0.14).fill({ color: THEME.board.goal, alpha: 0.6 });
 
   return g;
 }

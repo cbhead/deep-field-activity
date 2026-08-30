@@ -1,13 +1,12 @@
-:root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --panel-edge: #334155;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --danger: #ef4444;
-}
+/* --bg, --panel, --panel-edge, --text, --muted, --danger and --accent are set
+   by applyHudTheme() at boot, from src/render/theme.ts. This file deliberately
+   declares no colour of its own: one palette, one source, no drift.
 
+   `color-scheme: dark` covers the frame before that runs, so the gap reads as
+   dark rather than as a white flash. */
 * { box-sizing: border-box; }
+
+html { color-scheme: dark; }
 
 html, body {
   margin: 0;
@@ -88,7 +87,8 @@ html, body {
 }
 
 .tower-btn {
-  --tint: #60a5fa;
+  /* Overwritten inline per button with the tower's own colour. */
+  --tint: var(--accent);
   display: grid;
   grid-template-areas: "key name" "key cost";
   grid-template-columns: auto 1fr;
@@ -99,7 +99,7 @@ html, body {
   border: 1px solid var(--panel-edge);
   border-left: 3px solid var(--tint);
   border-radius: 7px;
-  background: #0f172a;
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -109,7 +109,7 @@ html, body {
 .tower-btn:hover { border-color: var(--tint); }
 
 .tower-btn.is-selected {
-  background: color-mix(in srgb, var(--tint) 22%, #0f172a);
+  background: color-mix(in srgb, var(--tint) 22%, var(--bg));
   border-color: var(--tint);
 }
 

@@ -14,7 +14,6 @@ export const ENEMIES = {
     speed: 1.8,
     bounty: 4,
     radius: 0.3,
-    color: 0xf472b6,
   },
 } as const satisfies Record<string, EnemyDef>;
 

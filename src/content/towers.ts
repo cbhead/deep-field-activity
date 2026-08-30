@@ -21,7 +21,6 @@ export const TOWERS = {
     damage: 6,
     fireInterval: 0.5,
     projectileSpeed: 14,
-    color: 0x60a5fa,
     hotkey: '1',
   },
   cannon: {
@@ -33,7 +32,6 @@ export const TOWERS = {
     damage: 20,
     fireInterval: 1.4,
     projectileSpeed: 9,
-    color: 0xfb923c,
     hotkey: '2',
   },
   frost: {
@@ -47,7 +45,6 @@ export const TOWERS = {
     // Fast enough to land the same tick it is fired, in practice. Hitscan
     // without a second damage path and a second set of bugs.
     projectileSpeed: 40,
-    color: 0x67e8f9,
     hotkey: '3',
   },
 } as const satisfies Record<string, TowerDef>;

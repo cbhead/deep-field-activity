@@ -1,10 +1,10 @@
 import { Sprite, type Container } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
-import { TOWERS } from '../content/towers.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
 import { TILE_PX } from './constants.ts';
+import { THEME } from './theme.ts';
 import { CREEP_BAKE_RADIUS, type Textures } from './textures.ts';
 
 interface EntityView {
@@ -46,7 +46,7 @@ export class WorldView {
     for (const t of w.towers) {
       if (this.towers.has(t.id)) continue;
       const sprite = new Sprite(this.textures.tower);
-      sprite.tint = TOWERS[t.defId].color;
+      sprite.tint = THEME.towers[t.defId];
       sprite.position.set(t.col * TILE_PX, t.row * TILE_PX);
       this.layers.towers.addChild(sprite);
       this.towers.add(t.id);
@@ -58,7 +58,7 @@ export class WorldView {
       const def = ENEMIES[c.defId];
       const sprite = new Sprite(this.textures.creep);
       sprite.anchor.set(0.5);
-      sprite.tint = def.color;
+      sprite.tint = THEME.enemies[c.defId];
       sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);
       return sprite;
     });
@@ -66,7 +66,7 @@ export class WorldView {
     this.syncEntities(w.projectiles, this.projectiles, this.layers.projectiles, (p) => {
       const sprite = new Sprite(this.textures.projectile);
       sprite.anchor.set(0.5);
-      sprite.tint = TOWERS[p.defId].color;
+      sprite.tint = THEME.towers[p.defId];
       return sprite;
     });
 

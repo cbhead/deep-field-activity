@@ -2,7 +2,8 @@ import { Graphics, Sprite } from 'pixi.js';
 import { TOWERS, type TowerId } from '../content/towers.ts';
 import { placementError } from '../sim/build.ts';
 import type { World } from '../sim/world.ts';
-import { COLORS, TILE_PX } from './constants.ts';
+import { TILE_PX } from './constants.ts';
+import { THEME } from './theme.ts';
 import type { Layers } from './pixiApp.ts';
 import type { Textures } from './textures.ts';
 
@@ -59,7 +60,9 @@ export class Overlay {
     }
 
     const ok = reason === null;
-    const tint = ok ? TOWERS[selected].color : COLORS.invalid;
+    // A legal ghost wears the tower's own colour, which answers "which tower"
+    // as well as "yes"; only rejection needs a dedicated red.
+    const tint = ok ? THEME.towers[selected] : THEME.feedback.invalid;
     const cx = (col + 0.5) * TILE_PX;
     const cy = (row + 0.5) * TILE_PX;
 
@@ -68,15 +71,16 @@ export class Overlay {
     this.ghost.position.set(col * TILE_PX, row * TILE_PX);
 
     // Range first, so the ghost sits on top of it.
+    const { rangeFillAlpha, rangeStrokeAlpha, tileOutlineAlpha } = THEME.feedback;
     this.gfx
       .circle(cx, cy, TOWERS[selected].range * TILE_PX)
-      .fill({ color: tint, alpha: 0.08 })
-      .stroke({ width: 2, color: tint, alpha: 0.55 });
+      .fill({ color: tint, alpha: rangeFillAlpha })
+      .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: rangeStrokeAlpha });
 
     // A tile outline reads as "this exact square", which the soft range circle
     // alone does not communicate.
     this.gfx
       .rect(col * TILE_PX, row * TILE_PX, TILE_PX, TILE_PX)
-      .stroke({ width: 2, color: tint, alpha: 0.9 });
+      .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: tileOutlineAlpha });
   }
 }

@@ -1,4 +1,5 @@
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
+import { css, THEME } from '../render/theme.ts';
 import { waveCount } from '../sim/wavePlan.ts';
 import type { World } from '../sim/world.ts';
 
@@ -44,7 +45,7 @@ export function createHud(root: HTMLElement, cb: HudCallbacks): Hud {
       `<span class="tower-key">${def.hotkey}</span>` +
       `<span class="tower-name">${def.name}</span>` +
       `<span class="tower-cost">$${def.cost}</span>`;
-    btn.style.setProperty('--tint', `#${def.color.toString(16).padStart(6, '0')}`);
+    btn.style.setProperty('--tint', css(THEME.towers[id]));
     btn.addEventListener('click', () => {
       cb.onSelect(btn.classList.contains('is-selected') ? null : id);
     });
