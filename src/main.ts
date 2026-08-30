@@ -7,7 +7,7 @@ import { Effects } from './render/effects.ts';
 import { TowerChrome } from './render/towerChrome.ts';
 import { CreepChrome } from './render/creepChrome.ts';
 import { tilesToPx } from './render/constants.ts';
-import { applyHudTheme } from './render/theme.ts';
+import { applyHudTheme, fieldFor } from './render/theme.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
 import { CAMPAIGN, levelById, levelIndex, type LevelDef } from './content/levels.ts';
 import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from './content/difficulty.ts';
@@ -335,15 +335,19 @@ async function startGame(
 
   const boardW = tilesToPx(map.cols);
   const boardH = tilesToPx(map.rows);
-  const { app, layers } = await createRenderer(mount, boardW, boardH);
 
-  const textures = createTextures(app.renderer);
-  layers.map.addChild(buildMapLayer(map, textures));
+  // Race passes no level, so it plays the baseline ground — the same one on both
+  // clients, which is what keeps two screens comparable at a glance.
+  const field = fieldFor(opts.level?.field);
+  const { app, layers } = await createRenderer(mount, boardW, boardH, field);
+
+  const textures = createTextures(app.renderer, field);
+  layers.map.addChild(buildMapLayer(map, textures, field));
 
   const view = new WorldView(layers, textures);
   const overlay = new Overlay(layers, textures);
   const effects = new Effects(layers, boardW, boardH);
-  const towerChrome = new TowerChrome(layers);
+  const towerChrome = new TowerChrome(layers, field);
   const creepChrome = new CreepChrome(layers);
 
   function togglePause(): void {

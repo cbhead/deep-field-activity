@@ -1,6 +1,6 @@
 import { Application, Container } from 'pixi.js';
 import { DECK_PX, TOP_PX } from './constants.ts';
-import { THEME } from './theme.ts';
+import type { SectorField } from './theme.ts';
 
 /**
  * Draw layers, back to front. Keeping these as named containers means z-order is
@@ -25,6 +25,7 @@ export async function createRenderer(
   mount: HTMLElement,
   width: number,
   height: number,
+  field: SectorField,
 ): Promise<Renderer> {
   const app = new Application();
 
@@ -33,7 +34,7 @@ export async function createRenderer(
   await app.init({
     width,
     height,
-    background: THEME.board.bg,
+    background: field.bg,
 
     // Crisp on retina without changing our logical coordinate space.
     resolution: window.devicePixelRatio || 1,

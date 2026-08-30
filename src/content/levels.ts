@@ -16,6 +16,7 @@ import { LEVEL01 } from './maps/level01.ts';
 import { LEVEL02 } from './maps/level02.ts';
 import { LEVEL03 } from './maps/level03.ts';
 import { WAVES_SWITCHBACK, WAVES_CASCADE, WAVES_PINCER } from './waves.ts';
+import type { SectorFieldId } from './sectors.ts';
 import type { MapSource, WaveDef } from './types.ts';
 
 export interface LevelDef {
@@ -28,6 +29,16 @@ export interface LevelDef {
   readonly blurb: string;
   readonly map: MapSource;
   readonly waves: readonly WaveDef[];
+  /**
+   * Which ground this sector is set in — an id resolved to colours in
+   * `render/theme.ts`, never a colour itself. See `sectors.ts`.
+   *
+   * The one presentation *concept* content names, as opposed to the
+   * presentation *copy* in `kicker` and `blurb`. It earns that because three
+   * boards that look identical make the campaign feel like one board with the
+   * label changed, and the renderer cannot know which is which on its own.
+   */
+  readonly field: SectorFieldId;
 }
 
 export const CAMPAIGN: readonly LevelDef[] = [
@@ -39,6 +50,7 @@ export const CAMPAIGN: readonly LevelDef[] = [
       'Six turns and a short road. Every contact type shows up here for the first time, one wave before it matters.',
     map: LEVEL01,
     waves: WAVES_SWITCHBACK,
+    field: 'switchback',
   },
   {
     id: 'level02',
@@ -48,6 +60,7 @@ export const CAMPAIGN: readonly LevelDef[] = [
       'Three long sweeps and an open middle band. More road buys you time — and the waves spend all of it on numbers.',
     map: LEVEL02,
     waves: WAVES_CASCADE,
+    field: 'cascade',
   },
   {
     id: 'level03',
@@ -57,6 +70,7 @@ export const CAMPAIGN: readonly LevelDef[] = [
       'A symmetric double hairpin around a pocket that reaches both lanes. Build one strong point, not five weak ones.',
     map: LEVEL03,
     waves: WAVES_PINCER,
+    field: 'pincer',
   },
 ];
 

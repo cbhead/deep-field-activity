@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import type { MapDef } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
 import { TILE_PX } from './constants.ts';
-import { THEME } from './theme.ts';
+import type { SectorField } from './theme.ts';
 import type { Textures } from './textures.ts';
 
 /**
@@ -15,11 +15,11 @@ import type { Textures } from './textures.ts';
  * zero running cost into a per-frame one, and it would put motion in the
  * background of a game where motion is how you spot a contact.
  */
-export function buildMapLayer(map: MapDef, tex: Textures): Container {
+export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): Container {
   const layer = new Container();
 
   // Beneath the tiles, which are baked translucent so it shows through.
-  layer.addChild(buildStarfield(map.cols * TILE_PX, map.rows * TILE_PX));
+  layer.addChild(buildStarfield(map.cols * TILE_PX, map.rows * TILE_PX, field));
 
   const tileField = new Container();
   for (let row = 0; row < map.rows; row++) {
@@ -42,7 +42,7 @@ export function buildMapLayer(map: MapDef, tex: Textures): Container {
     }
   }
   layer.addChild(tileField);
-  layer.addChild(buildEndMarkers(map));
+  layer.addChild(buildEndMarkers(map, field));
 
   return layer;
 }
@@ -76,7 +76,7 @@ const SKY_SEED = 0x5c1f;
  * reason the tiles are Sprites — 300 renderables walked every frame to draw a
  * thing that never changes is the cost this layer exists to avoid.
  */
-function buildStarfield(width: number, height: number): Graphics {
+function buildStarfield(width: number, height: number, field: SectorField): Graphics {
   const g = new Graphics();
   const rand = mulberry32(SKY_SEED);
 
@@ -93,7 +93,7 @@ function buildStarfield(width: number, height: number): Graphics {
     const alpha = bright ? 0.55 + rand() * 0.25 : 0.16 + rand() * 0.34;
 
     g.circle(x, y, radius).fill({
-      color: bright ? THEME.board.starBright : THEME.board.star,
+      color: bright ? field.starBright : field.star,
       alpha,
     });
   }
@@ -117,7 +117,7 @@ const PULSAR_RINGS: readonly (readonly [number, number, number])[] = [
 ];
 
 /** Spawn chevron and goal pulsar. Two markers, so plain Graphics is fine here. */
-function buildEndMarkers(map: MapDef): Graphics {
+function buildEndMarkers(map: MapDef, field: SectorField): Graphics {
   const g = new Graphics();
 
   // The spawn point sits one tile off-board; draw the chevron on the first
@@ -134,11 +134,11 @@ function buildEndMarkers(map: MapDef): Graphics {
   g.moveTo(ax + dx * r, ay + dy * r)
     .lineTo(ax - dx * r + dy * r, ay - dy * r + dx * r)
     .lineTo(ax - dx * r - dy * r, ay - dy * r - dx * r)
-    .fill({ color: THEME.board.spawn, alpha: 0.85 });
+    .fill({ color: field.spawn, alpha: 0.85 });
 
   const gx = map.goal.x * TILE_PX;
   const gy = map.goal.y * TILE_PX;
-  const goal = THEME.board.goal;
+  const goal = field.goal;
 
   // The halo is a flat low-alpha disc, not a blur. A filter would buy a render
   // target and a second pass for a marker that is drawn once and never changes,

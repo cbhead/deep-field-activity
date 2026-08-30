@@ -1,7 +1,7 @@
 import { Graphics, type Renderer, type Texture } from 'pixi.js';
 import { BALANCE } from '../content/balance.ts';
 import { TILE_PX } from './constants.ts';
-import { BAKE_NEUTRAL, THEME } from './theme.ts';
+import { BAKE_NEUTRAL, THEME, type SectorField } from './theme.ts';
 
 /**
  * Every repeated visual is baked into a GPU texture once, then instanced as
@@ -313,8 +313,8 @@ function drawCreep(g: Graphics, plated: boolean): void {
   });
 }
 
-export function createTextures(renderer: Renderer): Textures {
-  const { board, shape } = THEME;
+export function createTextures(renderer: Renderer, board: SectorField): Textures {
+  const { shape } = THEME;
 
   return {
     creep: bake(renderer, (g) => {

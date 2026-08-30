@@ -6,7 +6,7 @@ import type { World } from '../sim/world.ts';
 import { COLLAR_SECTORS, COLLAR_SPAN, TILE_PX } from './constants.ts';
 import { strokeArc } from './draw.ts';
 import type { Layers } from './pixiApp.ts';
-import { THEME } from './theme.ts';
+import { THEME, type SectorField } from './theme.ts';
 
 /**
  * Everything drawn *on a station* to report its state: what it has been
@@ -76,7 +76,7 @@ const COLLAR_RADIUS = 0.48;
  * positional code is taught. Nothing is drawn at tier 1, so an untouched board
  * stays as clean as it was and every arc is something the player chose.
  */
-function drawUpgradeCollar(g: Graphics, t: Tower): void {
+function drawUpgradeCollar(g: Graphics, t: Tower, field: SectorField): void {
   const max = BALANCE.upgrade.maxTier;
   if (max <= 1) return;
 
@@ -97,7 +97,7 @@ function drawUpgradeCollar(g: Graphics, t: Tower): void {
     // Laid down twice: a dark backing, then the arc. The collar crosses both the
     // starfield and the station's own halo, and a single stroke that reads on
     // one washes out on the other.
-    strokeArc(g, cx, cy, r, a0, a1, { width: 5, color: THEME.board.bg, alpha: 0.75 });
+    strokeArc(g, cx, cy, r, a0, a1, { width: 5, color: field.bg, alpha: 0.75 });
     strokeArc(g, cx, cy, r, a0, a1, { width: 3, color: THEME.towers[t.defId], alpha: 1 });
   }
 }
@@ -141,7 +141,10 @@ function drawReach(g: Graphics, t: Tower, prefs: UiPrefs): void {
 export class TowerChrome {
   private readonly gfx = new Graphics();
 
-  constructor(layers: Layers) {
+  constructor(
+    layers: Layers,
+    private readonly field: SectorField,
+  ) {
     layers.effects.addChild(this.gfx);
   }
 
@@ -160,7 +163,7 @@ export class TowerChrome {
 
     for (const t of w.towers) {
       drawSpinUp(g, t);
-      drawUpgradeCollar(g, t);
+      drawUpgradeCollar(g, t, this.field);
       drawReach(g, t, prefs);
     }
   }

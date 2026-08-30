@@ -1,4 +1,5 @@
 import type { EnemyId } from '../content/enemies.ts';
+import type { SectorFieldId } from '../content/sectors.ts';
 import type { TowerId } from '../content/towers.ts';
 
 /**
@@ -18,37 +19,58 @@ import type { TowerId } from '../content/towers.ts';
  *    numbers by `applyHudTheme`. The background used to be written twice, as
  *    `0x0f172a` here and `#0f172a` in the stylesheet. Now it cannot drift.
  */
+/**
+ * The ground one sector is played on: everything under the stations.
+ *
+ * Only the *field* varies between sectors. The contrast budget has to be
+ * re-verified per field rather than once in total, because a lighter ground
+ * eats headroom that the route and the pulsar were spending — and **no field
+ * may be warm at any value**, since warm is what tells a player something is
+ * a contact.
+ */
+export interface SectorField {
+  readonly id: SectorFieldId;
+  readonly bg: number;
+  readonly ground: number;
+  readonly groundAlt: number;
+  readonly gridLine: number;
+  readonly blocked: number;
+  readonly blockedEdge: number;
+  readonly path: number;
+  /**
+   * `null` means the path tile gets no edge stroke, so the route reads as one
+   * continuous road rather than 43 separate tiles. That is a deliberate look
+   * and this is where a field opts out of it.
+   */
+  readonly pathEdge: number | null;
+  readonly spawn: number;
+  readonly goal: number;
+  /** Starfield. Most stars are `star`; a scattered few are `starBright`. */
+  readonly star: number;
+  readonly starBright: number;
+  /**
+   * Ground tiles draw at this alpha so the starfield shows through open
+   * space. The route stays fully opaque, which is what makes it read as a
+   * structure laid over the void rather than another shade of tile.
+   */
+  readonly groundAlpha: number;
+}
+
 export interface Theme {
   readonly id: string;
   readonly name: string;
 
-  /** The board itself. Static, baked into tile textures once at load. */
-  readonly board: {
-    readonly bg: number;
-    readonly ground: number;
-    readonly groundAlt: number;
-    readonly gridLine: number;
-    readonly blocked: number;
-    readonly blockedEdge: number;
-    readonly path: number;
-    /**
-     * `null` means the path tile gets no edge stroke, so the route reads as one
-     * continuous road rather than 43 separate tiles. That is a deliberate look
-     * and this is where a theme opts out of it.
-     */
-    readonly pathEdge: number | null;
-    readonly spawn: number;
-    readonly goal: number;
-    /** Starfield. Most stars are `star`; a scattered few are `starBright`. */
-    readonly star: number;
-    readonly starBright: number;
-    /**
-     * Ground tiles draw at this alpha so the starfield shows through open
-     * space. The route stays fully opaque, which is what makes it read as a
-     * structure laid over the void rather than another shade of tile.
-     */
-    readonly groundAlpha: number;
-  };
+  /**
+   * One ground per sector, keyed by `LevelDef.field`. Static, built once at
+   * level load.
+   *
+   * Keyed rather than singular because three boards that look identical make a
+   * campaign feel like one board with the label changed — travel is the thing
+   * the sector fields buy. What must *not* vary is the foreground: the same
+   * Lance is the same blue and the same Drifter the same pink on every board,
+   * which is why `towers` and `enemies` below sit outside this record.
+   */
+  readonly fields: Readonly<Record<SectorFieldId, SectorField>>;
 
   /**
    * Per-type tints. Textures are baked neutral (see `BAKE_NEUTRAL`) and tinted
@@ -181,6 +203,56 @@ export interface Theme {
 export const BAKE_NEUTRAL = 0xffffff;
 
 /**
+ * Switchback — the shipped baseline, and the shape every other field is a
+ * variation on.
+ *
+ * Cascade and Pincer currently clone it. They are separate entries rather than
+ * aliases because the point of the record is that they *will* diverge, and a
+ * spread here would quietly hide which keys a sector had actually chosen.
+ */
+const SWITCHBACK: SectorField = {
+  id: 'switchback',
+  bg: 0x07080f,
+  // The checker has to survive `groundAlpha` compositing it back toward `bg`.
+  // These were 2-4/255 apart, which after the alpha was ~1.5 — invisible, and
+  // leaving the grid stroke to do the whole job of making tiles placeable.
+  // Widened until the checker actually reads without competing with a star.
+  ground: 0x0f1222,
+  groundAlt: 0x0b0d19,
+  gridLine: 0x1a1d33,
+  blocked: 0x232532,
+  blockedEdge: 0x2f3245,
+  // The route reads *lighter* than the field it crosses, so the path is
+  // legible in greyscale rather than relying on hue.
+  path: 0x1b1f36,
+  pathEdge: null,
+  spawn: 0xf9a8d4,
+  goal: 0xb5abfc,
+  star: 0x6f7699,
+  starBright: 0xd7dcf0,
+  groundAlpha: 0.72,
+};
+
+export const SECTOR_FIELDS: Readonly<Record<SectorFieldId, SectorField>> = {
+  switchback: SWITCHBACK,
+  cascade: { ...SWITCHBACK, id: 'cascade' },
+  pincer: { ...SWITCHBACK, id: 'pincer' },
+};
+
+/** What Race mode and any unknown level get. Race passes no level at all. */
+export const DEFAULT_FIELD: SectorFieldId = 'switchback';
+
+/**
+ * Resolve a level's field id, tolerating absence.
+ *
+ * Race mode plays the baseline board without going through `CAMPAIGN`, so the
+ * id genuinely can be missing — and an unrecognised one should degrade to a
+ * playable board rather than to a black screen.
+ */
+export const fieldFor = (id: SectorFieldId | undefined): SectorField =>
+  SECTOR_FIELDS[id ?? DEFAULT_FIELD];
+
+/**
  * Deep Field — the direction that came back from the design session.
  *
  * The board is a starfield, stations are hexagonal emplacements, and the
@@ -192,27 +264,7 @@ export const DEEP_FIELD: Theme = {
   id: 'deep-field',
   name: 'Deep Field',
 
-  board: {
-    bg: 0x07080f,
-    // The checker has to survive `groundAlpha` compositing it back toward `bg`.
-    // These were 2-4/255 apart, which after the alpha was ~1.5 — invisible, and
-    // leaving the grid stroke to do the whole job of making tiles placeable.
-    // Widened until the checker actually reads without competing with a star.
-    ground: 0x0f1222,
-    groundAlt: 0x0b0d19,
-    gridLine: 0x1a1d33,
-    blocked: 0x232532,
-    blockedEdge: 0x2f3245,
-    // The route reads *lighter* than the field it crosses, so the path is
-    // legible in greyscale rather than relying on hue.
-    path: 0x1b1f36,
-    pathEdge: null,
-    spawn: 0xf9a8d4,
-    goal: 0xb5abfc,
-    star: 0x6f7699,
-    starBright: 0xd7dcf0,
-    groundAlpha: 0.72,
-  },
+  fields: SECTOR_FIELDS,
 
   towers: {
     lance: 0x8fc4fa,
