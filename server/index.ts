@@ -327,5 +327,14 @@ wss.on('connection', (ws: WebSocket, req) => {
 });
 
 httpServer.listen(port, '0.0.0.0', () => {
-  console.log(`race server on 0.0.0.0:${port} — ws at ${WS_PATH}, http sanity line at /`);
+  const ts = tailscaleIp();
+  console.log(`race server listening on 0.0.0.0:${port} (ws at ${WS_PATH})`);
+  console.log(`  Single-player:       http://localhost:${port}`);
+  if (ts) {
+    console.log(`  Race with a friend:  http://${ts}:${port}/?race`);
+    console.log(`                       open that, then send the invite link the lobby shows you`);
+  } else {
+    console.log(`  Race with a friend:  no Tailscale IP detected — invite links will only work on`);
+    console.log(`                       this machine. Start Tailscale and restart the server.`);
+  }
 });

@@ -1,19 +1,19 @@
 # Resolve the Node version this project requires. SOURCE this, don't exec it.
 #
-# Why this exists: the machine's default `node` is an old 16.x at
-# /usr/local/bin/node, which Vite 8 cannot run on. Two things conspire to make
-# that hard to escape from a spawned process:
+# Why this exists: if your default `node` is older than 20.19, Vite 8 cannot
+# run, and two things conspire to make that hard to escape from a spawned
+# process:
 #
-#   1. npm exports npm_config_prefix=/usr/local, and nvm hard-refuses to load
-#      while that is set — so merely being in a login shell is not enough.
+#   1. npm exports npm_config_prefix, and nvm hard-refuses to load while that
+#      is set — so merely being in a login shell is not enough.
 #   2. Every JS bin's shebang is `#!/usr/bin/env node`, which re-resolves to
-#      Node 16 off PATH even after nvm has loaded. Callers must therefore exec
-#      `node <entrypoint.js>` directly rather than the bin.
+#      the stale node off PATH even after nvm has loaded. Callers must
+#      therefore exec `node <entrypoint.js>` directly rather than the bin.
 #
 # The symptom is a misleading "does not provide an export named 'styleText'"
 # from rolldown, which points nowhere near the actual cause.
 #
-# Delete this script once the system Node at /usr/local/bin is upgraded.
+# If your default node is already >=20.19 this script is a no-op pass-through.
 
 # Since we are usually invoked *from* npm, clearing these is what actually
 # makes nvm usable here. See note 1 above.
@@ -28,6 +28,6 @@ fi
 
 if [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 20 ]; then
   echo "error: Node >=20.19 required, found $(node --version 2>/dev/null || echo none)." >&2
-  echo "       Run: nvm install 22 && nvm use 22" >&2
+  echo "       Install Node 22 from https://nodejs.org, or with nvm: nvm install 22 && nvm use 22" >&2
   exit 1
 fi
