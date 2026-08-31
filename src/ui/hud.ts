@@ -623,20 +623,20 @@ export function renderInspector(w: World, t: Tower): string {
 
   return (
     `<div class="inspector">` +
-    // Portrait column: the station wearing its real collar at 64px, so the
-    // board's positional upgrade code is taught at full size rather than by a
-    // 24px afterthought on a button. The board only has to jog this memory.
-    `<div class="portrait t-${t.defId}">${stationIcon(t.defId, 44)}` +
-    `${collarDial(t.tiers, BALANCE.upgrade.maxTier)}` +
+    // Portrait column: the station wearing its real collar at full size, so the
+    // board's positional upgrade code is taught here rather than by a 13px
+    // afterthought on a button. The board only has to jog this memory.
+    `<div class="portrait t-${t.defId}">${stationIcon(t.defId, 40)}` +
+    `${collarDial(t.tiers, BALANCE.upgrade.maxTier, 56)}` +
     `<span class="mk">Mk ${'I'.repeat(visualTier(t))}</span></div>` +
     `<div class="body">` +
     `<div class="head t-${t.defId}"><b>${d.name}</b>` +
     `<span class="blurb" title="tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} damage dealt">` +
-    `${t.kills} kills</span></div>` +
+    `${t.kills} ${t.kills === 1 ? 'kill' : 'kills'}</span></div>` +
     // Live stats, not the def: this is where an effect purchase becomes visible
-    // in numbers, including the secondary dial the upgrade card omits.
-    `<div class="t-${t.defId}">${mechanicChips(s)}</div>` +
-    axisChips(s) +
+    // in numbers, including the secondary dial the upgrade card omits. One row
+    // for both chip groups — the inspector's height budget has no room for two.
+    `<div class="chipline t-${t.defId}">${mechanicChips(s)}${axisChips(s)}</div>` +
     renderArmourLine(w, t, nextDamage) +
     `</div>` +
     `<div class="upgrades">${renderPathButtons(w, t)}</div>` +
@@ -663,12 +663,16 @@ function renderPathButtons(w: World, t: Tower): string {
     // board's positional code is taught at the moment the player buys into it.
     const dial = pathDial(path);
 
+    // Label+pips over value+price, two columns — not four stacked rows. The
+    // deck is 150px tall and three of these sit under the portrait band; a
+    // stacked button was the difference between fitting and spilling out of
+    // the panel at both ends.
     if (cost === null) {
-      return `<span class="path maxed"><label>${dial}${label}</label><b>${value}</b>${pips}<em>Max</em></span>`;
+      return `<span class="path maxed"><label>${dial}${label}</label>${pips}<b>${value}</b><em>Max</em></span>`;
     }
     return (
       `<button class="path${w.money < cost ? ' poor' : ''}" data-act="upgrade" data-path="${path}">` +
-      `<label>${dial}${label}</label><b>${value}</b>${pips}<em>$${cost}</em></button>`
+      `<label>${dial}${label}</label>${pips}<b>${value}</b><em>$${cost}</em></button>`
     );
   }).join('');
 }
@@ -678,17 +682,21 @@ function pathPreview(
   path: UpgradePath,
   next: TowerStats | null,
 ): { label: string; value: string } {
+  // Destination only, not `now → next`: the current figure is already on
+  // screen in the chip line directly above, and the button's row has to hold
+  // the price too. Repeating the "now" was three numbers the panel already
+  // shows, at a width that cannot afford them.
   const s = t.stats;
   if (path === 'damage') {
     return {
-      label: 'Damage',
-      value: next === null ? String(s.damage) : `${s.damage} → ${next.damage}`,
+      label: 'Dmg',
+      value: next === null ? String(s.damage) : `→ ${next.damage}`,
     };
   }
   if (path === 'range') {
     return {
-      label: 'Range',
-      value: next === null ? s.range.toFixed(1) : `${s.range.toFixed(1)} → ${next.range.toFixed(1)}`,
+      label: 'Rng',
+      value: next === null ? s.range.toFixed(1) : `→ ${next.range.toFixed(1)}`,
     };
   }
 
@@ -703,7 +711,7 @@ function pathPreview(
     value:
       next === null
         ? effectValue(key, s[key])
-        : `${effectValue(key, s[key])} → ${effectValue(key, next[key])}`,
+        : `→ ${effectValue(key, next[key])}`,
   };
 }
 

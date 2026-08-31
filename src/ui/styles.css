@@ -318,10 +318,6 @@ kbd {
 .detail .head .blurb { font-size: 10.5px; color: var(--dim); }
 .detail .line { font-size: 11.5px; line-height: 1.6; color: var(--muted); }
 
-/* The station's defining mechanic, in figures. Accent-coloured because it is
-   the reason to buy this one rather than a cheaper one. */
-.special { font-size: 11px; color: var(--accent-soft); }
-
 /* Wave preview: one chip per contact type. Wraps, because a late wave has six
    and the deck's height is fixed. */
 .chips { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: flex-end; }
@@ -340,11 +336,6 @@ kbd {
 }
 .chip .cg { display: block; filter: drop-shadow(0 0 5px currentColor); }
 .chip b { font-size: 11px; font-weight: 600; color: var(--bright); }
-/* The armour readout. `bad` marks a station losing more than half of every hit
-   to armour, so "wrong tool for this contact" reads without doing the division. */
-.detail .line.armour { font-size: 11px; color: var(--dim); }
-.detail .line.armour b { color: var(--bright); font-weight: 600; }
-.detail .line.armour b.bad { color: var(--danger); }
 .detail .hint { font-size: 10.5px; color: var(--dim); }
 .detail .hint b { color: var(--muted); font-weight: 400; }
 
@@ -352,49 +343,41 @@ kbd {
 .pips i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--dim); }
 .pips i.on { background: currentColor; border-color: currentColor; }
 
-.cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.cell {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 5px 7px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--slot) 75%, transparent);
-}
-.cell label {
-  font-size: 9px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.cell b { font-size: 13px; font-weight: 600; color: var(--text); }
-.cell b.accent { color: var(--accent-soft); }
-
 /* The three upgrade tracks, side by side. Each button is a miniature cell —
-   label, `now → next` preview, per-path pips, price — so the trade the player
-   is weighing (deepen which axis?) sits in one row of like-for-like options. */
-.upgrades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+   label and pips over `now → next` and price — so the trade the player is
+   weighing (deepen which axis?) sits in one row of like-for-like options.
+   Two rows, not four: three of these sit under the portrait band inside the
+   deck's 150px, and every extra row here is paid for at both ends of the
+   panel. */
+.upgrades { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .path {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: 5px 7px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 4px 7px;
   border: 1px solid var(--panel-edge);
   border-radius: 6px;
   background: color-mix(in srgb, var(--slot) 75%, transparent);
   text-align: left;
 }
 .path label {
+  display: flex;
+  align-items: center;
   font-size: 9px;
-  letter-spacing: .1em;
+  letter-spacing: .07em;
   text-transform: uppercase;
   color: var(--dim);
   cursor: inherit;
+  white-space: nowrap;
 }
-.path b { font-size: 11.5px; font-weight: 600; color: var(--accent-soft); white-space: nowrap; }
-.path em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--accent-bright); }
-.path .pips { margin: 2px 0 1px; }
+.path b { font-size: 11px; font-weight: 600; color: var(--accent-soft); white-space: nowrap; }
+.path em { font-style: normal; font-size: 10px; font-weight: 600; color: var(--accent-bright); justify-self: end; }
+/* Smaller than the portrait's collar arcs on purpose: at this width the pips
+   are a count, not the teaching surface — and PIERCE plus three 6px pips is
+   wider than the button. */
+.path .pips { margin: 0; justify-self: end; gap: 2px; }
+.path .pips i { width: 5px; height: 5px; }
 button.path:hover { border-color: var(--accent); }
 .path.poor { opacity: .5; }
 .path.poor em { color: var(--danger); }
@@ -620,23 +603,33 @@ button.path:hover { border-color: var(--accent); }
 /* ------------------------------------------------- inspector (station selected) */
 
 /* The densest state in the game, and the one consulted while under attack.
-   Three columns: the station's identity, its figures, and what can be bought —
-   so nothing has to be read in sequence to be found. */
+   Two bands: identity beside figures on top, then what can be bought — the
+   full-width rows beneath. The detail slot is ~340px between the build bar
+   and the send column; a single row of portrait + stats + three path buttons
+   + targeting + sell needs ~700px and can only overlap its neighbours. Grid
+   `auto` tracks never shrink below their content, so the overflow presents as
+   chips stacking vertically and Sell landing on the Send button — not as a
+   scrollbar anything would catch. */
 .inspector {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'portrait body'
+    'upgrades upgrades'
+    'actions  actions';
   align-items: center;
-  gap: 14px;
+  gap: 6px 12px;
 }
 
 /* The station wearing its REAL collar at full size. The board encodes which
    upgrade path was taken by position, and a positional code has to be taught
    somewhere — a 13px dial on a button was too small to be that somewhere. */
 .portrait {
+  grid-area: portrait;
   position: relative;
   display: grid;
   place-items: center;
-  width: 64px; height: 64px;
+  width: 56px; height: 56px;
 }
 .portrait .glyph { position: absolute; filter: drop-shadow(0 0 8px currentColor); }
 .portrait .collar { position: absolute; inset: 0; }
@@ -648,7 +641,13 @@ button.path:hover { border-color: var(--accent); }
   color: var(--dim);
 }
 
-.inspector .body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.inspector .body { grid-area: body; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.inspector .upgrades { grid-area: upgrades; }
+.inspector .actions { grid-area: actions; }
+
+/* Mechanic and axis chips share one row in the inspector; the height budget
+   (150px for the whole deck) has no room for two. */
+.chipline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 
 /* Numeral chips. Wordless by construction — the sentence lives in `title`,
    where it costs nothing on screen. Station-specific first and in the station's
@@ -668,8 +667,15 @@ button.path:hover { border-color: var(--accent); }
 
 /* Armour as a proportional bar: the sliver IS the fraction that survives, so
    the player reads it instead of doing the subtraction. The contact glyph names
-   which one, so the line costs no words at all. */
-.detail .line.armour { display: flex; align-items: center; gap: 7px; }
+   which one, so the line costs no words at all. `bad` marks a station losing
+   more than half of every hit, so "wrong tool" reads without the division. */
+.detail .line.armour {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--dim);
+}
 .line.armour .bar {
   position: relative;
   width: 54px; height: 5px;
