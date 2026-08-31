@@ -20,11 +20,16 @@ export default defineConfig(({ mode }) => {
    * is quiet. So: one line of warning here, and the SDK chunk appearing in the
    * output is the positive signal that the id was seen.
    */
-  if (loadEnv(mode, '.', 'VITE_')['VITE_DISCORD_CLIENT_ID'] === undefined) {
+  // Blank counts as missing. `cp .env.example .env` leaves the keys present and
+  // empty, which is the most likely state for anyone part-way through setup —
+  // and an `=== undefined` test sails straight past it, warning about nothing
+  // while producing exactly the crippled bundle the warning exists to prevent.
+  if ((loadEnv(mode, '.', 'VITE_')['VITE_DISCORD_CLIENT_ID'] ?? '') === '') {
     console.warn(
       '\n  ⚠ building without VITE_DISCORD_CLIENT_ID — this bundle will run as a\n' +
         '    normal web page but cannot complete the Discord Activity handshake.\n' +
-        '    Set it in .env (see .env.example) if that is not what you meant.\n',
+        '    Set it in .env at the repo root (see .env.example) if that is not\n' +
+        '    what you meant.\n',
     );
   }
 

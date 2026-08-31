@@ -46,8 +46,14 @@ one.
 
 ### Step 0 — (First time only) Fill in `.env`
 
+**The file goes in the repo root, beside `package.json`** — the same directory
+you run `npm` from. It is a dotfile, so Finder and a plain `ls` both hide it;
+`ls -a` shows it.
+
 ```sh
+cd ~/dev/deep-field-activity     # wherever you cloned it
 cp .env.example .env
+open -e .env                     # or: code .env / vim .env
 ```
 
 Two values, both from your app in the developer portal:
@@ -69,6 +75,16 @@ only the server changes nothing — the old bundle is still on disk.
 Optionally add `DISCORD_WEBHOOK_URL` (channel → Edit Channel → Integrations →
 Webhooks) and the relay posts one message per finished race, turning the channel
 into the match ledger. Read at run time, so this one *is* just a restart.
+
+Check it landed where the tooling looks:
+
+```sh
+grep -c . .env        # non-zero, and run from the repo root
+```
+
+`npm run tunnel` refuses with the full path if the file is missing, and names
+which value is still blank if it is there but unfilled — so if Step 3 starts,
+this step is done.
 
 ### Step 1 — (First time only) Enable Funnel
 

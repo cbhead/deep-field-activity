@@ -76,10 +76,37 @@ async function main(): Promise<void> {
     die('tailscale is not on PATH.', '  Install it from https://tailscale.com/download');
   }
 
-  if (!existsSync(`${ROOT}.env`)) {
+  // Named in full, and checked for *content* rather than existence. "Where does
+  // .env go" turned out to be the confusing part — it is a dotfile in the repo
+  // root, which Finder and a plain `ls` both hide — and a file that exists but
+  // is still all blanks used to sail through here and fail much later, inside
+  // Discord, as a handshake that silently did nothing.
+  const envPath = `${ROOT}.env`;
+  if (!existsSync(envPath)) {
     die(
-      'no .env — the Activity handshake needs credentials.',
-      `  ${dim('cp .env.example .env')}  then fill in the two values it names.`,
+      `no .env at ${envPath}`,
+      `  ${dim(`cd ${ROOT} && cp .env.example .env`)}\n  then fill in the two values it names.`,
+    );
+  }
+  const env = Object.fromEntries(
+    readFileSync(envPath, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'))
+      .map((line) => {
+        const eq = line.indexOf('=');
+        return [line.slice(0, eq).trim(), line.slice(eq + 1).trim()];
+      }),
+  );
+  const missing = ['VITE_DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'].filter(
+    (k) => (env[k] ?? '') === '',
+  );
+  if (missing.length > 0) {
+    die(
+      `${envPath} is missing ${missing.join(' and ')}`,
+      `  Both come from https://discord.com/developers/applications → your app:\n` +
+        `    ${dim('VITE_DISCORD_CLIENT_ID')}  General Information → Application ID\n` +
+        `    ${dim('DISCORD_CLIENT_SECRET')}  OAuth2 → Client Secret → Reset Secret`,
     );
   }
 
