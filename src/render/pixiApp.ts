@@ -237,6 +237,16 @@ const resetFit = (): void => {
   lastFit = '';
 };
 
+/**
+ * How far the board may be magnified beyond its logical 1040x600.
+ *
+ * A ceiling rather than none, because the renderer's resolution follows this
+ * number and the pixel count grows with its square — an unbounded scale on a
+ * 6K display would quietly ask for a great deal of GPU for a game that does not
+ * need it. 2.5 covers a fullscreen Activity on a 4K monitor with room to spare.
+ */
+const MAX_SCALE = 2.5;
+
 function fitCanvas(app: Application): void {
   const viewport = document.documentElement;
   const vw = viewport.clientWidth;
@@ -257,7 +267,25 @@ function fitCanvas(app: Application): void {
   // single stack. Fitting the board alone would put the deck back on top of the
   // final approach, which is the one stretch that must stay visible.
   const stackHeight = chrome.top + app.screen.height + chrome.deck;
-  const scale = Math.min(1, vw / app.screen.width, vh / stackHeight);
+  const scale = Math.min(MAX_SCALE, vw / app.screen.width, vh / stackHeight);
+
+  // Render at the size it is actually displayed.
+  //
+  // The scale used to be capped at 1, which was right while this only ever ran
+  // in a browser window: the board sat at its natural size and never blurred.
+  // In a Discord Activity the frame is Discord's, and an expanded one is far
+  // larger than 1040x600 — so the board stopped growing at about 1600px wide
+  // and sat marooned in the middle of it, filling 41% of the width at 2560.
+  //
+  // Uncapping alone would have CSS-upscaled a canvas rendered for `dpr`, which
+  // buys size at the cost of softening every glow and station. So the renderer's
+  // resolution follows the scale instead, and the extra pixels are real ones.
+  // Guarded by a comparison because `resize` rebuilds render targets — at 2Hz
+  // through a window drag that would be genuinely expensive.
+  const wanted = (window.devicePixelRatio || 1) * Math.max(1, scale);
+  if (Math.abs(app.renderer.resolution - wanted) > 0.01) {
+    app.renderer.resize(app.screen.width, app.screen.height, wanted);
+  }
 
   // The canvas keeps its logical CSS size; #stage applies the scale to board
   // and chrome together. Pixi derives pointer coordinates from the canvas

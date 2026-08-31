@@ -281,6 +281,11 @@ exactly as [match night](RUNBOOK-match-night.md) describes.
 
 ## Known gaps (don't file these as bugs mid-test)
 
+- **The frame is Discord's.** An activity cannot make itself fullscreen — the
+  SDK exposes layout as an event to observe (`FOCUSED`/`PIP`/`GRID`), never a
+  command to set. Players expand it with Discord's own **Expand Activity**
+  control. What the game can do is fill whatever frame it is handed, which it
+  now does at any size; it used to stop growing past about 1600px wide.
 - **Winner stays on.** With people queuing, the loser yields their seat at the
   end of a race. Two friends who want to rematch each other repeatedly need the
   queue to be empty — which is the intended trade, but worth knowing before
