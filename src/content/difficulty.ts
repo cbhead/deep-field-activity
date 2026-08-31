@@ -72,8 +72,32 @@ export const DIFFICULTIES = {
      * punish mistakes, not remove the means of avoiding them.
      */
     startingMoney: BALANCE.startingMoney,
-    hpFactor: 1.1,
-    bountyFactor: 0.95,
+
+    /**
+     * 1.05, down from 1.1, and **bounty is baseline** — the same argument as
+     * the starting-money note above, applied to the two dials that were left.
+     *
+     * A bounty cut is an opening-budget cut paid in instalments. It compounds
+     * in exactly the way that one did, and it does it worst on the boards that
+     * can least afford it: a multi-lane board needs a third and fourth station
+     * before it covers its second road at all, and 5% off every kill is 5% off
+     * the rate at which those arrive.
+     *
+     * The hp multiplier compounds too, and less obviously. It is not a linear
+     * tax — it decides whether a contact dies inside the reach of a defence
+     * that is already marginal, so a few percent flips a wave from "held" to
+     * "leaked entirely". On the eight-board sweep that showed up as a cliff
+     * rather than a slope: Braid cleared Standard with 13 of 20 lives and died
+     * on wave 4 of Blackout, on the same table.
+     *
+     * What is left is the thin reserve, which the note above already calls the
+     * tier's identity, plus enough of an hp bump to keep the blurb honest.
+     * Seven of the eight boards clear it; Sluice, whose lanes run 2.5 : 1 and
+     * whose whole subject is punishing incomplete coverage, is a coin flip —
+     * which for the hardest board at the hardest tier is the intent.
+     */
+    hpFactor: 1.05,
+    bountyFactor: 1,
   },
 } as const satisfies Record<string, DifficultyDef>;
 

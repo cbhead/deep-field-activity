@@ -185,18 +185,17 @@ export const WAVES_FORK: readonly WaveDef[] = [
   wave(s(7, 0.75), s(2, 2.8, 3, 'monolith'), s(12, 0.3, 8, 'mote')),
   wave(s(8, 0.65), s(5, 1.4, 3, 'warden'), south(2, 2.4, 9, 'bulwark')),
   wave(s(9, 0.55), s(5, 1.4, 4, 'cluster'), s(4, 2.4, 9, 'monolith')),
-  wave(north(7, 0.7), south(7, 0.7), s(6, 1.3, 5, 'warden')), //  both sides, at once
-  wave(s(8, 0.6), s(4, 1.9, 2, 'monolith'), s(6, 1.4, 6, 'bulwark'), s(14, 0.25, 11, 'mote')),
-  wave(s(9, 0.55), s(7, 1.2, 3, 'cluster'), s(6, 1.6, 8, 'bulwark')),
+  wave(north(6, 0.7), south(6, 0.7), s(5, 1.3, 5, 'warden')), //  both sides, at once
+  wave(s(6, 0.6), s(3, 1.9, 2, 'monolith'), s(4, 1.4, 6, 'bulwark'), s(10, 0.25, 11, 'mote')),
+  wave(s(7, 0.55), s(5, 1.2, 3, 'cluster'), s(4, 1.6, 8, 'bulwark')),
   wave(
-    s(11, 0.45), //                                       finale
-    s(5, 1.8, 3, 'monolith'),
-    s(7, 1.1, 6, 'bulwark'),
-    s(7, 1.2, 9, 'warden'),
-    s(6, 1.4, 12, 'cluster'),
-    s(16, 0.25, 15, 'mote'),
-  ),
-];
+    s(8, 0.45), //                                       finale
+    s(3, 1.8, 3, 'monolith'),
+    s(5, 1.1, 6, 'bulwark'),
+    s(5, 1.2, 9, 'warden'),
+    s(4, 1.4, 12, 'cluster'),
+    s(12, 0.25, 15, 'mote'),
+  ),];
 
 /**
  * Level 5, Delta. Twelve waves, and its subject is **two problems at once**.
@@ -231,21 +230,20 @@ export const WAVES_DELTA: readonly WaveDef[] = [
   // not a difficulty curve, it is a wall — the run used to end here.
   wave(rim(9, 2.2), well(9, 0.95, 3, 'mote'), well(4, 2.1, 8)),
   wave(rim(1, 5.7, 0, 'bulwark'), rim(6, 2.4, 4), well(9, 0.95, 2, 'mote')), // the thesis, stated
-  wave(rim(1, 6.1, 0, 'monolith'), rim(6, 2.6, 5), well(3, 3.6, 3, 'cluster'), well(9, 0.95, 9, 'mote')),
-  wave(rim(3, 4.7, 0, 'bulwark'), rim(4, 3.8, 5, 'warden'), well(9, 0.75, 3, 'mote'), well(6, 1.9, 9)),
-  wave(rim(3, 4.5, 0, 'bulwark'), rim(3, 5.7, 5, 'monolith'), well(17, 0.55, 4, 'mote')),
-  wave(rim(6, 3.3, 0, 'warden'), well(7, 2.8, 3, 'cluster'), well(10, 0.95, 8, 'mote')),
-  wave(rim(3, 4.2, 0, 'monolith'), rim(6, 3.3, 5, 'bulwark'), well(19, 0.45, 3, 'mote')),
-  wave(rim(6, 3.8, 0, 'bulwark'), rim(3, 4.7, 6, 'monolith'), well(7, 2.4, 3, 'cluster'), well(13, 0.55, 10, 'mote')),
+  wave(rim(1, 6.1, 0, 'monolith'), rim(5, 2.6, 5), well(3, 3.6, 3, 'cluster'), well(8, 0.95, 9, 'mote')),
+  wave(rim(3, 4.7, 0, 'bulwark'), rim(3, 3.8, 5, 'warden'), well(8, 0.75, 3, 'mote'), well(5, 1.9, 9)),
+  wave(rim(3, 4.5, 0, 'bulwark'), rim(3, 5.7, 5, 'monolith'), well(14, 0.55, 4, 'mote')),
+  wave(rim(6, 3.3, 0, 'warden'), well(7, 2.8, 3, 'cluster'), well(11, 0.95, 8, 'mote')),
+  wave(rim(4, 4.2, 0, 'monolith'), rim(6, 3.3, 5, 'bulwark'), well(19, 0.45, 3, 'mote')),
+  wave(rim(6, 3.8, 0, 'bulwark'), rim(4, 4.7, 6, 'monolith'), well(7, 2.4, 3, 'cluster'), well(13, 0.55, 10, 'mote')),
   wave(
-    rim(7, 3.3, 0, 'bulwark'), //                        finale: both roads, both problems
-    rim(6, 4.2, 4, 'monolith'),
-    rim(7, 2.8, 8, 'warden'),
-    well(9, 2.1, 2, 'cluster'),
-    well(20, 0.35, 6, 'mote'),
-    well(9, 1.3, 12),
-  ),
-];
+    rim(5, 3.3, 0, 'bulwark'), //                        finale: both roads, both problems
+    rim(5, 4.2, 4, 'monolith'),
+    rim(5, 2.8, 8, 'warden'),
+    well(6, 2.1, 2, 'cluster'),
+    well(14, 0.35, 6, 'mote'),
+    well(6, 1.3, 12),
+  ),];
 
 /**
  * Level 6, Braid. Twelve waves, and its subject is **nothing ever lines up**.
@@ -260,26 +258,25 @@ export const WAVES_DELTA: readonly WaveDef[] = [
  * the table is what makes that true rather than merely claimed.
  */
 export const WAVES_BRAID: readonly WaveDef[] = [
-  wave(s(6, 0.7), s(6, 0.35, 4, 'mote')),
-  wave(s(7, 0.6), s(8, 0.3, 3, 'mote')),
-  wave(s(6, 0.65), s(4, 1.4, 3, 'cluster')),
-  wave(s(8, 0.5), s(12, 0.25, 4, 'mote'), s(2, 2.6, 9, 'monolith')),
-  wave(s(7, 0.55), s(6, 1.2, 2, 'cluster'), s(4, 1.4, 7, 'warden')),
-  wave(s(9, 0.45), s(16, 0.2, 3, 'mote'), s(3, 1.9, 8, 'bulwark')),
-  wave(s(8, 0.5), s(7, 1, 2, 'cluster'), s(6, 1.1, 7, 'warden')),
-  wave(s(10, 0.4), s(19, 0.15, 3, 'mote'), s(6, 1.5, 9, 'bulwark')),
-  wave(s(9, 0.45), s(8, 0.9, 2, 'cluster'), s(7, 1.1, 6, 'warden'), s(3, 2.2, 11, 'monolith')),
-  wave(s(11, 0.35), s(22, 0.15, 3, 'mote'), s(6, 1.3, 8, 'bulwark')),
-  wave(s(10, 0.4), s(9, 0.85, 2, 'cluster'), s(8, 1, 6, 'warden'), s(16, 0.2, 12, 'mote')),
+  wave(s(6, 0.7), s(6, 0.55, 4, 'mote')),
+  wave(s(7, 0.6), s(8, 0.45, 3, 'mote')),
+  wave(s(6, 0.65), s(4, 1.8, 3, 'cluster')),
+  wave(s(8, 0.5), s(12, 0.7, 4, 'mote'), s(2, 2.6, 9, 'monolith')),
+  wave(s(7, 0.55), s(6, 1.6, 2, 'cluster'), s(4, 1.4, 7, 'warden')),
+  wave(s(9, 0.45), s(16, 0.6, 3, 'mote'), s(3, 1.9, 8, 'bulwark')),
+  wave(s(8, 0.5), s(7, 1.3, 2, 'cluster'), s(6, 1.1, 7, 'warden')),
+  wave(s(10, 0.4), s(19, 0.35, 3, 'mote'), s(6, 1.5, 9, 'bulwark')),
+  wave(s(9, 0.45), s(8, 1.2, 2, 'cluster'), s(7, 1.1, 6, 'warden'), s(3, 2.2, 11, 'monolith')),
+  wave(s(11, 0.35), s(22, 0.35, 3, 'mote'), s(6, 1.3, 8, 'bulwark')),
+  wave(s(9, 0.4), s(8, 1.1, 2, 'cluster'), s(7, 1, 6, 'warden'), s(14, 0.35, 12, 'mote')),
   wave(
-    s(13, 0.3), //                                       finale: spread, never a file
-    s(10, 0.75, 3, 'cluster'),
-    s(9, 0.95, 6, 'warden'),
-    s(6, 1.5, 9, 'bulwark'),
+    s(11, 0.3), //                                       finale: spread, never a file
+    s(9, 1, 3, 'cluster'),
+    s(8, 0.95, 6, 'warden'),
+    s(5, 1.5, 9, 'bulwark'),
     s(3, 2.2, 12, 'monolith'),
-    s(28, 0.1, 14, 'mote'),
-  ),
-];
+    s(24, 0.35, 14, 'mote'),
+  ),];
 
 /**
  * Level 7, Sluice. Twelve waves, and its subject is **two deliveries**.
@@ -305,26 +302,26 @@ const chute = lane('chute');
 const coil = lane('coil');
 
 export const WAVES_SLUICE: readonly WaveDef[] = [
-  wave(coil(9, 2.9), chute(2, 3.8, 7)), //               released later, and still lands first
+  wave(coil(9, 3), chute(2, 3.8, 7)), //               released later, and still lands first
   wave(coil(9, 2.6), chute(4, 2.6, 6), chute(4, 1.1, 12, 'mote')),
   // Same lesson as Delta: the hull waits for the fourth station. Two spawns and
   // a 2.5 : 1 length ratio already make coverage expensive here without armour
   // arriving before it can be paid for.
-  wave(coil(9, 2.8), chute(4, 1.8, 9), chute(4, 0.95, 14, 'mote')),
-  wave(coil(1, 7.6, 0, 'monolith'), coil(9, 2.9, 4), chute(4, 1.9, 10)), // hull takes the slow road
-  wave(coil(1, 7.6, 0, 'bulwark'), coil(7, 3, 5), chute(2, 1.8, 13, 'mote'), chute(2, 2.9, 17)),
+  wave(coil(9, 2.8), chute(4, 1.8, 9), chute(4, 1, 14, 'mote')),
+  wave(coil(1, 7.6, 0, 'monolith'), coil(9, 3, 4), chute(4, 1.9, 10)), // hull takes the slow road
+  wave(coil(1, 7.6, 0, 'bulwark'), coil(7, 3, 5), chute(2, 1.8, 13, 'mote'), chute(2, 3, 17)),
   wave(coil(4, 6.6, 0, 'bulwark'), coil(6, 3.5, 5), chute(2, 4.5, 11, 'cluster'), chute(4, 2.1, 15)),
-  wave(coil(4, 5.4, 0, 'bulwark'), coil(5, 3.1, 4), chute(2, 3.8, 9, 'cluster'), chute(4, 1.5, 14)),
+  wave(coil(4, 5.5, 0, 'bulwark'), coil(5, 3.1, 4), chute(2, 3.8, 9, 'cluster'), chute(4, 1.5, 14)),
   wave(coil(4, 6.4, 0, 'monolith'), coil(4, 3.5, 6, 'warden'), chute(2, 1.1, 11, 'mote')),
   wave(coil(3, 4.1, 0, 'bulwark'), coil(2, 6.9, 5, 'monolith'), chute(1, 3, 11, 'cluster')),
-  wave(coil(3, 3.8, 0, 'warden'), chute(2, 0.8, 9, 'mote'), chute(1, 4.1, 15, 'cluster')),
+  wave(coil(4, 3.8, 0, 'warden'), chute(1, 0.8, 9, 'mote'), chute(1, 4.1, 15, 'cluster')),
   wave(coil(2, 5.8, 0, 'monolith'), coil(3, 3.1, 5, 'bulwark'), chute(1, 2.8, 12, 'cluster')),
   wave(
-    coil(3, 5, 0, 'monolith'), //                     finale: the hull leaves first
-    coil(3, 2.9, 4, 'bulwark'),
-    coil(3, 3.1, 9, 'warden'),
-    chute(2, 1.6, 12), //                               and the chute lands on top of it
-    chute(2, 0.55, 16, 'mote'),
+    coil(2, 5, 0, 'monolith'), //                     finale: the hull leaves first
+    coil(2, 3, 4, 'bulwark'),
+    coil(2, 3.1, 9, 'warden'),
+    chute(1, 1.6, 12), //                               and the chute lands on top of it
+    chute(1, 0.55, 16, 'mote'),
     chute(1, 3.5, 20, 'cluster'),
   ),];
 
@@ -347,31 +344,30 @@ const innerHigh = lane('inner-high');
 const innerLow = lane('inner-low');
 
 export const WAVES_CROWN: readonly WaveDef[] = [
-  wave(s(6, 1.4)), //                                   four lanes, four at a time
-  wave(s(6, 1.3), s(9, 0.75, 4, 'mote')),
-  wave(high(4, 2.2), low(4, 2.2), s(4, 3.6, 5, 'cluster')), //  the outer pair, alone
-  wave(s(6, 1.2), s(1, 5.3, 3, 'monolith'), s(6, 2.9, 8, 'warden')),
-  wave(innerHigh(4, 2.7), innerLow(4, 2.7), s(4, 4.1, 4, 'bulwark')),
-  wave(s(9, 1), s(11, 0.55, 3, 'mote'), s(6, 3.2, 9, 'cluster')),
-  wave(high(4, 2, 0, 'bulwark'), low(4, 2, 0, 'bulwark'), s(6, 1.2, 5)), //  outer armour
-  wave(s(9, 0.95), s(4, 4.4, 2, 'monolith'), s(6, 2.4, 6, 'warden'), s(6, 2.7, 11, 'cluster')),
+  wave(s(6, 1.6)), //                                   four lanes, four at a time
+  wave(s(6, 1.5), s(9, 0.85, 4, 'mote')),
+  wave(high(4, 2.5), low(4, 2.5), s(4, 4, 5, 'cluster')), //  the outer pair, alone
+  wave(s(6, 1.3), s(1, 5.9, 3, 'monolith'), s(6, 3.3, 8, 'warden')),
+  wave(innerHigh(4, 3), innerLow(4, 3), s(4, 5.6, 4, 'bulwark')),
+  wave(s(9, 1.1), s(11, 0.95, 3, 'mote'), s(6, 3.6, 9, 'cluster')),
+  wave(high(4, 2.2, 0, 'bulwark'), low(4, 2.2, 0, 'bulwark'), s(6, 1.3, 5)), //  outer armour
+  wave(s(9, 1.1), s(4, 4.9, 2, 'monolith'), s(6, 2.7, 6, 'warden'), s(6, 3, 11, 'cluster')),
   // Four lanes means four places to be wrong at once, so the last third eases
   // rather than piles on — the board is already asking the hardest coverage
   // question in the campaign without the wave table also being the densest.
-  wave(s(9, 0.95), s(12, 0.5, 3, 'mote'), s(4, 3.9, 9, 'bulwark')),
+  wave(s(6, 1.1), s(9, 0.55, 3, 'mote'), s(3, 4.4, 9, 'bulwark')),
   // The outer pair is the one thing the central band cannot reach at any range,
   // so this wave is the board's actual question — and hull down the inner lanes
   // at the same time made it a statement instead. Two Monoliths, not four.
-  wave(high(5, 1.8), low(5, 1.8), innerHigh(2, 4.2, 5, 'monolith'), innerLow(2, 4.2, 5, 'monolith')),
-  wave(s(9, 0.95), s(6, 2.4, 3, 'cluster'), s(6, 2.9, 7, 'warden'), s(4, 3.6, 11, 'bulwark')),
+  wave(high(4, 2), low(4, 2), innerHigh(2, 4.7, 5, 'monolith'), innerLow(2, 4.7, 5, 'monolith')),
+  wave(s(5, 1.1), s(4, 2.7, 3, 'cluster'), s(4, 3.3, 7, 'warden'), s(3, 4, 11, 'bulwark')),
   wave(
-    s(13, 0.7), //                                      finale: everything, down every road
-    s(5, 3.4, 3, 'monolith'),
-    s(7, 2.1, 6, 'bulwark'),
-    s(6, 2.3, 9, 'warden'),
-    s(5, 2.5, 12, 'cluster'),
+    s(7, 0.8), //                                      finale: everything, down every road
+    s(3, 3.8, 3, 'monolith'),
+    s(3, 2.4, 6, 'bulwark'),
+    s(3, 2.6, 9, 'warden'),
+    s(3, 2.8, 12, 'cluster'),
     // Dealt across four lanes, so this is five or six per road rather than a
     // single file — the count reads bigger than it lands.
-    s(20, 0.3, 15, 'mote'),
-  ),
-];
+    s(10, 0.35, 15, 'mote'),
+  ),];
