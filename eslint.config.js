@@ -5,7 +5,12 @@ export default tseslint.config(
   // docs/design holds the vendored Claude Design spec and the generated runtime
   // it needs to render. It is documentation — never built, never imported — and
   // linting a third-party bundle produces nothing but noise.
-  { ignores: ['dist/**', 'node_modules/**', 'docs/**'] },
+  //
+  // `.claude/**` is tool state, and it holds *git worktrees* — whole checkouts
+  // of this repo. Without this, lint walks into them and reports every ignored
+  // file again under a path the top-level ignores do not match, so the run goes
+  // red for files that are already excluded where they actually live.
+  { ignores: ['dist/**', 'node_modules/**', 'docs/**', '.claude/**'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

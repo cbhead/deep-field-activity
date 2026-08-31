@@ -271,7 +271,14 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
         `<p class="mn-card-blurb">${esc(level.blurb)}</p>` +
         `<div class="mn-facts"><span><b>${level.waves.length}</b> waves</span>` +
         `<span><b>${facts.road}</b> road</span>` +
-        `<span><b>${facts.turns}</b> turns</span></div>` +
+        // Lanes only where there is more than one. A card reading "1 lane" is
+        // noise on the boards that have always had one, and the numeral is only
+        // interesting as the thing that makes the back half of the campaign
+        // different from the front.
+        (facts.lanes > 1
+          ? `<span><b>${facts.lanes}</b> lanes</span>`
+          : `<span><b>${facts.turns}</b> turns</span>`) +
+        `</div>` +
         (open
           ? `<div class="mn-seg tight">${diffs}</div>` +
             // The selected difficulty explains itself in words, mirroring how
@@ -296,7 +303,8 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
       `<div class="mn-body"><div class="mn-head">` +
       `<span class="mn-kicker">Single player</span>` +
       `<h1 class="mn-title">Choose a sector</h1>` +
-      `<p class="mn-lede">Three boards, each asking a different question of the same five stations. ` +
+      `<p class="mn-lede">${CAMPAIGN.length} boards, each asking a different question of the same five ` +
+      `stations. The last five split the road, so covering it is no longer one decision. ` +
       `${cleared} of ${CAMPAIGN.length} held.</p></div>` +
       `<div class="mn-cards">${cards}</div>` +
       // Collapsed by default. An advanced field had permanent primary space and

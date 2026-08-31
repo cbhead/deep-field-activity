@@ -153,15 +153,31 @@ export const CHAIN_FALLOFF = 0.6;
  *
  * Low enough to sit under everything — these are the fundamentals of a drone,
  * not a melody. Sectors differ by a small interval rather than a dramatic one:
- * the bed should make a board feel like a *place*, and three obviously
+ * the bed should make a board feel like a *place*, and eight obviously
  * different keys would make switching sectors feel like switching games.
+ *
+ * The five multi-lane sectors sit a step under the board they share a palette
+ * with, so the campaign descends as it goes rather than wandering. Deliberately
+ * *not* a new key each: eight roots inside one octave would stop being a place
+ * and start being a scale.
  */
 export const BED_ROOT: Record<SectorFieldId, number> = {
   switchback: 55,
-  /** A fourth up — the long board, and the brightest of the three fields. */
+  /** A fourth up — the long board, and the brightest of the first three fields. */
   cascade: 73.4,
   /** A minor third below Cascade, for the sector that closes from both sides. */
   pincer: 61.7,
+
+  /** A tone under Switchback, whose violet Fork steps down from. */
+  fork: 49,
+  /** A tone under Cascade, matching the same step in the field. */
+  delta: 65.4,
+  /** A tone under Pincer, for the tightest board in the campaign. */
+  braid: 55,
+  /** Lower again: the darkest cyan field gets the darkest cyan root. */
+  sluice: 58.3,
+  /** The floor. The finale sits deepest, under everything before it. */
+  crown: 43.7,
 };
 
 /**

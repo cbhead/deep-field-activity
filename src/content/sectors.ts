@@ -15,7 +15,23 @@
  * One field per board today, and the names match the maps. They are separate
  * types on purpose — two sectors sharing a look is a reasonable thing to want,
  * and `LevelDef.field` is what would express it.
+ *
+ * The five multi-lane sectors do not exercise that: they get fields of their
+ * own, derived as *value steps* off the first three rather than authored from
+ * nothing. Eight boards wearing three faces would make the back half of the
+ * campaign feel like the front half relabelled, and the map spec's own rule for
+ * lanes — value steps of the accent, no new hues — is the obvious one to hold
+ * the palette to as well.
  */
-export const SECTOR_FIELD_IDS = ['switchback', 'cascade', 'pincer'] as const;
+export const SECTOR_FIELD_IDS = [
+  'switchback',
+  'cascade',
+  'pincer',
+  'fork',
+  'delta',
+  'braid',
+  'sluice',
+  'crown',
+] as const;
 
 export type SectorFieldId = (typeof SECTOR_FIELD_IDS)[number];

@@ -10,8 +10,6 @@
  * determinism gate (same seed → byte-identical wave log).
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
-import { LEVEL02 } from '../src/content/maps/level02.ts';
-import { LEVEL03 } from '../src/content/maps/level03.ts';
 import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
 import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
 import { SECTOR_FIELDS, THEME, step } from '../src/render/theme.ts';
@@ -33,7 +31,7 @@ import { coverage, formatDamage, laneCoverage, toughestArmour } from '../src/sim
 import { UPGRADE_PATHS, type TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
-import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
+import { parseMap, isBuildableTile, mergeRunway, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
 import { DEFAULT_RULES } from '../src/sim/rules.ts';
@@ -371,6 +369,65 @@ section('lanes — splits stay on their parent’s lane');
     'children inherit the lane their parent died on, never lane 0',
     kids.map((k) => k.route).join(','),
   );
+}
+
+// ---------------------------------------------------------------------------
+// THE MAP SPEC PRINTED ITS OWN NUMBERS. THESE ARE THEM.
+//
+// Sectors 04-08 arrived as ASCII rows *and* a table of figures — road tiles,
+// buildable tiles, per-lane length, merge runway. Two of the three earlier
+// design specs shipped arithmetic that was wrong on contact with a real board,
+// so the figures are transcribed here and checked against what `parseMap`
+// actually builds rather than trusted.
+//
+// Same argument as the ASCII/waypoint cross-check: a second representation is
+// worth having precisely because it can disagree.
+// ---------------------------------------------------------------------------
+section('map spec — the five boards match their own table');
+{
+  const SPEC: Readonly<Record<string, { road: number; build: number; runway: number; lanes: number[] }>> = {
+    Fork: { road: 54, build: 318, runway: 6, lanes: [33, 33] },
+    Delta: { road: 51, build: 325, runway: 9, lanes: [31, 28] },
+    Braid: { road: 65, build: 316, runway: 4, lanes: [43, 43] },
+    Sluice: { road: 65, build: 310, runway: 6, lanes: [20, 50] },
+    Crown: { road: 92, build: 282, runway: 5, lanes: [31, 31, 31, 31] },
+  };
+
+  for (const level of CAMPAIGN) {
+    const spec = SPEC[level.name];
+    if (spec === undefined) continue;
+    const m = parseMap(level.map);
+
+    const road = m.tiles.filter((t) => t === 'path').length;
+    const build = m.tiles.filter((t) => t === 'ground').length;
+    // Lane length carries the off-board lead-in; the spec counts tiles walked
+    // on the board, so both sides of this comparison drop one.
+    const lanes = m.routes.map((r) => r.length - 1);
+    const run = mergeRunway(m);
+
+    check(road === spec.road, `${level.name}: ${spec.road} tiles of road`, `${road}`);
+    check(build === spec.build, `${level.name}: ${spec.build} buildable`, `${build}`);
+    check(
+      JSON.stringify(lanes) === JSON.stringify(spec.lanes),
+      `${level.name}: lanes measure ${spec.lanes.join(' / ')}`,
+      lanes.join(' / '),
+    );
+    check(
+      run.tiles === spec.runway,
+      `${level.name}: ${spec.runway} tiles of merge runway`,
+      `${run.tiles} — ${(run.fraction * 100).toFixed(0)}% of the shortest lane`,
+    );
+    check(
+      road + build + m.tiles.filter((t) => t === 'blocked').length === 390,
+      `${level.name}: 26x15 fully accounted for`,
+    );
+  }
+
+  // Sluice is the board the targeting rule was rewritten for. If its lanes ever
+  // become equal that gate stops testing anything, and this is where it shows.
+  const sluice = parseMap(CAMPAIGN.find((l) => l.name === 'Sluice')!.map);
+  const [short, long] = sluice.routes.map((r) => r.length - 1) as [number, number];
+  check(long / short >= 2, 'Sluice keeps the length ratio the targeting rule exists for', `${long} : ${short}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -2474,7 +2531,7 @@ section('board · contrast order');
 // ---------------------------------------------------------------------------
 section('board · route ramp');
 {
-  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+  for (const src of CAMPAIGN.map((l) => l.map)) {
     const m = parseMap(src);
     const dist = routeDistance(m);
 
@@ -2527,7 +2584,7 @@ section('board · grid legibility');
     [1, 0.5],
   ];
 
-  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+  for (const src of CAMPAIGN.map((l) => l.map)) {
     const m = parseMap(src);
     const w = m.cols * TILE_PX;
     const h = m.rows * TILE_PX;

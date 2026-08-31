@@ -30,8 +30,11 @@ import { resolveRules } from '../src/sim/rules.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { waveCount } from '../src/sim/wavePlan.ts';
 
-/** Same tile ranking as the sweep: reach over the most route tiles, wins ties by position. */
-function rankedSpots(map: MapDef, range: number): [number, number][] {
+/**
+ * **Cluster.** Reach over the most route tiles, ties by position. The original,
+ * and the strategy the first three boards were tuned against.
+ */
+function clusterSpots(map: MapDef, range: number): [number, number][] {
   const scored: { col: number; row: number; covered: number }[] = [];
   for (let row = 0; row < map.rows; row++) {
     for (let col = 0; col < map.cols; col++) {
@@ -50,6 +53,84 @@ function rankedSpots(map: MapDef, range: number): [number, number][] {
   }
   scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
   return scored.map((s) => [s.col, s.row] as [number, number]);
+}
+
+/**
+ * **Spread**, as a greedy set cover: each spot reaches the most road *nothing
+ * has covered yet*.
+ *
+ * Both are reported, because which one wins is the most interesting number this
+ * tool produces. On a single-lane board `cluster` wins and it is not close —
+ * concentration buys the density that kills a Monolith, and spreading buys a
+ * thin film that kills nothing. On a board with lanes of different lengths
+ * `cluster` is actively wrong: a tile beside the long lane always outscores one
+ * beside the short lane, so it piles everything onto the coil and lets the
+ * chute leak — 19 stations at 73% coverage on one lane and 38% on the other.
+ *
+ * That reversal is the map spec's §4 claim showing up in the harness rather
+ * than in prose. Splitting a wave does not make it bigger; it changes what a
+ * given defence is *worth*, and here it changes which build strategy is even
+ * correct. Neither number alone is the difficulty of a board — the better of
+ * the two is.
+ */
+function spreadSpots(map: MapDef, range: number): [number, number][] {
+  const road: number[] = [];
+  for (let i = 0; i < map.tiles.length; i++) if (map.tiles[i] === 'path') road.push(i);
+
+  const ground: { col: number; row: number; reach: number[] }[] = [];
+  for (let row = 0; row < map.rows; row++) {
+    for (let col = 0; col < map.cols; col++) {
+      if (map.tiles[row * map.cols + col] !== 'ground') continue;
+      const reach = road.filter((i) => {
+        const dx = (i % map.cols) - col;
+        const dy = ((i / map.cols) | 0) - row;
+        return dx * dx + dy * dy <= range * range;
+      });
+      ground.push({ col, row, reach });
+    }
+  }
+
+  const out: [number, number][] = [];
+  const covered = new Set<number>();
+  const taken = new Set<number>();
+
+  while (out.length < ground.length) {
+    let best = -1;
+    let bestGain = -1;
+    for (let i = 0; i < ground.length; i++) {
+      if (taken.has(i)) continue;
+      const g = ground[i]!;
+      let gain = 0;
+      for (const t of g.reach) if (!covered.has(t)) gain++;
+      // Ties by total reach then position, so the order stays deterministic and
+      // a tie prefers the spot that will still be useful once the gap is shut.
+      if (gain > bestGain || (gain === bestGain && best >= 0 && gain > 0 && g.reach.length > ground[best]!.reach.length)) {
+        best = i;
+        bestGain = gain;
+      }
+    }
+    if (best < 0) break;
+    const g = ground[best]!;
+    taken.add(best);
+    out.push([g.col, g.row]);
+    if (bestGain === 0) {
+      // Everything is covered; fall back to raw reach for the remaining order,
+      // which is what a player with money left over would do — double up on the
+      // busiest stretch.
+      const rest = ground
+        .map((s, i) => ({ s, i }))
+        .filter(({ i }) => !taken.has(i))
+        .sort((a, b) => b.s.reach.length - a.s.reach.length || a.s.col - b.s.col || a.s.row - b.s.row);
+      for (const { s, i } of rest) {
+        taken.add(i);
+        out.push([s.col, s.row]);
+      }
+      break;
+    }
+    for (const t of g.reach) covered.add(t);
+  }
+
+  return out;
 }
 
 const BUILD: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
@@ -75,8 +156,10 @@ function run(
   rules: ReturnType<typeof resolveRules>,
   seed: number,
   stopBuyingAfter = Infinity,
+  strategy: 'cluster' | 'spread' = 'cluster',
 ): Result {
-  const spots = rankedSpots(map, Math.max(...BUILD.map((b) => TOWERS[b].range)));
+  const reach = Math.max(...BUILD.map((b) => TOWERS[b].range));
+  const spots = strategy === 'cluster' ? clusterSpots(map, reach) : spreadSpots(map, reach);
   const w = createWorld(map, seed, rules);
   let next = 0;
 
@@ -108,6 +191,9 @@ function run(
 
 console.log('\n\x1b[1mcampaign arc\x1b[0m');
 console.log('  \x1b[2mgreedy mixed build (all five stations) · real starting money · 5 seeds · no rushing\x1b[0m');
+console.log(
+  '  \x1b[2mtwo build strategies: "cluster" packs the busiest stretch, "spread" shuts the widest gap\x1b[0m',
+);
 
 for (const level of CAMPAIGN) {
   // Parsing is the assertion: parseMap throws on a malformed board, and a
@@ -120,16 +206,27 @@ for (const level of CAMPAIGN) {
 
   for (const id of DIFFICULTY_ORDER) {
     const rules = resolveRules(level, id);
-    const rs = SEEDS.map((s) => run(map, rules, s));
-    const wins = rs.filter((r) => r.won).length;
-    const lives = rs.reduce((a, r) => a + r.lives, 0) / rs.length;
-    const cleared = rs.reduce((a, r) => a + r.cleared, 0) / rs.length;
+    const both = (['cluster', 'spread'] as const).map((strategy) => {
+      const rs = SEEDS.map((s) => run(map, rules, s, Infinity, strategy));
+      return {
+        strategy,
+        wins: rs.filter((r) => r.won).length,
+        lives: rs.reduce((a, r) => a + r.lives, 0) / rs.length,
+        cleared: rs.reduce((a, r) => a + r.cleared, 0) / rs.length,
+      };
+    });
+    // The board's difficulty is the *better* strategy, not the average of the
+    // two — a player is allowed to pick the right one, and on a multi-lane
+    // board picking it is most of the game.
+    const best = both.reduce((a, b) => (b.wins > a.wins || (b.wins === a.wins && b.lives > a.lives) ? b : a));
+    const { wins, lives, cleared } = best;
 
     console.log(
       `    ${DIFFICULTIES[id].name.padEnd(10)}` +
         ` won ${wins}/${SEEDS.length}` +
         `  waves ${cleared.toFixed(1).padStart(4)}/${waveCount(rules)}` +
-        `  lives ${lives.toFixed(1).padStart(5)}/${rules.startingLives}`,
+        `  lives ${lives.toFixed(1).padStart(5)}/${rules.startingLives}` +
+        `  \x1b[2m${best.strategy}${both[0]!.wins === both[1]!.wins ? '' : ` beats ${both[0] === best ? 'spread' : 'cluster'}`}\x1b[0m`,
     );
   }
 }

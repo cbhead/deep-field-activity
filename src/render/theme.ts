@@ -466,10 +466,140 @@ const PINCER: SectorField = {
   starBright: 0xd2efe0,
 };
 
+/**
+ * The five multi-lane sectors, each a value step off the nearest of the three
+ * above rather than a palette invented from nothing.
+ *
+ * Paired by what the board *does*, not by where it sits in the order: Fork and
+ * Crown are ring boards and take Switchback's violet; Delta and Sluice are open
+ * boards and take Cascade's steel-cyan; Braid is the tight one and takes
+ * Pincer's teal. Within a pair the later board is the deeper step, so the run
+ * of eight reads as three families getting darker rather than as eight
+ * unrelated skies.
+ *
+ * No new hues, which is the rule the map spec sets for lanes and the contact
+ * spec set before it. Every one of these is checked by the contrast-order gate,
+ * so a step that inverted the structural layers would not survive `npm run
+ * check` — which is the only reason deriving them by hand is safe.
+ */
+
+/** Switchback one step deeper, for the first board that splits. */
+const FORK: SectorField = {
+  ...SWITCHBACK,
+  id: 'fork',
+  bg: 0x080a13,
+  ground: 0x11142a,
+  groundAlt: 0x0c0f20,
+  gridLine: 0x1f2340,
+  blocked: 0x22243a,
+  blockedEdge: 0x353950,
+  nebulaPerTile: 5,
+  path: 0x1f2440,
+  pathLit: 0x343b6e,
+  spillNear: 0x9c8fe4,
+  spillFar: 0xdcd8ff,
+  lineNear: 0xdcd8ff,
+  lineFar: 0xf3f1ff,
+  goal: 0xc0b6ff,
+  lit: 0xc0b6ff,
+  haze: 0x584e85,
+  star: 0x757ca4,
+  starCount: 270,
+};
+
+/** Cascade opened up further still — the board with room to spare. */
+const DELTA: SectorField = {
+  ...CASCADE,
+  id: 'delta',
+  bg: 0x060b11,
+  ground: 0x0f1826,
+  groundAlt: 0x0a121c,
+  gridLine: 0x1d3140,
+  blocked: 0x1e2a38,
+  blockedEdge: 0x293c4e,
+  nebulaPerTile: 3,
+  path: 0x1a2836,
+  pathLit: 0x284158,
+  goal: 0xb4f2fc,
+  lit: 0xb4f2fc,
+  haze: 0x2b4d5f,
+  starCount: 230,
+};
+
+/** Pincer's teal pressed tighter, for the board where the lanes interleave. */
+const BRAID: SectorField = {
+  ...PINCER,
+  id: 'braid',
+  bg: 0x040a0b,
+  ground: 0x0b1817,
+  groundAlt: 0x08110f,
+  gridLine: 0x1d3630,
+  blocked: 0x18282a,
+  blockedEdge: 0x224039,
+  nebulaPerTile: 7,
+  path: 0x142626,
+  pathLit: 0x21433e,
+  goal: 0x92ecac,
+  lit: 0x92ecac,
+  haze: 0x224238,
+  starCount: 260,
+};
+
+/** The darkest of the cyan family: two lanes, and one of them barely a corridor. */
+const SLUICE: SectorField = {
+  ...CASCADE,
+  id: 'sluice',
+  bg: 0x04070c,
+  ground: 0x0b1119,
+  groundAlt: 0x080c13,
+  gridLine: 0x16242f,
+  blocked: 0x172029,
+  blockedEdge: 0x212f3c,
+  nebulaPerTile: 3,
+  path: 0x131d28,
+  pathLit: 0x1e3244,
+  goal: 0x8fd8ec,
+  lit: 0x8fd8ec,
+  haze: 0x203c4c,
+  starCount: 190,
+  starBrightChance: 0.24,
+};
+
+/** The finale: the deepest field and the brightest core in the campaign. */
+const CROWN: SectorField = {
+  ...SWITCHBACK,
+  id: 'crown',
+  bg: 0x06060f,
+  ground: 0x101024,
+  groundAlt: 0x0b0b1a,
+  gridLine: 0x20204a,
+  blocked: 0x232338,
+  blockedEdge: 0x38385a,
+  nebulaPerTile: 5,
+  path: 0x1d1d42,
+  pathLit: 0x333376,
+  spillNear: 0xa08fe8,
+  spillFar: 0xe2dcff,
+  lineNear: 0xe2dcff,
+  lineFar: 0xf6f3ff,
+  goal: 0xcabcff,
+  lit: 0xcabcff,
+  litAlpha: 0.24,
+  haze: 0x5a4d90,
+  star: 0x7a7aa8,
+  starBright: 0xe0e0f8,
+  starCount: 330,
+};
+
 export const SECTOR_FIELDS: Readonly<Record<SectorFieldId, SectorField>> = {
   switchback: SWITCHBACK,
   cascade: CASCADE,
   pincer: PINCER,
+  fork: FORK,
+  delta: DELTA,
+  braid: BRAID,
+  sluice: SLUICE,
+  crown: CROWN,
 };
 
 /** What Race mode and any unknown level get. Race passes no level at all. */

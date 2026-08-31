@@ -208,33 +208,54 @@ export function parseMap(src: MapSource): MapDef {
  * design instead of describing it.
  */
 export function mergeRunway(map: MapDef): { tiles: number; fraction: number } {
-  const lanes = map.routes.map((r) => r.waypoints);
+  // Compared tile by tile, not corner by corner. Two lanes can merge in the
+  // middle of a straight — Sluice's chute runs through the point where the coil
+  // joins it without turning — so neither lane has a waypoint there and a
+  // corner-wise comparison reports the whole trunk instead of the shared part.
+  const lanes = map.routes.map(tileRun);
+
   let shared = 0;
   outer: for (;;) {
-    const first = lanes[0]!;
-    const probe = first[first.length - 1 - shared];
+    const probe = lanes[0]![lanes[0]!.length - 1 - shared];
     if (probe === undefined) break;
     for (const lane of lanes) {
       const t = lane[lane.length - 1 - shared];
-      if (t === undefined || t.x !== probe.x || t.y !== probe.y) break outer;
+      if (t === undefined || t !== probe) break outer;
     }
     shared++;
   }
 
-  // The shared *waypoints* above are corners; the runway is the road between
-  // them, which on every board so far is one straight run to the goal.
-  const tiles = shared === 0 ? 0 : runLength(lanes[0]!, shared);
-  const shortest = Math.min(...map.routes.map((r) => r.length));
+  // A suffix of k tiles is k-1 tiles of road walked, and lane length counts the
+  // off-board lead-in the same way — so both sides drop one.
+  const tiles = Math.max(0, shared - 1);
+  const shortest = Math.min(...map.routes.map((r) => r.length - 1));
   return { tiles, fraction: shortest > 0 ? tiles / shortest : 0 };
 }
 
-function runLength(waypoints: readonly Vec2[], sharedCorners: number): number {
-  let n = 0;
-  for (let i = waypoints.length - sharedCorners; i < waypoints.length; i++) {
-    const a = waypoints[i - 1];
-    const b = waypoints[i]!;
-    if (a === undefined) continue;
-    n += Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+/** One lane expanded to the tile indices it walks, in order. */
+function tileRun(route: MapRoute): number[] {
+  const out: number[] = [];
+  const wp = route.waypoints;
+  if (wp.length === 0) return out;
+
+  let x = Math.floor(wp[0]!.x);
+  let y = Math.floor(wp[0]!.y);
+  const push = (): void => {
+    out.push(y * 100000 + x);
+  };
+
+  push();
+  for (let i = 1; i < wp.length; i++) {
+    const tx = Math.floor(wp[i]!.x);
+    const ty = Math.floor(wp[i]!.y);
+    const dx = Math.sign(tx - x);
+    const dy = Math.sign(ty - y);
+    const steps = Math.abs(tx - x) + Math.abs(ty - y);
+    for (let s = 0; s < steps; s++) {
+      x += dx;
+      y += dy;
+      push();
+    }
   }
-  return n;
+  return out;
 }

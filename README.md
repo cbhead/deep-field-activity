@@ -1,15 +1,22 @@
 # Deep Field
 
-A tower defense game for your browser — hold the line through a three-sector
+A tower defense game for your browser — hold the line through an eight-sector
 campaign, or race a friend head-to-head on the same seed and see who survives
 longer.
 
 ![Switchback under fire: the route lit from dim at the spawn to bright at the pulsar, six stations ringing it, contacts mid-run, and the build deck along the bottom](docs/media/gameplay.png)
 
-Five station types across three sectors — Switchback, Cascade and Pincer, 34
-waves in all — at three difficulty tiers. The simulation is deterministic: a
-seed fixes every wave's composition and timing, which is what makes a fair
-race possible in the first place.
+Five station types across eight sectors, 94 waves in all, at three difficulty
+tiers. The simulation is deterministic: a seed fixes every wave's composition
+and timing, which is what makes a fair race possible in the first place.
+
+The first three boards — Switchback, Cascade and Pincer — each run one road, and
+they ask where the longest stretch you can afford to cover is. The last five ask
+a different question, because a map carries **routes, plural**: Fork splits a
+wave in two around a blocked centre, Delta sends armour up one road and numbers
+up the other, Braid swaps its lanes at every rung so nothing stays lined up,
+Sluice runs a 20-tile chute against a 50-tile coil so one wave arrives twice,
+and Crown runs four lanes into a strong point that covers exactly half of them.
 
 ## Someone sent me an invite link
 
@@ -93,13 +100,13 @@ Continue resumes the sector you last played, at the difficulty you last used:
 
 ![The Deep Field home screen: the game's name over a dimmed board, a Continue button showing the sector it resumes, and Campaign and Race cards side by side](docs/media/home.png)
 
-Three sectors, three difficulties — Recon (30 lives), Standard (20), and
+Eight sectors, three difficulties — Recon (30 lives), Standard (20), and
 Blackout (14 lives and tougher contacts). Each card draws its own board, so you
 can see the shape you are choosing rather than read about it; a locked sector
 shows its board dimmed rather than hiding it. Difficulty is on the card, so
 launching is one click:
 
-![The sector picker: three cards, each showing its real board as a thumbnail, with waves, road length and turn count as numerals, difficulty inline, and the third sector locked but still showing its board](docs/media/sectors.png)
+![The sector picker: cards each showing their real board as a thumbnail, with waves, road length and turn or lane count as numerals, difficulty inline, and locked sectors still showing their boards](docs/media/sectors.png)
 
 Money you finish a sector with carries into the next one.
 
