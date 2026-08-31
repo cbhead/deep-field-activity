@@ -26,7 +26,8 @@ export class NetClient {
 
   /**
    * Resolves once the server answers hello with joined. No `room` creates a
-   * fresh room; a code joins that one; `resume` reclaims a prior seat after a
+   * fresh room; a code joins that one; an `instance` joins the room for that
+   * Discord instance or creates it; `resume` reclaims a prior seat after a
    * dropped socket; `level`/`diff` are the creator's pick. Rejects if the
    * server answers with an error first (bad code, full room) or the socket
    * cannot open.
@@ -34,7 +35,7 @@ export class NetClient {
   connect(
     url: string,
     name: string,
-    opts: { room?: string; resume?: string; level?: string; diff?: string } = {},
+    opts: { room?: string; resume?: string; level?: string; diff?: string; instance?: string } = {},
   ): Promise<{ playerId: string; room: string }> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
@@ -47,6 +48,7 @@ export class NetClient {
           ...(opts.resume === undefined ? {} : { resume: opts.resume }),
           ...(opts.level === undefined ? {} : { level: opts.level }),
           ...(opts.diff === undefined ? {} : { diff: opts.diff }),
+          ...(opts.instance === undefined ? {} : { instance: opts.instance }),
         }));
       ws.onerror = () => reject(new Error(`could not reach ${url}`));
       ws.onclose = () => this.onClose?.();

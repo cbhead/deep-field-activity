@@ -40,7 +40,7 @@ accident of having been built for one friend on one Tailscale box:
 | 2 | ~~**`/.proxy/` prefixing.**~~ **Done, and the premise was wrong** — the prefix has been optional since 2025-07-30, so nothing hardcodes it. See §5. | |
 | 3 | ~~**The OAuth handshake.**~~ **Built, unverified.** See §5. | |
 | 4 | **Navigation.** `location.search = '?race'` and its siblings in `src/main.ts` throw away Discord's launch params (`frame_id`, `instance_id`) and break the SDK on reload. | **The real refactor**, and bigger than the eight call sites suggest — see §4. Also drags in the rematch-by-reload path, which leans on `sessionStorage` surviving a navigation. |
-| 5 | **Rooms become the instance.** Everyone who launches in the same voice channel is already in the same room; `instanceId` replaces the generated code. | Net deletion: room codes, invite links, the `/info` Tailscale lookup, and name entry all stop having a job. Names come from the Discord profile. |
+| 5 | ~~**Rooms become the instance.**~~ **Done**, and verified with two real clients. See §7. | |
 | 6 | **Match reports move server-side.** The client can't reach `discord.com/api/webhooks` through the CSP. | `src/ui/discord.ts` keeps its formatter; only the transport moves. |
 | 7 | **More than two people.** The relay seats exactly two and answers "room is full" to the third. A voice channel routinely holds five. | Needs a spectator or queue path. Not hard, but it's the first impression. |
 | 8 | **Terms of Service and Privacy Policy URLs.** Required by Discord before an app can be verified — a gap the original survey missed entirely. | Drafted and served; see §6. Two placeholders still to fill, and they need a host that is up when a reviewer looks. |
@@ -311,6 +311,51 @@ the laptop is.
 If the game's data handling changes — a new stored key, a wider scope, anything
 persisted server-side — the privacy policy is now a file that has to change with
 it, which is the reason to keep it in the repository rather than in a web form.
+
+## §7 — Rooms became the channel
+
+The change that makes this feel like a Discord app rather than a website in a
+frame. Everyone who opens the activity in one voice channel shares an
+`instanceId`, so that *is* the room, and four things stop having a job: the room
+code, the invite link, the `/info` tailnet lookup, and the name prompt.
+
+**The protocol grew two things.** `hello.instance` means join-or-create, which
+is deliberately not what `room` means — a room code is something a human typed,
+so a missing one is an error worth reporting, while a missing instance room is
+just the first of the two players arriving. Both press play at the same moment
+and whichever socket lands first is arbitrary, so the distinction matters.
+
+And `pick`, because an instance room has no creation form to choose a board in —
+you are simply *in* it. Choosing moved inside the room and belongs to seat one;
+the other seat sees the same control disabled, since what you are about to play
+matters to both. The server re-deals every pick to both clients, so the two
+cannot end up disagreeing about the board a shared seed is for.
+
+The relay keeps a second index, instance → room code, rather than keying rooms
+by instance. The code is still what the logs, the results card and the match
+report call a game, and a snowflake would be a poor substitute in all three: the
+instance is how you *find* the room, the code is what the room is *called*.
+
+**A security fix rode along, and had to.** Player names were interpolated
+straight into `innerHTML` in five places. With typed callsigns that was a
+friends-only hazard; with Discord display names the trust boundary moves from
+"the person I invited" to "anyone who can join the voice channel", and a name is
+rendered on the *opponent's* machine. `escapeHtml` in `ui/raceTheme.ts` now
+covers all five. Verified by giving the lobby a display name containing an
+`onerror` payload and confirming it did not fire.
+
+**This is the first race path in the repo that is actually observed.** Every
+previous claim about Race mode here was reasoned from the code, because it needs
+two clients and a relay. It does not need a *browser*, though — the relay speaks
+JSON over a socket. `npm run rooms` starts a real relay and drives it with a
+pair of real clients, asserting that two pilots in one channel land in the same
+room with no code exchanged, that seat one's pick propagates and seat two's is
+ignored, that a third is refused with a message that distinguishes "full" from
+"already under way", that another channel gets its own room, and that both
+clients are dealt the same seed and the same board.
+
+What that still does not cover is the match itself — whether the game then plays
+correctly across two machines is what a real match night is for.
 
 ## Relationship to upstream
 

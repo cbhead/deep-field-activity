@@ -23,7 +23,8 @@
     "shots": "zsh scripts/shots.sh",
     "teardown": "zsh scripts/teardown.sh",
     "proxy": "zsh scripts/proxy.sh",
-    "tunnel": "zsh scripts/tunnel.sh"
+    "tunnel": "zsh scripts/tunnel.sh",
+    "rooms": "zsh scripts/rooms.sh"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",

@@ -50,6 +50,13 @@ export interface RaceOptions {
   name: string;
   /** Omit to create a room; supply a code to join one. */
   room?: string;
+  /**
+   * A Discord Activity instance. Takes the place of a room code entirely: the
+   * server finds or creates the one room for that instance, so everyone who
+   * launched the activity in the same voice channel meets without anyone
+   * reading a code aloud.
+   */
+  instance?: string;
   /** Creator's sector/difficulty pick; ignored by the server when joining. */
   choice?: { level: string; diff: string };
   hooks: RaceHooks;
@@ -69,12 +76,16 @@ export class MatchController {
   }
 
   async run(): Promise<void> {
-    const { url, name, room, choice, hooks, autoReady = true } = this.opts;
+    const { url, name, room, instance, choice, hooks, autoReady = true } = this.opts;
     this.client.onMessage = (msg) => this.handle(msg);
     this.client.onClose = () => this.onDropped();
     try {
       const joined = await this.client.connect(url, name, {
         ...(room === undefined ? {} : { room }),
+        ...(instance === undefined ? {} : { instance }),
+        // The pick rides along only when this client might be creating the
+        // room. Joining an existing one ignores it either way — the server
+        // re-deals whatever the room already decided.
         ...(room === undefined && choice !== undefined ? { level: choice.level, diff: choice.diff } : {}),
       });
       // NetClient consumes `joined` to resolve connect(), so the room code
@@ -149,6 +160,11 @@ export class MatchController {
 
   ready(flag = true): void {
     this.client.send(flag ? { t: 'ready' } : { t: 'ready', ready: false });
+  }
+
+  /** Change the room's board. Ignored by the server unless we hold seat one. */
+  pick(level: string, diff: string): void {
+    this.client.send({ t: 'pick', level, diff });
   }
 
   private pump: ReturnType<typeof setInterval> | null = null;

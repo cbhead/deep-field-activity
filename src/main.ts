@@ -341,20 +341,27 @@ function mountRace(
   };
 
   const lobby = createLobbyScreen(screens, {
-    ...(rejoin !== null
-      ? { autoJoin: rejoin }
-      : route.room !== null
-        ? { prefillRoom: route.room }
-        : {}),
+    // Inside Discord, identity wins over everything: there is no name to ask
+    // for and the instance replaces both the room code and the rematch's
+    // remembered room, since re-entering the channel's race *is* the rematch.
+    ...(activity !== null
+      ? { identity: { name: activity.displayName, instance: activity.instanceId } }
+      : rejoin !== null
+        ? { autoJoin: rejoin }
+        : route.room !== null
+          ? { prefillRoom: route.room }
+          : {}),
     relayHost: host,
     onLeave: leave,
     onReady: (ready) => controller?.ready(ready),
-    onSubmit: (name, room, choice) => {
+    onPick: (level, diff) => controller?.pick(level, diff),
+    onSubmit: ({ name, room, instance, choice }) => {
       playerName = name;
       const c = new MatchController({
         url: serverUrl(host, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
+        ...(instance === undefined ? {} : { instance }),
         ...(choice === undefined ? {} : { choice }),
         autoReady: rejoin !== null,
         hooks: {

@@ -19,7 +19,7 @@ import { formatSeed } from '../sim/util/rng.ts';
 import { CAMPAIGN, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
 import { getWebhook, postToDiscord, saveWebhook } from './discord.ts';
-import { ensureRaceStyle, raceBar, hexSvg, YOU, THEM } from './raceTheme.ts';
+import { ensureRaceStyle, raceBar, hexSvg, escapeHtml, YOU, THEM } from './raceTheme.ts';
 
 export interface LobbyScreen {
   /** level/diff are the room's pick, as re-dealt by the server. */
@@ -34,11 +34,31 @@ export interface RaceChoice {
   diff: string;
 }
 
+/** Everything the lobby needs to ask for a seat. */
+export interface JoinRequest {
+  name: string;
+  /** A typed room code. */
+  room?: string;
+  /** A Discord instance — join-or-create, no code involved. */
+  instance?: string;
+  /** The board to play, honoured only if this client creates the room. */
+  choice?: RaceChoice;
+}
+
 export interface LobbyOptions {
   /** Room code from the URL, joined without showing the form. */
   prefillRoom?: string;
   /** Rematch rejoin: skip the form entirely and connect straight away. */
   autoJoin?: { name: string; room: string };
+  /**
+   * Discord identity. Its presence is what puts the whole screen in Activity
+   * mode: there is no name to ask for, no code to hand out and no link to send,
+   * because everyone who opened the activity in this voice channel is already
+   * addressed by the same instance. The form, the deep-link screen, the invite
+   * field and the webhook row all disappear, and choosing the board moves
+   * inside the room — see `onPick`.
+   */
+  identity?: { name: string; instance: string };
   /**
    * The host:port the client actually dials for the relay socket. Required, and
    * passed in rather than re-derived here, because the two can differ: under a
@@ -47,9 +67,14 @@ export interface LobbyOptions {
    * debugging a port nothing ever tried to reach.
    */
   relayHost: string;
-  /** choice present only when creating — the server ignores it on joins. */
-  onSubmit(name: string, room?: string, choice?: RaceChoice): void;
+  onSubmit(join: JoinRequest): void;
   onReady(ready: boolean): void;
+  /**
+   * Change the room's sector/difficulty from inside the lobby. Only the first
+   * seat may, and only the server decides that — this fires optimistically and
+   * the authoritative answer arrives back as a lobby broadcast.
+   */
+  onPick(level: string, diff: string): void;
   /**
    * Back to a fresh lobby — from "Leave the room", and from "start your own
    * instead" on a deep link. Both used to assign `location.href`, which is a
@@ -95,16 +120,21 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   // knows its own Tailscale IP better than this page does (the host may have
   // opened localhost), so ask it. In dev, Vite answers 404 and the page's own
   // origin stands. Re-render the waiting screen if the answer arrives late.
+  // Skipped entirely in Activity mode: `/info` exists to build an invite link
+  // out of the host's tailnet address, and inside Discord there is no link to
+  // build — the instance is the invitation.
   let inviteBase = location.origin;
-  void fetch('/info')
-    .then((r) => (r.ok ? (r.json() as Promise<{ tailscaleIp: string | null; port: number }>) : null))
-    .then((info) => {
-      if (info?.tailscaleIp) {
-        inviteBase = `http://${info.tailscaleIp}:${info.port}`;
-        if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId, lastLevel, lastDiff);
-      }
-    })
-    .catch(() => undefined);
+  if (opts.identity === undefined) {
+    void fetch('/info')
+      .then((r) => (r.ok ? (r.json() as Promise<{ tailscaleIp: string | null; port: number }>) : null))
+      .then((info) => {
+        if (info?.tailscaleIp) {
+          inviteBase = `http://${info.tailscaleIp}:${info.port}`;
+          if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId, lastLevel, lastDiff);
+        }
+      })
+      .catch(() => undefined);
+  }
 
   const inviteLink = (room: string): string => `${inviteBase}/?race=${room}`;
 
@@ -176,8 +206,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     localStorage.setItem('race-name', name);
     el.innerHTML = bar('Race', 'Race relay', 'connecting…') +
       `<div class="lb-glow"></div><div class="lb-center"><span class="lb-lede">Raising the relay…</span></div>`;
-    if (room === undefined) opts.onSubmit(name, undefined, { level: pickLevel, diff: pickDiff });
-    else opts.onSubmit(name, room);
+    if (room === undefined) opts.onSubmit({ name, choice: { level: pickLevel, diff: pickDiff } });
+    else opts.onSubmit({ name, room });
   }
 
   function pickFine(): string {
@@ -285,9 +315,65 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     });
   }
 
+  /**
+   * The board chooser, for Activity mode.
+   *
+   * On a plain URL the sector and difficulty are chosen in the creation form,
+   * because there is one — you fill it in to make a room. An instance room has
+   * no such moment: you are simply in it, alongside whoever else launched. So
+   * the choice moves inside the room, and belongs to seat one, because two
+   * people each believing they chose is a bug the seed would then disagree
+   * about.
+   *
+   * The other seat sees the same control, disabled, rather than a different
+   * screen — what is being played matters to both, and hiding it from the
+   * person who cannot change it would leave them guessing.
+   */
+  function roomPicker(level: string, diff: string, mine: boolean): string {
+    const pill = (id: string, label: string, on: boolean): string =>
+      `<button class="lb-pick${on ? ' on' : ''}"${mine ? ` data-id="${id}"` : ' disabled style="opacity:.55;cursor:default"'}>${label}</button>`;
+    return (
+      `<div style="display:flex;flex-direction:column;gap:8px">` +
+      `<span class="lb-label">Sector${mine ? '' : ' — seat one chooses'}</span>` +
+      `<div class="lb-picks" id="room-level">` +
+      CAMPAIGN.map((l) => pill(l.id, l.name, l.id === level)).join('') +
+      `</div></div>` +
+      `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Difficulty</span>` +
+      `<div class="lb-picks" id="room-diff">` +
+      DIFFICULTY_ORDER.map((d) => pill(d, DIFFICULTIES[d].name, d === diff)).join('') +
+      `</div></div>`
+    );
+  }
+
+  /** Wire the room picker, if this client is allowed to use it. */
+  function wireRoomPicker(mine: boolean): void {
+    if (!mine) return;
+    const on = (group: string, pick: (id: string) => void): void => {
+      el.querySelector(`#${group}`)?.addEventListener('click', (ev) => {
+        const target = (ev.target as HTMLElement).closest('.lb-pick');
+        const id = target instanceof HTMLElement ? target.dataset['id'] : undefined;
+        if (id === undefined) return;
+        pick(id);
+        // Fire and let the broadcast correct us. The server is the authority on
+        // what the room is playing, and it re-deals to both clients — rendering
+        // optimistically here would let the two disagree until the next lobby
+        // message, which is exactly the window a countdown can start in.
+        opts.onPick(lastLevel, lastDiff);
+      });
+    };
+    on('room-level', (id) => {
+      lastLevel = id;
+      localStorage.setItem('race-level', id);
+    });
+    on('room-diff', (id) => {
+      lastDiff = id;
+      localStorage.setItem('race-diff', id);
+    });
+  }
+
   const seat = (p: LobbyPlayer, mine: boolean, n: number): string =>
     `<div class="lb-seat ${mine ? 'you' : 'them'}">${hexSvg(mine ? YOU : THEM)}` +
-    `<span style="display:flex;flex-direction:column;gap:2px"><span class="lb-seat-name">${p.name}</span>` +
+    `<span style="display:flex;flex-direction:column;gap:2px"><span class="lb-seat-name">${escapeHtml(p.name)}</span>` +
     `<span class="lb-seat-sub">${mine ? 'you' : 'opponent'} · seat ${n}</span></span>` +
     (p.ready
       ? `<span class="lb-pill on"><i></i>Ready</span>`
@@ -305,22 +391,36 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
 
     const lv = levelOr01(level);
     const df = DIFFICULTIES[diffOrStd(diff)];
+    const inActivityMode = opts.identity !== undefined;
+    // Seat order is the server's, and seat one is whoever created the room.
+    const isChooser = players[0]?.playerId === myId;
 
     if (players.length < 2) {
-      // L3 — the code is the whole screen; passing it on is the only job.
+      // L3. On a plain URL the code is the whole screen, because passing it on
+      // is the only job left. In an Activity there is nothing to pass on — the
+      // other seat is filled by anyone in the channel opening the same
+      // activity — so the screen's job becomes choosing what you'll play.
       el.innerHTML = bar(lv.name, 'Race relay', 'connected') + `<div class="lb-glow"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(560px,90vw)">` +
-        `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
-        // inputmode=none on both: they are readonly select-on-click handles, and
-        // without it iOS raises the on-screen keyboard for a field nothing can
-        // be typed into — covering the very code you tapped to read.
-        `<input class="lb-bigcode" readonly inputmode="none" value="${room}" onclick="this.select()" ` +
-        `aria-label="Room code — tap to select">` +
-        `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">or send the link</span>` +
-        `<input class="lb-field lb-link" readonly inputmode="none" value="${inviteLink(room)}" ` +
-        `onclick="this.select()" aria-label="Invite link — tap to select"></div>` +
-        discordRow() +
-        `<span class="lb-fine" style="max-width:440px">Both fields select on click — the relay runs over plain http on your tailnet, where the browser refuses clipboard access.</span>` +
+        (inActivityMode
+          ? `<div style="display:flex;flex-direction:column;gap:10px">` +
+            `<span class="lb-kicker">This channel's race</span>` +
+            `<h1 class="lb-title" style="font-size:40px">Waiting for a second pilot</h1>` +
+            `<span class="lb-lede">Anyone in this voice channel can open Deep Field to take the other seat. ` +
+            `There is no code to send and no link to copy.</span></div>` +
+            roomPicker(level, diff, isChooser)
+          : `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
+            // inputmode=none on both: they are readonly select-on-click handles,
+            // and without it iOS raises the on-screen keyboard for a field
+            // nothing can be typed into — covering the very code you tapped to
+            // read.
+            `<input class="lb-bigcode" readonly inputmode="none" value="${room}" onclick="this.select()" ` +
+            `aria-label="Room code — tap to select">` +
+            `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">or send the link</span>` +
+            `<input class="lb-field lb-link" readonly inputmode="none" value="${inviteLink(room)}" ` +
+            `onclick="this.select()" aria-label="Invite link — tap to select"></div>` +
+            discordRow() +
+            `<span class="lb-fine" style="max-width:440px">Both fields select on click — the relay runs over plain http on your tailnet, where the browser refuses clipboard access.</span>`) +
         `</div><div class="lb-how" style="gap:16px;padding-top:8px">` +
         `<span class="lb-label" style="letter-spacing:.18em">Pilots</span>` +
         (me ? seat(me, true, 1) : '') +
@@ -340,8 +440,17 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       // L4/L5 — the ready action takes the emphasis; both states stay visible.
       const iAmReady = me?.ready === true;
       const kicker = iAmReady ? 'Standing by' : 'Room full';
-      const title = iAmReady ? `Waiting on ${them?.name ?? 'them'}` : 'Two pilots on the line';
-      el.innerHTML = bar(lv.name, `${df.name} · room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${room}</span>`, 'both connected') +
+      const title = iAmReady ? `Waiting on ${escapeHtml(them?.name ?? 'them')}` : 'Two pilots on the line';
+      el.innerHTML = bar(
+        lv.name,
+        // The room code is dropped inside an Activity: nobody typed it, nobody
+        // will read it out, and it would be the only thing on screen that
+        // cannot be acted on.
+        inActivityMode
+          ? df.name
+          : `${df.name} · room <span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em;color:#cfd3e5">${room}</span>`,
+        'both connected',
+      ) +
         `<div class="lb-glow"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(1104px,92vw)">` +
         `<div style="display:flex;flex-direction:column;gap:10px">` +
@@ -350,6 +459,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<div style="flex:1;min-width:280px">${me ? seat(me, true, 1) : ''}</div>` +
         `<span style="display:grid;place-items:center;width:44px" class="lb-sub">vs</span>` +
         `<div style="flex:1;min-width:280px">${them ? seat(them, false, 2) : ''}</div></div>` +
+        // Still changeable with both seats filled, and still only by seat one:
+        // agreeing on the board is a conversation people have after they see
+        // who turned up, not before.
+        (inActivityMode
+          ? `<div style="display:flex;gap:22px;flex-wrap:wrap">${roomPicker(level, diff, isChooser)}</div>`
+          : '') +
         `<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">` +
         (iAmReady
           ? `<button id="race-unready" class="lb-btn ghost" style="width:260px;height:52px">You're ready</button>` +
@@ -362,10 +477,28 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       el.querySelector('#race-unready')?.addEventListener('click', () => opts.onReady(false));
     }
     el.querySelector('#race-leave')?.addEventListener('click', () => opts.onLeave());
-    if (players.length < 2) wireDiscord(room);
+    if (inActivityMode) wireRoomPicker(isChooser);
+    // The webhook row only exists outside an Activity, so only wire it there.
+    else if (players.length < 2) wireDiscord(room);
   }
 
-  if (opts.autoJoin !== undefined) {
+  if (opts.identity !== undefined) {
+    // Activity mode: no form, no code, no name to ask for. Discord already
+    // answered all three, so the only honest screen here is one that says what
+    // is happening while the socket opens.
+    el.innerHTML = bar('Race', 'Race relay', 'connecting…') + `<div class="lb-glow"></div>` +
+      `<div class="lb-center"><span class="lb-lede">Joining this channel's race as ` +
+      `<b style="color:#d2cefd">${escapeHtml(opts.identity.name)}</b>…</span></div>`;
+    // Deferred a tick for the same reason the rematch path is, and tracked so
+    // navigating away inside that tick cannot open a socket for a dead screen.
+    const { name, instance } = opts.identity;
+    joinTimer = setTimeout(() => {
+      joinTimer = null;
+      // The pick rides along in case this client is the one that creates the
+      // room; the server ignores it for whoever arrives second.
+      opts.onSubmit({ name, instance, choice: { level: pickLevel, diff: pickDiff } });
+    }, 0);
+  } else if (opts.autoJoin !== undefined) {
     el.innerHTML = bar('Race', 'Race relay', 'rejoining…') + `<div class="lb-glow"></div>` +
       `<div class="lb-center"><span class="lb-lede">Rejoining room <b style="color:#d2cefd">${opts.autoJoin.room}</b>…</span></div>`;
     // Deferred a tick so the caller has its handle before callbacks fire.
@@ -374,7 +507,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     const { name, room } = opts.autoJoin;
     joinTimer = setTimeout(() => {
       joinTimer = null;
-      opts.onSubmit(name, room);
+      opts.onSubmit({ name, room });
     }, 0);
   } else if (opts.prefillRoom !== undefined) {
     showDeepLink(opts.prefillRoom);
@@ -398,7 +531,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<span class="lb-kicker" style="letter-spacing:.3em">Both ready</span>` +
         `<div class="lb-ring"><i></i><i></i><span class="lb-count" id="race-count"></span></div>` +
         `<div class="lb-vsline"><b><i style="background:${YOU};box-shadow:0 0 8px ${YOU}e6"></i>${me?.name ?? 'you'}</b>` +
-        `<em>vs</em><b><i style="background:${THEM};box-shadow:0 0 8px ${THEM}e6"></i>${them?.name ?? 'opponent'}</b></div>` +
+        `<em>vs</em><b><i style="background:${THEM};box-shadow:0 0 8px ${THEM}e6"></i>${escapeHtml(them?.name ?? 'opponent')}</b></div>` +
         `<div style="display:flex;flex-direction:column;align-items:center;gap:7px">` +
         `<span class="lb-mono">seed 0x${formatSeed(seed)} · ${lv.waves.length} waves · ${df.startingLives} lives</span>` +
         `<span class="lb-fine">Identical waves on both boards.</span></div></div>`;

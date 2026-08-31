@@ -22,13 +22,43 @@ export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
 /** One placed station, for the opponent's minimap. Tile-aligned like the sim. */
 export type TowerPin = { c: number; r: number; k: string; tier: number };
 
-/** client → server. hello without a room creates one; with a room, joins it.
+/** client → server. hello without a room creates one; with a room, joins it;
+ *  with an instance, joins the room for that instance or creates it.
  *  `resume` is a prior playerId: reclaim that seat after a dropped socket.
  *  `level`/`diff` are the creator's pick; the server stores and re-deals them. */
 export type C2S =
-  | { t: 'hello'; v: number; name: string; room?: string; resume?: string; level?: string; diff?: string }
+  | {
+      t: 'hello';
+      v: number;
+      name: string;
+      room?: string;
+      resume?: string;
+      level?: string;
+      diff?: string;
+      /**
+       * A Discord Activity instance id — shared by everyone who launched the
+       * activity together in one voice channel.
+       *
+       * Deliberately not `room`. A room code is something a human read out and
+       * typed, so joining one that does not exist is an error worth reporting.
+       * An instance is an address the client did not choose and cannot mistype,
+       * so it means "put me in the room for this instance, and make one if
+       * nobody has yet" — which is what lets two people press play at the same
+       * moment and still meet.
+       */
+      instance?: string;
+    }
   /** ready:false un-readies — allowed until the countdown is dealt. */
   | { t: 'ready'; ready?: boolean }
+  /**
+   * Change the room's sector and difficulty from inside the lobby. Honoured
+   * only from the first seat, and only before the countdown; the server re-deals
+   * the result to everyone, so the two clients cannot end up disagreeing.
+   *
+   * An instance room has no creation form to make that choice in — you arrive
+   * already in the room — so choosing has to be something done from inside it.
+   */
+  | { t: 'pick'; level: string; diff: string }
   /** `hidden` rides along on visibility changes: the sim freezes with the tab.
    *  `towers` rides along only when the layout changed since the last frame. */
   | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }

@@ -88,14 +88,27 @@ type Room = {
   /** Last relayed status per playerId; the forfeit standings come from here. */
   lastStatus: Map<string, { wave: number; lives: number; elapsedMs: number }>;
   forfeitTimer: ReturnType<typeof setTimeout> | null;
+  /** The Discord instance this room belongs to, so expiry can unindex it. */
+  instance: string | null;
 };
 
 const rooms = new Map<string, Room>();
 
+/**
+ * Discord instance id → room code.
+ *
+ * A second index rather than keying rooms by instance directly, because the
+ * room code stays useful even when nobody had to read it out: it is what the
+ * logs, the results card and the match report identify a game by, and a
+ * snowflake would be a poor substitute in all three. The instance is how you
+ * find the room; the code is what the room is called.
+ */
+const byInstance = new Map<string, string>();
+
 // No lookalikes (O/0, I/1/L) — these get read aloud over a call.
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
-function newRoom(): Room {
+function newRoom(instance: string | null = null): Room {
   let code: string;
   do {
     code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
@@ -103,9 +116,19 @@ function newRoom(): Room {
   const room: Room = {
     code, players: [], started: false, level: 'level01', diff: 'standard',
     roster: new Map(), finals: new Map(), lastStatus: new Map(), forfeitTimer: null,
+    instance,
   };
   rooms.set(code, room);
+  if (instance !== null) byInstance.set(instance, code);
   return room;
+}
+
+/** Forget a room, and the instance pointing at it. */
+function dropRoom(room: Room): void {
+  rooms.delete(room.code);
+  if (room.instance !== null && byInstance.get(room.instance) === room.code) {
+    byInstance.delete(room.instance);
+  }
 }
 
 /** Ranking order: waves cleared, then lives remaining, then elapsed time. */
@@ -343,7 +366,32 @@ wss.on('connection', (ws: WebSocket, req) => {
           // join attempt so the client gets an honest error.
         }
 
-        if (msg.room !== undefined) {
+        if (msg.instance !== undefined) {
+          // Join-or-create, atomically, because both players press play at the
+          // same moment and whichever socket lands first is arbitrary. A
+          // missing room is the normal first case, not an error — which is the
+          // whole difference between an instance and a typed room code.
+          const existing = byInstance.get(msg.instance);
+          const wanted = existing !== undefined ? rooms.get(existing) : undefined;
+          if (wanted && !wanted.started && wanted.players.length < 2) {
+            room = wanted;
+          } else if (wanted) {
+            // Two distinguishable refusals, because they are different
+            // problems: one resolves when the match ends, the other when
+            // somebody leaves. Gap #7 turns both into a spectator seat.
+            return send(ws, {
+              t: 'error',
+              reason: wanted.started
+                ? 'a race is already under way in this channel'
+                : 'both seats in this channel are taken',
+            });
+          } else {
+            room = newRoom(msg.instance);
+            if (msg.level !== undefined) room.level = msg.level;
+            if (msg.diff !== undefined) room.diff = msg.diff;
+            console.log(`[instance] ${msg.instance} → room ${room.code}`);
+          }
+        } else if (msg.room !== undefined) {
           const wanted = rooms.get(msg.room.toUpperCase());
           if (!wanted) return send(ws, { t: 'error', reason: `no room ${msg.room.toUpperCase()}` });
           if (wanted.players.length >= 2 || wanted.started) return send(ws, { t: 'error', reason: 'room is full' });
@@ -375,6 +423,19 @@ wss.on('connection', (ws: WebSocket, req) => {
           console.log(`[start] room ${room.code} seed=${seed} ${room.level}/${room.diff}`);
           broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS, level: room.level, diff: room.diff });
         }
+        break;
+      }
+
+      case 'pick': {
+        // First seat only, and only before the countdown. Not a trust boundary
+        // — cheating is a non-goal here as everywhere — but two clients each
+        // believing they chose is a real bug rather than an exploit, so the
+        // room has exactly one chooser and re-deals the result to both.
+        if (!me || !room || room.started || room.players[0] !== me) return;
+        room.level = msg.level;
+        room.diff = msg.diff;
+        console.log(`[pick] ${me.name} set room ${room.code} to ${room.level}/${room.diff}`);
+        broadcastLobby(room);
         break;
       }
 
@@ -421,7 +482,10 @@ wss.on('connection', (ws: WebSocket, req) => {
       if (r.forfeitTimer !== null) clearTimeout(r.forfeitTimer);
       r.forfeitTimer = null;
       setTimeout(() => {
-        if (r.players.length === 0) rooms.delete(r.code);
+        // dropRoom, not rooms.delete: an instance room that vanished from the
+        // code table while still indexed by instance would send the next pair
+        // in that channel to a room nobody can reach.
+        if (r.players.length === 0) dropRoom(r);
       }, EMPTY_ROOM_TTL_MS);
       return;
     }

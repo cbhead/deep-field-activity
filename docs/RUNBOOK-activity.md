@@ -170,7 +170,9 @@ The run was a success if all of these are true:
 - [ ] The front door rendered inside the Discord iframe
 - [ ] `[td] Discord activity: …` appeared in the Activity's console
 - [ ] A single-player sector started and was playable
-- [ ] `Race` opened the lobby and created a room
+- [ ] `Race` opened the lobby with **no name prompt and no room code**
+- [ ] A second person launching in the same channel took the other seat, with
+      nothing sent between you
 - [ ] Ctrl-C stopped the public URL answering
 
 ---
@@ -187,7 +189,8 @@ Mostly predicted, not observed. Correct it as you learn.
 | Console shows `token exchange failed (503)` | The relay has no `DISCORD_CLIENT_SECRET` | It is read at run time from `.env`; confirm the file exists and restart. `npm run proxy` asserts this path |
 | Console shows `token exchange failed (502)` | Discord rejected the exchange — usually a stale or wrong client secret | Reset the secret in the portal, update `.env`, restart. The relay's terminal logs the upstream status |
 | `frame_id query param is not defined` | The page was opened outside Discord with the SDK forced somehow | Should be impossible — `inActivity()` gates construction on exactly that parameter. If you see it, that guard has a hole |
-| Race lobby shows a tailnet invite link | `/info` still reports the host's Tailscale IP, which is meaningless inside Discord | Expected today. Rooms become the Discord instance in gap #5, which deletes invite links entirely |
+| Race lobby asks for a name or shows a room code | The Discord handshake did not complete, so the lobby fell back to its plain-URL form | Same cause as a missing `[td] Discord activity:` line — the identity is what puts the lobby in Activity mode |
+| Both pilots end up in *different* rooms | They are not in the same instance — separate voice channels, or one relaunched the activity | Both must launch from the same channel. `npm run rooms` asserts the server side of this |
 | `EADDRINUSE` on 8787 | An earlier relay is still running | `kill $(lsof -nP -tiTCP:8787 -sTCP:LISTEN)` |
 | Assets 404 inside Discord but work on the tunnel URL | A path assumption that survives only outside the proxy | `base: './'` in `vite.config.ts` exists to prevent this; `npm run proxy` covers the prefix cases. Capture the failing URL before changing anything |
 
@@ -210,9 +213,8 @@ exactly as [match night](RUNBOOK-match-night.md) describes.
 
 ## Known gaps (don't file these as bugs mid-test)
 
-- **Rooms are not the voice channel yet.** Everyone still types a name and
-  trades a room code, inside a client that already knows who they are. Gap #5.
-- **The relay seats exactly two.** A third person gets "room is full". Gap #7.
+- **The relay seats exactly two.** A third person in the channel is refused with
+  "both seats in this channel are taken". Gap #7.
 - **Match reports still post from the browser** to a webhook pasted into
   localStorage, which the CSP may well block inside the iframe. Gap #6.
 - **Mobile is not expected to work well.** The board and HUD scale as one unit,

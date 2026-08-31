@@ -126,6 +126,21 @@ export function ensureRaceStyle(): void {
   document.head.appendChild(style);
 }
 
+/**
+ * Escape text before it goes into an innerHTML template.
+ *
+ * Every race screen is built by string concatenation, and a player's name is
+ * the one value in those strings that a stranger chooses. Typed callsigns made
+ * that a friends-only hazard; Discord display names make it a real one, because
+ * the trust boundary moved from "the person I invited" to "anyone who can join
+ * the voice channel", and a name is rendered on the *opponent's* machine.
+ *
+ * Applies to names only. Sector and difficulty labels come from `content/` and
+ * are ours.
+ */
+export const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot', "'": '#39' }[c]!};`);
+
 export const raceBar = (brand: string, sub: string, conn: string, bad = false): string =>
   `<div class="lb-bar"><span class="lb-brand">${brand}</span><span class="lb-sep"></span>` +
   `<span class="lb-sub">${sub}</span>` +

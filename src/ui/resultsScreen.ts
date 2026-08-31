@@ -11,7 +11,7 @@
  */
 import type { Standing } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
-import { ensureRaceStyle, raceBar, hexSvg, YOU, THEM } from './raceTheme.ts';
+import { ensureRaceStyle, raceBar, hexSvg, escapeHtml, YOU, THEM } from './raceTheme.ts';
 
 export const fmtTime = (ms: number): string => {
   const s = Math.round(ms / 1000);
@@ -59,7 +59,7 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
       `<span class="lb-mono" style="width:16px">${i + 1}.</span>` +
       hexSvg(mine ? YOU : THEM, !winner && opts.winnerId !== null) +
       `<span style="display:flex;flex-direction:column;gap:3px">` +
-      `<span class="lb-seat-name" style="font-size:17px">${s.name}${mine ? ' <span style="opacity:.55;font-weight:400;font-size:12px">you</span>' : ''}</span>` +
+      `<span class="lb-seat-name" style="font-size:17px">${escapeHtml(s.name)}${mine ? ' <span style="opacity:.55;font-weight:400;font-size:12px">you</span>' : ''}</span>` +
       `<span class="lb-seat-sub">wave ${s.wave} · ${s.lives} lives · ${fmtTime(s.elapsedMs)}</span></span>` +
       (winner
         ? `<span class="lb-pill on" style="margin-left:auto"><i></i>${opts.reason === 'forfeit' ? 'By forfeit' : 'Winner'}</span>`
