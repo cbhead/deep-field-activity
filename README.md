@@ -4,10 +4,11 @@
 > playable Deep Field lives at
 > [cbhead/deep-field-td](https://github.com/cbhead/deep-field-td); this repo
 > forked from it at `1e2469a` and is porting it to run inside a Discord voice
-> channel via the Embedded App SDK. The plan, and what it costs, is in
-> [docs/DISCORD-ACTIVITY.md](docs/DISCORD-ACTIVITY.md); to actually launch it,
-> follow [docs/RUNBOOK-activity.md](docs/RUNBOOK-activity.md) — which has never
-> been run end to end, so the first person through it is testing it.
+> channel via the Embedded App SDK. All seven gaps in
+> [docs/DISCORD-ACTIVITY.md](docs/DISCORD-ACTIVITY.md) are closed, and as of
+> 2026-08-31 the activity launches and signs a player in for real. To run it,
+> follow [docs/RUNBOOK-activity.md](docs/RUNBOOK-activity.md). What has *not*
+> happened yet is two people racing each other inside a voice channel.
 >
 > Upstream is wired up as a remote, so sim and balance fixes still flow down:
 > `git pull upstream main`. Everything below this line describes the game as it

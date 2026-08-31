@@ -1,14 +1,20 @@
 # Runbook: Launch the Discord Activity
 
 **Owner:** Chandler (host) | **Frequency:** As needed
-**Last Updated:** 2026-08-30 | **Last Run:** never — this has not yet been run end to end
+**Last Updated:** 2026-08-31 | **Last Run:** 2026-08-31 — first successful launch
 
-> **Read this first.** Nothing below Step 3 has ever been executed. The handshake
-> is written from the SDK's type declarations, not from a working launch, and
-> the first time you run this you are testing it, not using it. Expect to find
-> something. The [Troubleshooting](#troubleshooting) table is stocked with
-> failures predicted from the code rather than observed, and is the part most
-> likely to be wrong.
+> **Status.** The activity launches and the handshake completes: the iframe
+> loads, the SDK constructs, and `ready → authorize → /api/token → authenticate`
+> runs through to a signed-in player. Steps 0–6 have now been walked end to end
+> at least once, and the troubleshooting rows for the two failures actually hit
+> — `Integration Required Code Grant` and `listener already exists` — are
+> observed rather than predicted.
+>
+> **Still unexercised: a real race between two people inside Discord.** Instance
+> rooms and the queue are verified by script against the live public origin, and
+> a full two-player match is verified over Tailscale, but nobody has yet played
+> one human against another *in a voice channel*. The rows below about rooms and
+> queueing remain predictions until that happens.
 
 ## Purpose
 
@@ -254,3 +260,4 @@ exactly as [match night](RUNBOOK-match-night.md) describes.
 | Date | Run by | Notes |
 |---|---|---|
 | 2026-08-30 | Claude | Runbook written alongside `npm run tunnel`. Funnel chosen over a cloudflared quick tunnel for the stable hostname. Steps 0–2 and 4–7 are unexecuted; the tunnel tool's hostname resolution and SDK-in-bundle check were verified in isolation, and the funnel itself was never opened — that needs a human decision to publish the machine. |
+| 2026-08-31 | Chandler + Claude | **First successful launch.** Two failures on the way, both now documented: `listener already exists for port 443` (the Step 1 funnel check, left running — the tool blamed the admin console for it and now reuses it instead), and `Integration Required Code Grant` (**Bot → Requires OAuth2 Code Grant** was on; a portal toggle no code can work around). Between them, the public origin was verified from outside: `/`, `/info`, `/terms`, `/privacy` and `/.proxy/index.html` all 200; the 147kB SDK chunk fetchable; `POST /api/token` answering **502 rather than 503**, which proves the relay reached Discord with real credentials; `wss://…/ws` **and** `wss://…/.proxy/ws` both completing a hello/joined — WebSockets do survive Tailscale Funnel, which was the largest open unknown; and three scripted clients landing in one instance room with the third queued. |
