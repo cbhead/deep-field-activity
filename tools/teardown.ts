@@ -107,6 +107,16 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   check('the app boots at the front door', ready);
   if (!ready) return;
 
+  // That URL carries a `frame_id`, so the app just tried the Discord handshake
+  // and failed — there is no client id in a dev build and no Discord on the
+  // other end. It has to fail *soft*: a misconfigured Activity should be a
+  // playable game missing a name, not a black screen. This asserts the
+  // half of that contract observable from here.
+  check(
+    'a failed Discord handshake leaves the game playable',
+    (await evaluate(cdp, 'tdApp.activity')) === null,
+  );
+
   const before = thrown.length;
   const winBase = await listeners(cdp, 'window');
   const docBase = await listeners(cdp, 'document');

@@ -26,6 +26,37 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } from '../src/net/protocol.ts';
 
 const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
+
+/**
+ * Discord's proxy, and the `/.proxy` prefix.
+ *
+ * An Activity's network requests are sandboxed through `<app_id>.discordsays.com`.
+ * The prefix used to be mandatory on same-origin requests — `/.proxy/ws` rather
+ * than `/ws` — and as of Discord's 2025-07-30 change both forms work
+ * identically. This server accepts either, which costs one string operation and
+ * means the client never has to know which world it is in. Nothing on the
+ * client writes the prefix; this exists so that an older client, a hand-typed
+ * URL, or a reversal of that policy all still resolve.
+ */
+const PROXY_PREFIX = '/.proxy';
+const stripProxy = (path: string): string =>
+  path === PROXY_PREFIX
+    ? '/'
+    : path.startsWith(`${PROXY_PREFIX}/`)
+      ? path.slice(PROXY_PREFIX.length)
+      : path;
+
+/**
+ * OAuth2 credentials for the Activity handshake, from the environment only.
+ *
+ * The id is public — it ships in the client bundle as VITE_DISCORD_CLIENT_ID —
+ * but the secret is not, never reaches the browser, and must never reach the
+ * repo. Both absent is the normal case: a plain Tailscale match needs neither,
+ * and the token route below says so rather than pretending to work.
+ */
+const DISCORD_CLIENT_ID = process.env['DISCORD_CLIENT_ID'] ?? '';
+const DISCORD_CLIENT_SECRET = process.env['DISCORD_CLIENT_SECRET'] ?? '';
+
 /** Env-overridable, like FORFEIT_MS: visual checks need to hold the countdown. */
 const COUNTDOWN_MS = Number(process.env['COUNTDOWN_MS'] ?? 3000);
 const HEARTBEAT_MS = 15_000;
@@ -149,10 +180,74 @@ function tailscaleIp(): string | null {
   return null;
 }
 
+const readBody = async (req: http.IncomingMessage): Promise<string> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+};
+
+/**
+ * Trade the Activity's one-time OAuth code for an access token.
+ *
+ * This route exists for exactly one reason: the exchange needs the client
+ * secret, and a secret in a browser is not a secret. The client posts a code
+ * and gets a token back. Nothing else from the upstream response is forwarded —
+ * it also carries a refresh token and the granted scopes, and the client needs
+ * neither — and failures are logged here rather than echoed, so a misconfigured
+ * secret cannot be diagnosed by anyone poking at the endpoint.
+ */
+async function handleToken(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const json = (status: number, body: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+
+  if (req.method !== 'POST') return json(405, { error: 'POST only' });
+  if (DISCORD_CLIENT_ID === '' || DISCORD_CLIENT_SECRET === '') {
+    console.warn('[activity] /api/token called, but DISCORD_CLIENT_ID/SECRET are not in the environment');
+    return json(503, { error: 'this server is not configured as a Discord Activity' });
+  }
+
+  let code: unknown;
+  try {
+    code = (JSON.parse(await readBody(req)) as { code?: unknown }).code;
+  } catch {
+    return json(400, { error: 'body must be JSON' });
+  }
+  if (typeof code !== 'string' || code === '') return json(400, { error: 'no code' });
+
+  try {
+    const upstream = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+      }),
+    });
+    const data = (await upstream.json()) as { access_token?: string };
+    if (!upstream.ok || typeof data.access_token !== 'string') {
+      console.error(`[activity] token exchange failed: ${upstream.status} ${JSON.stringify(data)}`);
+      return json(502, { error: 'token exchange rejected' });
+    }
+    json(200, { access_token: data.access_token });
+  } catch (err) {
+    console.error('[activity] token exchange threw', err);
+    json(502, { error: 'token exchange failed' });
+  }
+}
+
 const httpServer = http.createServer((req, res) => {
   void (async () => {
-    // Strip the query and any traversal; everything must resolve inside dist/.
-    const rawPath = (req.url ?? '/').split('?')[0] ?? '/';
+    // Strip the query, then the proxy prefix, then any traversal; everything
+    // must resolve inside dist/.
+    const rawPath = stripProxy((req.url ?? '/').split('?')[0] ?? '/');
+    if (rawPath === '/api/token') {
+      await handleToken(req, res);
+      return;
+    }
     if (rawPath === '/info') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ tailscaleIp: tailscaleIp(), port }));
@@ -173,7 +268,18 @@ const httpServer = http.createServer((req, res) => {
   })();
 });
 
-const wss = new WebSocketServer({ server: httpServer, path: WS_PATH });
+// `noServer` rather than handing `ws` the path, because the path is now two
+// paths: Discord may address the relay as `/.proxy/ws`. Everything else is
+// refused rather than upgraded, which is what passing `path` used to buy.
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (req, socket, head) => {
+  if (stripProxy((req.url ?? '').split('?')[0] ?? '') !== WS_PATH) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
 
 let nextPlayer = 1;
 

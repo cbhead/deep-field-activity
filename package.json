@@ -1,6 +1,6 @@
 {
   "name": "deep-field-activity",
-  "description": "Deep Field as a Discord Activity \u2014 an Embedded App SDK port of deep-field-td",
+  "description": "Deep Field as a Discord Activity — an Embedded App SDK port of deep-field-td",
   "license": "MIT",
   "private": true,
   "version": "0.0.0",
@@ -21,9 +21,11 @@
     "sweep": "zsh scripts/sweep.sh",
     "campaign": "zsh scripts/campaign.sh",
     "shots": "zsh scripts/shots.sh",
-    "teardown": "zsh scripts/teardown.sh"
+    "teardown": "zsh scripts/teardown.sh",
+    "proxy": "zsh scripts/proxy.sh"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "^2.5.0",
     "pixi.js": "^8.20.1",
     "ws": "^8.21.3"
   },

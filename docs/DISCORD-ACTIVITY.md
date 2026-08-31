@@ -37,8 +37,8 @@ accident of having been built for one friend on one Tailscale box:
 | # | Gap | Notes |
 |---|---|---|
 | 1 | **A public HTTPS origin.** The proxy needs somewhere real to forward to; today the server is Tailscale-only over plain http. | Already the project's stated next goal, so this is shared work rather than a tax the Activity imposes. |
-| 2 | **`/.proxy/` prefixing.** Inside the iframe, same-origin requests carry that prefix. Means `base` in `vite.config.ts`, `WS_PATH`, and the `/info` probe. | Expected to be client-only — the proxy strips the prefix before forwarding, so `server/index.ts` shouldn't care. Verify rather than assume. |
-| 3 | **The OAuth handshake.** `@discord/embedded-app-sdk`: `ready()` → `authorize()` → a new server route trading the code for a token using the client secret → `authenticate()`. | The secret is env-only and must never reach the client bundle or this repo. |
+| 2 | ~~**`/.proxy/` prefixing.**~~ **Done, and the premise was wrong** — the prefix has been optional since 2025-07-30, so nothing hardcodes it. See §5. | |
+| 3 | ~~**The OAuth handshake.**~~ **Built, unverified.** See §5. | |
 | 4 | **Navigation.** `location.search = '?race'` and its siblings in `src/main.ts` throw away Discord's launch params (`frame_id`, `instance_id`) and break the SDK on reload. | **The real refactor**, and bigger than the eight call sites suggest — see §4. Also drags in the rematch-by-reload path, which leans on `sessionStorage` surviving a navigation. |
 | 5 | **Rooms become the instance.** Everyone who launches in the same voice channel is already in the same room; `instanceId` replaces the generated code. | Net deletion: room codes, invite links, the `/info` Tailscale lookup, and name entry all stop having a job. Names come from the Discord profile. |
 | 6 | **Match reports move server-side.** The client can't reach `discord.com/api/webhooks` through the CSP. | `src/ui/discord.ts` keeps its formatter; only the transport moves. |
@@ -138,6 +138,84 @@ What is still reload-shaped and untested: the match itself. The gate proves the
 lobby mounts and unmounts, but a real race needs two clients and a relay, so
 the rematch path and mid-match disposal have been reasoned about rather than
 observed.
+
+## §5 — The proxy and the handshake, as actually built
+
+The survey's §1 rows 2 and 3, corrected against the current SDK (v2.5.0) and
+docs rather than memory. **The survey was wrong about the prefix.**
+
+### `/.proxy` is optional now, so nothing hardcodes it
+
+The prefix was mandatory on same-origin requests when Activities launched.
+Discord's 2025-07-30 change made `/<path>` and `/.proxy/<path>` behave
+identically, and the official docs no longer mention the prefix at all. So:
+
+- **The client never writes it.** `fetch('/api/token')` and the relay socket at
+  `/ws` are addressed plainly.
+- **`vite.config.ts` sets `base: './'`,** not `base: '/.proxy/'`. Relative asset
+  URLs resolve against whatever the document turned out to be, which is right on
+  localhost, on a tailnet IP, *and* behind the proxy. Hardcoding the prefix
+  would have worked in Discord and broken every other deployment of the same
+  build — and this repo's whole premise is that the plain-URL game keeps working.
+- **The server accepts both.** `stripProxy` in `server/index.ts` removes a
+  leading `/.proxy` from HTTP paths and from the socket upgrade. One string
+  operation, and the client never has to know which world it is in. If Discord
+  ever reverses the policy, prefixing two strings on the client is the whole fix.
+
+The socket needed one structural change: `ws` was given a fixed `path`, and the
+path is now two paths, so the upgrade is handled manually and anything that is
+not the relay is refused rather than upgraded.
+
+### The handshake
+
+`src/discord/activity.ts`, gated on the `frame_id` parameter — which is both how
+you detect an Activity and the SDK constructor's own precondition, since it
+throws `frame_id query param is not defined` without one.
+
+    ready() → authorize() → POST /api/token → authenticate()
+
+`authorize` yields a one-time code, not a token, because the exchange needs the
+client secret; `handleToken` in `server/index.ts` does that half and forwards
+only the access token. Scope is `identify` alone — a name to show on the race
+strip is all the game wants, and every extra scope is another consent prompt to
+justify. Discord's own sample asks for `guilds` and `applications.commands`;
+neither is needed here.
+
+**Failure is soft.** A missing id, an unconfigured relay or a rejected code logs
+loudly and plays on. Deep Field is a working game on a plain URL and must stay
+one; turning a misconfigured Activity into a black screen would be a worse
+outcome than one missing a pre-filled name.
+
+### The trap worth knowing
+
+`import.meta.env.VITE_DISCORD_CLIENT_ID` is substituted **at build time**. With
+no id set, the guard in `connectActivity` folds to a constant `true`, and
+everything after it — including `import('@discord/embedded-app-sdk')` — is
+eliminated as dead code. The build succeeds. It emits no SDK chunk. The bundle
+is silently incapable of the handshake, and you would discover that inside
+Discord.
+
+That elimination is correct and worth having: a plain-web build genuinely should
+not ship 147kB of SDK, and the dynamic import is what buys that. It is only
+dangerous when quiet, so the build now prints a warning when the id is absent,
+and the SDK chunk appearing in the output is the positive signal that it was
+seen. **Set `VITE_DISCORD_CLIENT_ID` before building anything you intend to
+serve to Discord.**
+
+### What is verified, and what is not
+
+`npm run proxy` starts the built relay and asserts the prefix is optional both
+ways, that the socket upgrades on `/ws` and `/.proxy/ws` and is refused
+elsewhere, and that the token route answers honestly when it has no credentials
+instead of crashing. `npm run teardown` additionally asserts that a *failed*
+handshake leaves the game playable — its URL carries a `frame_id`, so every run
+exercises the misconfigured-Activity path. The production build was confirmed to
+boot and render a board with `base: './'`.
+
+**The handshake itself is unverified.** It needs a registered Discord
+application, a client secret, and a public HTTPS origin, none of which exist
+yet. Every line of it is written from the SDK's own type declarations rather
+than from a working run, and the first real launch should be treated as the test.
 
 ## Relationship to upstream
 

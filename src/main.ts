@@ -22,6 +22,7 @@ import { grade } from './sim/analysis.ts';
 import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
 import { createRouter, type Route, type Router } from './app/router.ts';
+import { connectActivity, inActivity, type ActivitySession } from './discord/activity.ts';
 import { createMenuScreen } from './ui/menuScreen.ts';
 import { createHomeScreen } from './ui/homeScreen.ts';
 import { trackKeyboardInset } from './ui/viewport.ts';
@@ -95,6 +96,43 @@ interface SceneDeps {
  */
 let pendingRejoin: { name: string; room: string } | null = null;
 
+/**
+ * The Discord session, once established. Null on every ordinary page load, and
+ * also inside Discord if the handshake failed — see `openActivity`.
+ */
+let activity: ActivitySession | null = null;
+
+/**
+ * Complete the Discord handshake, if there is one to complete.
+ *
+ * Deliberately not fatal. Deep Field is a working game on a plain URL and the
+ * failure this guards against — no client id, a relay with no secret, a
+ * rejected code — costs the player a pre-filled name, not a game. Failing hard
+ * here would turn a misconfigured Activity into a black screen instead of a
+ * playable one, so it is loud in the console and silent on screen.
+ *
+ * Awaited before the first route mounts, because the lobby reads the saved name
+ * as it renders and a name that arrives afterwards would not be seen.
+ */
+async function openActivity(): Promise<void> {
+  if (!inActivity()) return;
+  try {
+    activity = await connectActivity();
+    if (activity === null) return;
+    console.info(`[td] Discord activity: ${activity.displayName} in instance ${activity.instanceId}`);
+    // The one thing identity is spent on so far. Race mode remembers the last
+    // name typed; inside Discord we already know it, so the lobby opens with it
+    // filled in rather than asking a question Discord has answered. It stays
+    // editable — this seeds the field, it does not own it. Making the *room*
+    // follow the instance is gap #5, and a larger change.
+    if (localStorage.getItem('race-name') === null) {
+      localStorage.setItem('race-name', activity.displayName);
+    }
+  } catch (err) {
+    console.error('[td] Discord handshake failed — playing on without it', err);
+  }
+}
+
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
   const hudRoot = document.getElementById('hud');
@@ -104,6 +142,8 @@ async function main(): Promise<void> {
   if (!mount || !hudRoot || !screens) {
     throw new Error('#game-root, #hud or #screens missing from index.html');
   }
+
+  await openActivity();
 
   let scene: Scene | null = null;
   /**
@@ -144,7 +184,10 @@ async function main(): Promise<void> {
   // how tools/teardown.ts drives the navigation gate without clicking through
   // screens whose markup it would then be coupled to.
   if (import.meta.env.DEV) {
-    (globalThis as Record<string, unknown>)['tdApp'] = { router };
+    // `activity` is null on an ordinary page load and populated inside Discord;
+    // having it here is how "did the handshake actually run" is answered
+    // without a debugger, and what tools/proxy.ts asserts against.
+    (globalThis as Record<string, unknown>)['tdApp'] = { router, activity };
   }
 
   router.start();

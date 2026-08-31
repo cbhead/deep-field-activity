@@ -4,3 +4,9 @@ dist/
 *.local
 .vite/
 .claude/settings.local.json
+
+# The Discord client secret lives here. `.env.example` is the committed one;
+# anything with real values is not, and `*.local` above does not cover `.env`.
+.env
+.env.*
+!.env.example
