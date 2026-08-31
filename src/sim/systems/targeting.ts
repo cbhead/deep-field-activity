@@ -48,8 +48,22 @@ export function fireTowers(w: World, dt: number): void {
     if (t.focusId === best.id) {
       t.focusTime = Math.min(t.focusTime + s.fireInterval, rampSeconds(s));
     } else {
+      // Switching targets *cools* the beam, it does not extinguish it. Losing
+      // the charge entirely is still the rule for losing the target list — see
+      // the reset above — and that is the rule that stops a station opening a
+      // wave at full power.
+      //
+      // The two are different situations and used to be treated as one. A
+      // station that has just killed something and moved to the contact behind
+      // it never stopped firing; snapping it to zero made a ramp worth having
+      // only where contacts arrive in a single unbroken file, which is one
+      // board. On Braid the lanes cross every rung, so the file breaks roughly
+      // twice a second and the charge never left the floor — and a Filament
+      // there measured at *minus eleven lives*, not merely weak but a station
+      // you were better off never building. A specialist should be the wrong
+      // answer on some boards; it should not be a trap on them.
       t.focusId = best.id;
-      t.focusTime = 0;
+      t.focusTime *= RAMP_CARRY;
     }
 
     const aim = aimPoint(t, best, s.pierce > 0);
@@ -99,6 +113,23 @@ export function fireTowers(w: World, dt: number): void {
  */
 export const rampSeconds = (s: TowerStats): number =>
   s.rampPerSecond > 0 ? (s.rampMax - 1) / s.rampPerSecond : 0;
+
+/**
+ * How much of the spin-up survives a change of target.
+ *
+ * Half, and the halving is the whole design: a beam that kept everything would
+ * make target switching free and turn Filament into a station with no downside,
+ * which is the outcome `towers.ts` records the sweep rejecting once already. A
+ * beam that keeps nothing is what shipped, and it made the ramp worth having on
+ * exactly one board shape.
+ *
+ * Half means a station working a steady stream settles at a real fraction of
+ * its ceiling rather than at the floor, and a station that switches constantly
+ * still ends up well under one that holds — the mechanic still says "hold a
+ * target", it just no longer says "hold a target or you have wasted your
+ * money".
+ */
+const RAMP_CARRY = 0.5;
 
 /**
  * Damage multiplier from held focus, `1` for everything that does not ramp.

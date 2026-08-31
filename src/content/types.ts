@@ -113,10 +113,15 @@ export interface TowerDef {
    * How fast damage ramps while the station holds one target, and the ceiling.
    *
    * `rampPerSecond: 0` is a station that does not ramp, which is most of them.
-   * The ramp resets the instant the target changes — that is the whole design:
-   * it makes a ramping station excellent against one wall of hull and useless
-   * against a crowd, which is the inverse of the chain above, and it is why a
-   * slow that holds something in place is worth pairing with.
+   *
+   * Changing target *cools* the charge by half rather than clearing it; running
+   * out of targets entirely clears it. That split is the design. Clearing on
+   * every switch reads like the same rule and is not: it makes a ramping
+   * station worth having only where contacts arrive in one unbroken file, and
+   * the eight-board sweep priced that at minus eleven lives on the board whose
+   * lanes cross at every rung. Cooling keeps the mechanic — hold a target and
+   * you are rewarded, switch and you are not — without making a whole board
+   * shape a trap. See `RAMP_CARRY` in `sim/systems/targeting.ts`.
    */
   readonly rampPerSecond: number;
   /** Ceiling as a multiple of base damage. `1` means no ramp is possible. */

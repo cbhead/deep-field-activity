@@ -29,6 +29,7 @@ import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost, visualTier } from '../src/sim/build.ts';
 import { coverage, formatDamage, laneCoverage, toughestArmour } from '../src/sim/analysis.ts';
 import { UPGRADE_PATHS, type TargetMode } from '../src/sim/types.ts';
+import { rampFactor } from '../src/sim/systems/targeting.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, mergeRunway, tileAt } from '../src/sim/util/grid.ts';
@@ -380,8 +381,84 @@ section('lanes — splits stay on their parent’s lane');
 // so the figures are transcribed here and checked against what `parseMap`
 // actually builds rather than trusted.
 //
+// (See also the ramp gate below, which pins a rule the eight-board sweep priced.)
+//
 // Same argument as the ASCII/waypoint cross-check: a second representation is
 // worth having precisely because it can disagree.
+// ---------------------------------------------------------------------------
+section('combat · the ramp cools, it does not extinguish');
+{
+  // These were one case until the eight-board sweep priced it. Snapping the
+  // charge to zero on any change of target made a ramping station worth having
+  // only where contacts arrive in a single unbroken file — on Braid, where the
+  // lanes cross at every rung and the file breaks about twice a second, a
+  // Filament measured at *minus eleven lives*: not a weak pick but a station a
+  // player was strictly better off never building.
+  //
+  // The two situations are different and now behave differently. Killing
+  // something and moving to the contact behind it never stopped the beam, so it
+  // cools by half. Running out of targets does stop it, and that still clears
+  // the charge — the rule that stops a station idling through an intermission
+  // and opening the next wave at full power.
+  const w = createWorld(map, 31337);
+  w.wave.phase = 'done';
+  w.wave.index = 10; //                                   past every unlock
+  w.money = 5000;
+  w.commands.push({ type: 'placeTower', defId: 'filament', col: 8, row: 3 });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+  check(t !== undefined && t.defId === 'filament', 'a filament is on the board');
+
+  const park = (c: { x: number; y: number }): void => {
+    c.x = 8.5;
+    c.y = 2.5;
+  };
+
+  const held = spawnCreep(w, 'monolith', { hp: 1_000_000 });
+  for (let i = 0; i < 60 * 4; i++) {
+    park(held);
+    stepWorld(w, DT);
+  }
+  const peak = t.focusTime;
+  check(peak > 0, 'holding one target builds a charge', `focusTime ${peak.toFixed(2)}s`);
+  check(
+    Math.abs(rampFactor(t) - t.stats.rampMax) < 1e-6,
+    'and holding it long enough reaches the ceiling',
+    `x${rampFactor(t).toFixed(2)} of x${t.stats.rampMax}`,
+  );
+
+  held.dead = true;
+  const next = spawnCreep(w, 'monolith', { hp: 1_000_000 });
+  for (let i = 0; i < 40 && t.focusId !== next.id; i++) {
+    park(next);
+    stepWorld(w, DT);
+  }
+  check(t.focusId === next.id, 'the station re-targets when its focus dies');
+  check(
+    t.focusTime > 0,
+    'switching targets does not extinguish the charge',
+    `focusTime ${t.focusTime.toFixed(2)}s, was ${peak.toFixed(2)}s`,
+  );
+  check(
+    t.focusTime < peak,
+    'but it does cool it — a switch is never free',
+    `${t.focusTime.toFixed(2)}s < ${peak.toFixed(2)}s`,
+  );
+
+  // A full fire interval, not a couple of ticks. The reset lives on the path
+  // that runs when a station is *ready to fire* and finds nothing in reach, so
+  // one still inside its cooldown has not been asked the question yet — which
+  // this gate got wrong on the first attempt and is worth leaving written down.
+  next.dead = true;
+  for (let i = 0; i < 60; i++) stepWorld(w, DT);
+  check(
+    t.focusTime === 0 && t.focusId === null,
+    'an empty board clears the charge entirely',
+    `focusTime ${t.focusTime}`,
+  );
+  check(rampFactor(t) === 1, 'so a lull cannot be banked into the next wave');
+}
+
 // ---------------------------------------------------------------------------
 section('map spec — the five boards match their own table');
 {

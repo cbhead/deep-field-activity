@@ -157,7 +157,7 @@ export const TOWERS = {
   filament: {
     id: 'filament',
     name: 'Filament',
-    blurb: 'Burns hotter the longer it holds one target. Resets if it switches.',
+    blurb: 'Burns hotter the longer it holds one target. Cools if it switches.',
     cost: 105,
     range: 2.4,
     // Low per-hit damage on purpose: armour is subtracted per hit, so a
