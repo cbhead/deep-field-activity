@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/styles.css">
+<script src="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/_ds_bundle.js"></script>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  a { color: #b5abfc; text-decoration: none; border-bottom: 1px solid rgba(181,171,252,.35); }
+  a:hover { color: #d2cefd; border-bottom-color: rgba(210,206,253,.6); }
+  .dfx h2 { font: 500 27px/1.15 var(--font-heading); letter-spacing: -0.01em; color: #e9e9ed; margin: 48px 0 6px; }
+  .dfx h3 { font: 500 18px/1.3 var(--font-heading); color: #e9e9ed; margin: 34px 0 4px; }
+  .dfx h4 { font: 600 11px/1.3 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: #9184d9; margin: 22px 0 8px; }
+  .dfx p { font: 400 14.5px/1.68 var(--font-body); color: #c3c5d3; margin: 0 0 13px; text-wrap: pretty; }
+  .dfx li { font: 400 14px/1.6 var(--font-body); color: #c3c5d3; margin: 0 0 6px; text-wrap: pretty; }
+  .dfx ul, .dfx ol { margin: 0 0 14px; padding-left: 20px; }
+  .dfx b, .dfx strong { color: #e9e9ed; font-weight: 600; }
+  .dfx em { color: #d2cefd; font-style: italic; }
+  .dfx code { font: 400 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #a5eefb; background: rgba(165,238,251,.07); padding: 1px 4px; border-radius: 3px; }
+  .dfx table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
+  .dfx th { font: 600 10.5px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: #9397ab; text-align: left; padding: 0 10px 7px 0; border-bottom: 1px solid #2a2d40; }
+  .dfx td { font: 400 13px/1.5 var(--font-body); color: #c3c5d3; padding: 9px 10px 9px 0; border-bottom: 1px solid rgba(42,45,64,.6); vertical-align: top; }
+  .dfx td b { color: #e9e9ed; }
+  .dfx .spec { break-inside: avoid; margin: 0 0 10px; }
+  .dfx .lbl { font: 600 9.5px/1 var(--font-body); letter-spacing: .15em; text-transform: uppercase; margin-bottom: 8px; }
+  .dfx .cap { font: 400 11px/1.5 var(--font-body); color: #75798c; margin-top: 8px; }
+  .dfx .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #2a2d40; margin: 14px 0 0; break-inside: avoid; }
+  .dfx .why > div { background: #171a27; padding: 11px 12px 12px; }
+  .dfx .why h5 { font: 600 9px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; margin: 0 0 7px; }
+  .dfx .why p { font: 400 12px/1.55 var(--font-body); color: #b6b8c6; margin: 0; orphans: 3; widows: 3; }
+  .dfx .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0 0; }
+</style>
+</helmet>
+
+<doc-page margin="0">
+<div class="dfx" style="background: #12141f; padding: 0.8in 0.85in 0.9in; box-sizing: border-box; font-family: var(--font-body); color: #c3c5d3">
+
+<div style="display: flex; align-items: baseline; gap: 12px; font: 600 10.5px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: #9184d9; margin-bottom: 22px">
+  <span>Deep Field</span>
+  <span style="flex: 1; height: 1px; background: linear-gradient(to right, rgba(145,132,217,.55), rgba(145,132,217,0))"></span>
+  <span style="color: #75798c; letter-spacing: .1em">Front door · 30 Aug 2026</span>
+</div>
+
+<h1 style="font: 500 44px/1.06 var(--font-heading); letter-spacing: -0.025em; color: #e9e9ed; margin: 0 0 16px">There is no home screen — the game opens on a file picker</h1>
+
+<p style="font: 400 17px/1.6 var(--font-body); color: #d2cefd; margin: 0 0 24px; max-width: 46em">Deep Field boots straight into <em>Choose a sector</em>, spends its largest type on an instruction, hides its entire second game mode in a 12px ghost link, and describes three boards in prose while the actual map data sits one function call away. This is the fix.</p>
+
+<div style="display:flex; gap:12px; padding:12px 14px; background:#171a27; border-left:2px solid #9184d9; margin-bottom:6px">
+  <p style="margin:0; font-size:13px; color:#b6b8c6"><b>On the running build.</b> <code>100.96.85.82:8787</code> is inside your tailnet and not reachable from here, so this was read from <code>src/ui/menuScreen.ts</code>, <code>lobbyScreen.ts</code>, <code>app/progress.ts</code> and <code>app/raceSeries.ts</code> at <code>main</code>. Every screen, string and stored field described below is the live one. If the running build has drifted from <code>main</code>, tell me what looks different.</p>
+</div>
+
+<h2>1 · What the front door is now</h2>
+
+<h4>The flow</h4>
+<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:16px; background:#171a27; border:1px solid #2a2d40; border-radius:6px; margin-bottom:16px">
+  <span style="padding:7px 12px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px; font:600 11px/1 var(--font-body); color:#e9e9ed">boot</span>
+  <span style="color:#4d5063">→</span>
+  <span style="padding:7px 12px; background:#1c1f2d; border:1px solid #9184d9; border-radius:5px; font:600 11px/1 var(--font-body); color:#d2cefd">Choose a sector</span>
+  <span style="color:#4d5063">→</span>
+  <span style="padding:7px 12px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px; font:600 11px/1 var(--font-body); color:#e9e9ed">difficulty + seed</span>
+  <span style="color:#4d5063">→</span>
+  <span style="padding:7px 12px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px; font:600 11px/1 var(--font-body); color:#e9e9ed">Launch</span>
+  <span style="flex:1"></span>
+  <span style="padding:7px 12px; border:1px dashed #2a2d40; border-radius:5px; font:400 11px/1 var(--font-body); color:#75798c">Race a friend → (ghost link, top-right)</span>
+</div>
+
+<h4>What is already good and must survive</h4>
+<ul>
+  <li><b>Unlock state is derived, never stored.</b> A level is open because the previous one was cleared. No second source of truth, no player locked out of a level they finished.</li>
+  <li><b>Records are per-difficulty and honest</b> — grade, lives kept out of the reserve they came from, simulated seconds, waves. Defeats are recorded too but unlock nothing.</li>
+  <li><b>Road length is parsed, not written down.</b> <code>parseMap</code> walks the tiles and the result is cached. A board cannot lie about its own shape.</li>
+  <li><b>Storage is defensive throughout.</b> Private-mode Safari, a full quota, a future version's JSON — all degrade to "nothing cleared yet" and none of them stop the game booting.</li>
+  <li><b>Difficulty is remembered</b> across sessions, so the usual choice is one click.</li>
+</ul>
+
+<h2>2 · Four problems</h2>
+
+<div style="display:grid; grid-template-columns: repeat(2,1fr); gap:1px; background:#2a2d40; margin-bottom:20px">
+  <div style="background:#171a27; padding:14px 16px">
+    <div style="font:600 9px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#e06d6d; margin-bottom:8px">Problem 1</div>
+    <div style="font:500 16px/1.3 var(--font-heading); color:#e9e9ed; margin-bottom:7px">The biggest type in the game is an instruction</div>
+    <p style="margin:0; font-size:12.5px; color:#b6b8c6"><code style="font-size:11px">mn-title</code> is 56px and it reads "Choose a sector". The game never says its own name at size, never says what it is, and gives a first-time player a grid with one card open and two locked.</p>
+  </div>
+  <div style="background:#171a27; padding:14px 16px">
+    <div style="font:600 9px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#e06d6d; margin-bottom:8px">Problem 2</div>
+    <div style="font:500 16px/1.3 var(--font-heading); color:#e9e9ed; margin-bottom:7px">Half the game is a ghost link</div>
+    <p style="margin:0; font-size:12.5px; color:#b6b8c6">Race — the mode with a relay server, a lobby, a countdown, a wire protocol and a running head-to-head record — is 12px, <code style="font-size:11px">#75798c</code>, top-right, in the weakest button style the stylesheet has.</p>
+  </div>
+  <div style="background:#171a27; padding:14px 16px">
+    <div style="font:600 9px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#e06d6d; margin-bottom:8px">Problem 3</div>
+    <div style="font:500 16px/1.3 var(--font-heading); color:#e9e9ed; margin-bottom:7px">The boards are described, not shown</div>
+    <p style="margin:0; font-size:12.5px; color:#b6b8c6">"A symmetric double hairpin around a pocket that reaches both lanes" is good writing about a shape the player could simply be shown. The map rows are already imported and <code style="font-size:11px">parseMap</code> is already being called on them.</p>
+  </div>
+  <div style="background:#171a27; padding:14px 16px">
+    <div style="font:600 9px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#e06d6d; margin-bottom:8px">Problem 4</div>
+    <div style="font:500 16px/1.3 var(--font-heading); color:#e9e9ed; margin-bottom:7px">Returning is as slow as arriving</div>
+    <p style="margin:0; font-size:12.5px; color:#b6b8c6">The most common intent — carry on from where I was, at the difficulty I always play — takes two screens and a read. <code style="font-size:11px">furthestUnlocked</code> and <code style="font-size:11px">lastDifficulty</code> are both already computed; nothing acts on them.</p>
+  </div>
+</div>
+
+<p><b>And one thing collected but never shown.</b> <code>raceSeries.ts</code> keeps a win–loss–tie record per opponent name in localStorage and formats it as "Series vs Vela: 3–2". It appears nowhere on the front door. A standing record against a named friend is the single strongest reason to open this game twice, and it is invisible until you are already mid-lobby.</p>
+
+<h2 style="break-before: page">3 · The home screen</h2>
+
+<p>One new screen, ahead of everything. Its job is three sentences long: say what this is, get a returning player back into their run in one click, and make the two modes look like two modes.</p>
+
+<div class="spec">
+<div class="lbl" style="color:#75798c">Before — boot lands here</div>
+<div style="position:relative; padding:0; background:#0b0c16; border:1px solid #2a2d40; border-radius:6px; overflow:hidden">
+  <div style="position:absolute; inset:0; background: radial-gradient(circle at 50% 40%, rgba(145,132,217,.14), rgba(6,7,13,.6) 62%)"></div>
+  <div style="position:relative; display:flex; align-items:center; gap:12px; height:38px; padding:0 18px">
+    <span style="font:600 9px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#9184d9">Deep Field</span>
+    <span style="width:1px; height:11px; background:rgba(233,233,237,.16)"></span>
+    <span style="font:400 9px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#75798c">Campaign</span>
+    <span style="flex:1"></span>
+    <span style="font:400 10px/1 var(--font-body); color:#75798c">Race a friend →</span>
+  </div>
+  <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px 20px 30px">
+    <div style="text-align:center">
+      <div style="font:600 8.5px/1 var(--font-body); letter-spacing:.24em; text-transform:uppercase; color:#b5abfc">Single player</div>
+      <div style="font:500 34px/1.05 var(--font-heading); letter-spacing:-.03em; color:#e9e9ed; margin-top:9px">Choose a sector</div>
+      <div style="font:400 11px/1.65 var(--font-body); color:#9397ab; max-width:330px; margin:9px auto 0">Three boards, each asking a different question of the same three stations. Clear one to open the next — 1 of 3 held so far.</div>
+    </div>
+    <div style="display:flex; gap:12px">
+      <div style="width:150px; padding:13px; border-radius:9px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1)">
+        <div style="display:flex; gap:7px; align-items:flex-start"><svg width="17" height="17" viewBox="0 0 40 40"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="#9184d9" fill-opacity=".2" stroke="#9184d9" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="#9184d9"/></svg><div><div style="font:600 7.5px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#b5abfc">Sector 01</div><div style="font:500 14px/1.15 var(--font-heading); color:#e9e9ed; margin-top:4px">Switchback</div></div></div>
+        <div style="font:400 9px/1.6 var(--font-body); color:#9397ab; margin-top:9px; min-height:44px">Six turns and a short road. Every contact type shows up here for the first time, one wave before it matters.</div>
+        <div style="display:flex; flex-wrap:nowrap; white-space:nowrap; gap:8px; font:400 7.5px/1.2 var(--font-body); color:#75798c; margin-top:6px"><span><b style="color:#cfd3e5">10</b> waves</span><span><b style="color:#cfd3e5">43</b> tiles of road</span></div>
+        <div style="height:1px; background:linear-gradient(90deg,rgba(233,233,237,.14),transparent); margin:9px 0"></div>
+        <div style="display:flex; gap:4px"><span style="padding:0 6px; height:17px; display:inline-flex; align-items:center; gap:4px; border-radius:4px; background:rgba(35,37,50,.8); font:400 8px/1 var(--font-body); color:#9397ab">Standard <b style="color:#d2cefd; font-family:ui-monospace,Menlo,monospace">A</b> 14/20 · 4:38</span></div>
+      </div>
+      <div style="width:150px; padding:13px; border-radius:9px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1); opacity:.5">
+        <div style="display:flex; gap:7px; align-items:flex-start"><svg width="17" height="17" viewBox="0 0 40 40"><rect x="10" y="18" width="20" height="15" rx="3" fill="none" stroke="#75798c" stroke-width="2.4"/><path d="M15 18 v-4 a5 5 0 0 1 10 0 v4" fill="none" stroke="#75798c" stroke-width="2.4"/></svg><div><div style="font:600 7.5px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#b5abfc">Sector 02</div><div style="font:500 14px/1.15 var(--font-heading); color:#e9e9ed; margin-top:4px">Cascade</div></div></div>
+        <div style="font:400 9px/1.6 var(--font-body); color:#9397ab; margin-top:9px; min-height:44px">Three long sweeps and an open middle band. More road buys you time — and the waves spend all of it on numbers.</div>
+        <div style="display:flex; flex-wrap:nowrap; white-space:nowrap; gap:8px; font:400 7.5px/1.2 var(--font-body); color:#75798c; margin-top:6px"><span><b style="color:#cfd3e5">12</b> waves</span><span><b style="color:#cfd3e5">71</b> tiles of road</span></div>
+        <div style="height:1px; background:linear-gradient(90deg,rgba(233,233,237,.14),transparent); margin:9px 0"></div>
+        <div style="font:400 8.5px/1.4 var(--font-body); color:#75798c">Clear Switchback to open this sector</div>
+      </div>
+      <div style="width:150px; padding:13px; border-radius:9px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1); opacity:.5">
+        <div style="display:flex; gap:7px; align-items:flex-start"><svg width="17" height="17" viewBox="0 0 40 40"><rect x="10" y="18" width="20" height="15" rx="3" fill="none" stroke="#75798c" stroke-width="2.4"/><path d="M15 18 v-4 a5 5 0 0 1 10 0 v4" fill="none" stroke="#75798c" stroke-width="2.4"/></svg><div><div style="font:600 7.5px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#b5abfc">Sector 03</div><div style="font:500 14px/1.15 var(--font-heading); color:#e9e9ed; margin-top:4px">Pincer</div></div></div>
+        <div style="font:400 9px/1.6 var(--font-body); color:#9397ab; margin-top:9px; min-height:44px">A symmetric double hairpin around a pocket that reaches both lanes. Build one strong point, not five weak ones.</div>
+        <div style="display:flex; flex-wrap:nowrap; white-space:nowrap; gap:8px; font:400 7.5px/1.2 var(--font-body); color:#75798c; margin-top:6px"><span><b style="color:#cfd3e5">12</b> waves</span><span><b style="color:#cfd3e5">63</b> tiles of road</span></div>
+        <div style="height:1px; background:linear-gradient(90deg,rgba(233,233,237,.14),transparent); margin:9px 0"></div>
+        <div style="font:400 8.5px/1.4 var(--font-body); color:#75798c">Clear Cascade to open this sector</div>
+      </div>
+    </div>
+    <div style="font:400 9.5px/1 var(--font-body); color:#75798c">Reset campaign progress</div>
+  </div>
+</div>
+<div class="cap">Three cards, ~130 words of prose, two of them greyed out. The game's name is 9px in the corner. Race is the dimmest text on the screen.</div>
+</div>
+
+<div class="spec" style="margin-top:22px">
+<div class="lbl" style="color:#9184d9">After — a home screen, returning player</div>
+<div style="position:relative; background:#07080f; border:1px solid #2a2d40; border-radius:6px; overflow:hidden">
+
+  <svg viewBox="0 0 26 15" preserveAspectRatio="xMidYMid meet" style="position:absolute; inset:0; width:100%; height:100%; opacity:.8">
+    <defs><linearGradient id="fdhero" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9184d9" stop-opacity=".3"/><stop offset="1" stop-color="#d2cefd" stop-opacity=".85"/></linearGradient></defs>
+    <g fill="#232532" fill-opacity=".5"><rect x="6" y="2" width="5" height="1"/><rect x="14" y="2" width="5" height="1"/><rect x="6" y="3" width="5" height="1"/><rect x="14" y="3" width="5" height="1"/><rect x="6" y="7" width="4" height="1"/><rect x="13" y="7" width="4" height="1"/><rect x="6" y="8" width="4" height="1"/><rect x="13" y="8" width="4" height="1"/><rect x="6" y="10" width="5" height="1"/><rect x="14" y="10" width="5" height="1"/><rect x="6" y="11" width="5" height="1"/><rect x="14" y="11" width="5" height="1"/></g>
+    <g fill="url(#fdhero)"><rect x="0" y="1" width="23" height="1"/><rect x="22" y="2" width="1" height="1"/><rect x="22" y="3" width="1" height="1"/><rect x="22" y="4" width="1" height="1"/><rect x="3" y="5" width="20" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="3" y="9" width="20" height="1"/><rect x="22" y="10" width="1" height="1"/><rect x="22" y="11" width="1" height="1"/><rect x="22" y="12" width="1" height="1"/><rect x="22" y="13" width="4" height="1"/></g>
+    <circle cx="0.5" cy="1.5" r="0.5" fill="#f9a8d4" fill-opacity=".8"/>
+    <circle cx="25.5" cy="13.5" r="1.1" fill="#b5abfc" fill-opacity=".35"/>
+    <circle cx="25.5" cy="13.5" r="0.4" fill="#f2f0ff"/>
+  </svg>
+  <div style="position:absolute; inset:0; background: linear-gradient(100deg, rgba(7,8,15,.94) 18%, rgba(7,8,15,.62) 52%, rgba(7,8,15,.28))"></div>
+
+  <div style="position:relative; display:flex; align-items:center; gap:12px; height:38px; padding:0 18px">
+    <span style="font:600 9px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#9184d9">Deep Field</span>
+    <span style="flex:1"></span>
+    <span style="font:400 9.5px/1 var(--font-body); color:#75798c">Settings</span>
+    <span style="font:400 9.5px/1 var(--font-body); color:#75798c">How to play</span>
+  </div>
+
+  <div style="position:relative; display:grid; grid-template-columns: 1fr 288px; gap:32px; padding:14px 22px 26px; align-items:end">
+    <div>
+      <div style="font:500 46px/1 var(--font-heading); letter-spacing:-.035em; color:#e9e9ed">Deep Field</div>
+      <div style="font:400 12.5px/1.6 var(--font-body); color:#9397ab; max-width:19em; margin-top:11px">Hold the line through three sectors — or race a friend on the same seed and see who survives longer.</div>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:20px">
+        <span style="display:flex; align-items:center; gap:6px; font:400 9.5px/1 var(--font-body); color:#75798c"><i style="display:block; width:5px; height:5px; border-radius:50%; background:#86e39b"></i>relay up</span>
+        <span style="width:1px; height:9px; background:#2a2d40"></span>
+        <span style="font:400 9.5px/1 var(--font-body); color:#75798c">1 of 3 sectors held</span>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:9px">
+
+      <div style="position:relative; padding:13px 14px; background:rgba(20,22,36,.9); border:1px solid rgba(145,132,217,.6); border-radius:9px; box-shadow: 0 0 26px rgba(145,132,217,.18)">
+        <div style="display:flex; align-items:center; gap:9px">
+          <svg viewBox="0 0 26 15" style="width:46px; flex:none; display:block; border-radius:2px; background:#0a0c16">
+            <defs><linearGradient id="fdA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9184d9" stop-opacity=".3"/><stop offset="1" stop-color="#d2cefd" stop-opacity=".9"/></linearGradient></defs>
+            <g fill="#2a2d40"><rect x="6" y="2" width="5" height="1"/><rect x="14" y="2" width="5" height="1"/><rect x="6" y="3" width="5" height="1"/><rect x="14" y="3" width="5" height="1"/><rect x="6" y="7" width="4" height="1"/><rect x="13" y="7" width="4" height="1"/><rect x="6" y="8" width="4" height="1"/><rect x="13" y="8" width="4" height="1"/><rect x="6" y="10" width="5" height="1"/><rect x="14" y="10" width="5" height="1"/><rect x="6" y="11" width="5" height="1"/><rect x="14" y="11" width="5" height="1"/></g>
+            <g fill="url(#fdA)"><rect x="0" y="1" width="23" height="1"/><rect x="22" y="2" width="1" height="1"/><rect x="22" y="3" width="1" height="1"/><rect x="22" y="4" width="1" height="1"/><rect x="3" y="5" width="20" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="3" y="9" width="20" height="1"/><rect x="22" y="10" width="1" height="1"/><rect x="22" y="11" width="1" height="1"/><rect x="22" y="12" width="1" height="1"/><rect x="22" y="13" width="4" height="1"/></g>
+            <circle cx="25.5" cy="13.5" r="0.8" fill="#b5abfc" fill-opacity=".5"/>
+          </svg>
+          <div style="flex:1">
+            <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#b5abfc">Continue · Sector 02</div>
+            <div style="font:500 17px/1.1 var(--font-heading); color:#e9e9ed; margin-top:5px">Cascade</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font:400 9px/1 var(--font-body); color:#75798c">Standard</div>
+            <div style="font:600 15px/1 var(--font-body); color:#d2cefd; margin-top:5px">→</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:9px">
+        <div style="padding:12px 13px 13px; background:rgba(20,22,36,.82); border:1px solid #2a2d40; border-radius:9px">
+          <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#75798c">Campaign</div>
+          <div style="font:500 14px/1.15 var(--font-heading); color:#e9e9ed; margin-top:7px">3 sectors</div>
+          <div style="display:flex; gap:3px; margin-top:9px">
+            <i style="display:block; flex:1; height:3px; border-radius:2px; background:#9184d9"></i>
+            <i style="display:block; flex:1; height:3px; border-radius:2px; background:#2a2d40"></i>
+            <i style="display:block; flex:1; height:3px; border-radius:2px; background:#2a2d40"></i>
+          </div>
+          <div style="font:400 9px/1 var(--font-body); color:#75798c; margin-top:8px">1 held · best A</div>
+        </div>
+        <div style="padding:12px 13px 13px; background:rgba(20,22,36,.82); border:1px solid #2a2d40; border-radius:9px">
+          <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#75798c">Race</div>
+          <div style="font:500 14px/1.15 var(--font-heading); color:#e9e9ed; margin-top:7px">vs Vela</div>
+          <div style="display:flex; align-items:baseline; gap:4px; margin-top:8px">
+            <span style="font:600 15px/1 var(--font-body); color:#86e39b">3</span>
+            <span style="font:400 11px/1 var(--font-body); color:#4d5063">–</span>
+            <span style="font:600 15px/1 var(--font-body); color:#e06d6d">2</span>
+          </div>
+          <div style="font:400 9px/1 var(--font-body); color:#75798c; margin-top:7px">last: won on Pincer</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="cap">The board behind the title is the <em>real</em> Cascade route, rendered from <code>LEVEL02.rows</code> at the same brightness ramp the board spec calls for. Continue is the primary action and carries a thumbnail of what it resumes. The two modes are two cards of equal weight, each showing the one number that makes it worth opening: sectors held, and the standing series.</div>
+</div>
+
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Boot lands on a picker. The most common intent costs two screens; the game never names itself; the second mode is a link; and the strongest retention hook in the codebase — a running record against a named friend — is invisible here.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>A new <code style="font-size:11px">homeScreen.ts</code> ahead of <code style="font-size:11px">menuScreen</code>. Continue reads <code style="font-size:11px">furthestUnlocked</code> + <code style="font-size:11px">lastDifficulty</code>; the Race card reads <code style="font-size:11px">raceSeries</code>; the backdrop is the resumed sector's own map. No new stored state.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The board behind the title must not out-glow the type — it is at 0.5 with a directional scrim over it. And <em>Continue must never be wrong</em>: if progress is empty or unreadable it is absent, not a dead button (see 3.1).</p></div>
+</div>
+
+<h3>3.1 &nbsp;First run — the same screen, different content</h3>
+<div class="spec">
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Today, first run</div>
+    <div style="padding:16px; background:#0b0c16; border:1px solid #2a2d40; border-radius:6px; min-height:150px; box-sizing:border-box">
+      <div style="text-align:center; padding-top:12px">
+        <div style="font:600 8px/1 var(--font-body); letter-spacing:.24em; text-transform:uppercase; color:#b5abfc">Single player</div>
+        <div style="font:500 27px/1.05 var(--font-heading); color:#e9e9ed; margin-top:8px">Choose a sector</div>
+        <div style="font:400 10.5px/1.6 var(--font-body); color:#9397ab; max-width:300px; margin:8px auto 0">Three boards … Clear one to open the next — <b style="color:#e9e9ed">0 of 3</b> held so far.</div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:center; margin-top:14px">
+        <div style="width:78px; height:44px; border-radius:6px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1)"></div>
+        <div style="width:78px; height:44px; border-radius:6px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1); opacity:.5"></div>
+        <div style="width:78px; height:44px; border-radius:6px; background:rgba(20,22,36,.82); box-shadow: inset 0 0 0 1px rgba(233,233,237,.1); opacity:.5"></div>
+      </div>
+    </div>
+    <div class="cap">Two thirds of the screen is greyed out, and the copy leads with <b>0 of 3 held</b>. The first thing a new player is told is what they have not done.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">Proposed, first run</div>
+    <div style="position:relative; padding:0; background:#07080f; border:1px solid #2a2d40; border-radius:6px; min-height:150px; overflow:hidden">
+      <svg viewBox="0 0 26 15" preserveAspectRatio="xMidYMid meet" style="position:absolute; inset:0; width:100%; height:100%; opacity:.8">
+        <defs><linearGradient id="fdhero2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9184d9" stop-opacity=".3"/><stop offset="1" stop-color="#d2cefd" stop-opacity=".8"/></linearGradient></defs>
+        <g fill="#232532" fill-opacity=".5"><rect x="2" y="5" width="2" height="1"/><rect x="2" y="6" width="2" height="1"/><rect x="22" y="13" width="2" height="1"/><rect x="22" y="14" width="2" height="1"/></g>
+        <g fill="url(#fdhero2)"><rect x="0" y="2" width="8" height="1"/><rect x="7" y="3" width="1" height="1"/><rect x="13" y="3" width="7" height="1"/><rect x="7" y="4" width="1" height="1"/><rect x="13" y="4" width="1" height="1"/><rect x="19" y="4" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="13" y="5" width="1" height="1"/><rect x="19" y="5" width="1" height="1"/><rect x="7" y="6" width="1" height="1"/><rect x="13" y="6" width="1" height="1"/><rect x="19" y="6" width="1" height="1"/><rect x="7" y="7" width="7" height="1"/><rect x="19" y="7" width="1" height="1"/><rect x="19" y="8" width="1" height="1"/><rect x="19" y="9" width="1" height="1"/><rect x="19" y="10" width="1" height="1"/><rect x="19" y="11" width="7" height="1"/></g>
+        <circle cx="25.5" cy="11.5" r="1.1" fill="#b5abfc" fill-opacity=".35"/>
+        <circle cx="25.5" cy="11.5" r="0.4" fill="#f2f0ff"/>
+      </svg>
+      <div style="position:absolute; inset:0; background: linear-gradient(100deg, rgba(7,8,15,.94) 16%, rgba(7,8,15,.6) 54%, rgba(7,8,15,.25))"></div>
+      <div style="position:relative; padding:18px 18px 20px">
+        <div style="font:500 30px/1 var(--font-heading); letter-spacing:-.03em; color:#e9e9ed">Deep Field</div>
+        <div style="font:400 11px/1.6 var(--font-body); color:#9397ab; max-width:17em; margin-top:8px">A tower defense for your browser. Ten waves, five stations, one core to keep lit.</div>
+        <div style="display:flex; gap:8px; margin-top:16px">
+          <span style="padding:8px 14px; border:1px solid #9184d9; border-radius:7px; font:600 11px/1 var(--font-body); color:#d2cefd; box-shadow: 0 0 20px rgba(145,132,217,.2)">Start Sector 01 →</span>
+          <span style="padding:8px 14px; border:1px solid #2a2d40; border-radius:7px; font:600 11px/1 var(--font-body); color:#9397ab">Race a friend</span>
+        </div>
+        <div style="font:400 9px/1 var(--font-body); color:#5d6070; margin-top:12px">Standard difficulty · change on the next screen</div>
+      </div>
+    </div>
+    <div class="cap">No locked cards, no score of zero. One primary action naming the sector, one alternative naming the mode, and the difficulty default stated so it is not a surprise.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>A first-run screen dominated by locked content and a "0 of 3" tally frames the game as a list of things the player has failed to do, at the exact moment they have not been given a chance to do any of them.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Branch the home screen on <code style="font-size:11px">cleared === 0</code>: hide Continue, hide the progress bar, promote "Start Sector 01" to primary, and say what the game <em>is</em> instead of what is locked.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Locked sectors still exist and must still be discoverable — they live on the campaign screen, where a locked card is information rather than the first impression.</p></div>
+</div>
+</div>
+
+<h2 style="break-before: page">4 · Sector select</h2>
+
+<p>The campaign screen stays, and gets the two things it is missing: <b>the boards themselves</b>, and <b>difficulty in the same click as launch</b>.</p>
+
+<div class="spec">
+<div class="lbl" style="color:#9184d9">After — three sectors, real boards</div>
+<div style="display:grid; grid-template-columns: repeat(3,1fr); gap:12px">
+
+  <div style="background:rgba(20,22,36,.9); border:1px solid rgba(145,132,217,.5); border-radius:9px; overflow:hidden">
+    <svg viewBox="0 0 26 15" style="width:100%; display:block; background:#0a0c16">
+      <defs><linearGradient id="fd1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9184d9" stop-opacity=".28"/><stop offset="1" stop-color="#d2cefd" stop-opacity=".85"/></linearGradient></defs>
+      <g fill="#232532" fill-opacity=".7"><rect x="2" y="5" width="2" height="1"/><rect x="2" y="6" width="2" height="1"/><rect x="22" y="13" width="2" height="1"/><rect x="22" y="14" width="2" height="1"/></g>
+      <g fill="url(#fd1)"><rect x="0" y="2" width="8" height="1"/><rect x="7" y="3" width="1" height="1"/><rect x="13" y="3" width="7" height="1"/><rect x="7" y="4" width="1" height="1"/><rect x="13" y="4" width="1" height="1"/><rect x="19" y="4" width="1" height="1"/><rect x="7" y="5" width="1" height="1"/><rect x="13" y="5" width="1" height="1"/><rect x="19" y="5" width="1" height="1"/><rect x="7" y="6" width="1" height="1"/><rect x="13" y="6" width="1" height="1"/><rect x="19" y="6" width="1" height="1"/><rect x="7" y="7" width="7" height="1"/><rect x="19" y="7" width="1" height="1"/><rect x="19" y="8" width="1" height="1"/><rect x="19" y="9" width="1" height="1"/><rect x="19" y="10" width="1" height="1"/><rect x="19" y="11" width="7" height="1"/></g>
+      <circle cx="0.5" cy="2.5" r="0.5" fill="#f9a8d4"/>
+      <circle cx="25.5" cy="11.5" r="1" fill="#b5abfc" fill-opacity=".4"/>
+      <circle cx="25.5" cy="11.5" r="0.35" fill="#f2f0ff"/>
+    </svg>
+    <div style="padding:11px 12px 12px">
+      <div style="display:flex; align-items:baseline; justify-content:space-between">
+        <div>
+          <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#b5abfc">Sector 01</div>
+          <div style="font:500 16px/1.15 var(--font-heading); color:#e9e9ed; margin-top:5px">Switchback</div>
+        </div>
+        <span style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border:1px solid rgba(145,132,217,.55); border-radius:5px; font:600 11px/1 var(--font-body); color:#d2cefd">A</span>
+      </div>
+      <div style="display:flex; gap:9px; font:400 9px/1 var(--font-body); color:#75798c; margin-top:10px">
+        <span><b style="color:#cfd3e5">10</b> waves</span><span><b style="color:#cfd3e5">43</b> road</span><span><b style="color:#cfd3e5">6</b> turns</span>
+      </div>
+      <div style="display:flex; gap:0; margin-top:11px; border:1px solid #2a2d40; border-radius:5px; overflow:hidden">
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#75798c">Recon</span>
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#d2cefd; background:rgba(145,132,217,.16); border-left:1px solid #2a2d40; border-right:1px solid #2a2d40">Standard</span>
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#75798c">Blackout</span>
+      </div>
+      <div style="margin-top:9px; padding:6px 0 0; text-align:center; font:600 10px/1 var(--font-body); color:#d2cefd; border-top:1px solid #232532">Launch →</div>
+    </div>
+  </div>
+
+  <div style="background:rgba(20,22,36,.9); border:1px solid #2a2d40; border-radius:9px; overflow:hidden">
+    <svg viewBox="0 0 26 15" style="width:100%; display:block; background:#0a0c16">
+      <defs><linearGradient id="fd2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9184d9" stop-opacity=".28"/><stop offset="1" stop-color="#d2cefd" stop-opacity=".85"/></linearGradient></defs>
+      <g fill="#232532" fill-opacity=".7"><rect x="6" y="2" width="5" height="1"/><rect x="14" y="2" width="5" height="1"/><rect x="6" y="3" width="5" height="1"/><rect x="14" y="3" width="5" height="1"/><rect x="6" y="7" width="4" height="1"/><rect x="13" y="7" width="4" height="1"/><rect x="6" y="8" width="4" height="1"/><rect x="13" y="8" width="4" height="1"/><rect x="6" y="10" width="5" height="1"/><rect x="14" y="10" width="5" height="1"/><rect x="6" y="11" width="5" height="1"/><rect x="14" y="11" width="5" height="1"/></g>
+      <g fill="url(#fd2)"><rect x="0" y="1" width="23" height="1"/><rect x="22" y="2" width="1" height="1"/><rect x="22" y="3" width="1" height="1"/><rect x="22" y="4" width="1" height="1"/><rect x="3" y="5" width="20" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="3" y="9" width="20" height="1"/><rect x="22" y="10" width="1" height="1"/><rect x="22" y="11" width="1" height="1"/><rect x="22" y="12" width="1" height="1"/><rect x="22" y="13" width="4" height="1"/></g>
+      <circle cx="0.5" cy="1.5" r="0.5" fill="#f9a8d4"/>
+      <circle cx="25.5" cy="13.5" r="1" fill="#b5abfc" fill-opacity=".4"/>
+      <circle cx="25.5" cy="13.5" r="0.35" fill="#f2f0ff"/>
+    </svg>
+    <div style="padding:11px 12px 12px">
+      <div style="display:flex; align-items:baseline; justify-content:space-between">
+        <div>
+          <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#b5abfc">Sector 02</div>
+          <div style="font:500 16px/1.15 var(--font-heading); color:#e9e9ed; margin-top:5px">Cascade</div>
+        </div>
+        <span style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border:1px dashed #2a2d40; border-radius:5px; font:600 10px/1 var(--font-body); color:#4d5063">—</span>
+      </div>
+      <div style="display:flex; gap:9px; font:400 9px/1 var(--font-body); color:#75798c; margin-top:10px">
+        <span><b style="color:#cfd3e5">12</b> waves</span><span><b style="color:#cfd3e5">71</b> road</span><span><b style="color:#cfd3e5">7</b> turns</span>
+      </div>
+      <div style="display:flex; gap:0; margin-top:11px; border:1px solid #2a2d40; border-radius:5px; overflow:hidden">
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#75798c">Recon</span>
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#d2cefd; background:rgba(145,132,217,.16); border-left:1px solid #2a2d40; border-right:1px solid #2a2d40">Standard</span>
+        <span style="flex:1; text-align:center; padding:5px 0; font:600 8.5px/1 var(--font-body); letter-spacing:.05em; text-transform:uppercase; color:#75798c">Blackout</span>
+      </div>
+      <div style="margin-top:9px; padding:6px 0 0; text-align:center; font:600 10px/1 var(--font-body); color:#d2cefd; border-top:1px solid #232532">Launch →</div>
+    </div>
+  </div>
+
+  <div style="background:rgba(20,22,36,.55); border:1px solid #232532; border-radius:9px; overflow:hidden">
+    <svg viewBox="0 0 26 15" style="width:100%; display:block; background:#0a0c16; opacity:.4">
+      <g fill="#232532" fill-opacity=".7"><rect x="7" y="3" width="3" height="1"/><rect x="14" y="3" width="1" height="1"/><rect x="7" y="4" width="3" height="1"/><rect x="19" y="4" width="1" height="1"/><rect x="7" y="5" width="3" height="1"/><rect x="14" y="5" width="1" height="1"/><rect x="19" y="5" width="1" height="1"/><rect x="14" y="9" width="1" height="1"/><rect x="18" y="9" width="3" height="1"/><rect x="18" y="10" width="3" height="1"/><rect x="14" y="11" width="1" height="1"/><rect x="18" y="11" width="3" height="1"/></g>
+      <g fill="#3a3d52"><rect x="5" y="2" width="7" height="1"/><rect x="17" y="2" width="5" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="11" y="3" width="1" height="1"/><rect x="17" y="3" width="1" height="1"/><rect x="21" y="3" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="11" y="4" width="1" height="1"/><rect x="17" y="4" width="1" height="1"/><rect x="21" y="4" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="11" y="5" width="1" height="1"/><rect x="17" y="5" width="1" height="1"/><rect x="21" y="5" width="1" height="1"/><rect x="5" y="6" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="17" y="6" width="1" height="1"/><rect x="21" y="6" width="1" height="1"/><rect x="0" y="7" width="6" height="1"/><rect x="11" y="7" width="1" height="1"/><rect x="17" y="7" width="1" height="1"/><rect x="21" y="7" width="5" height="1"/><rect x="11" y="8" width="1" height="1"/><rect x="17" y="8" width="1" height="1"/><rect x="11" y="9" width="1" height="1"/><rect x="17" y="9" width="1" height="1"/><rect x="11" y="10" width="1" height="1"/><rect x="17" y="10" width="1" height="1"/><rect x="11" y="11" width="1" height="1"/><rect x="17" y="11" width="1" height="1"/><rect x="11" y="12" width="7" height="1"/></g>
+    </svg>
+    <div style="padding:11px 12px 12px">
+      <div style="display:flex; align-items:baseline; justify-content:space-between">
+        <div>
+          <div style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#5d6070">Sector 03</div>
+          <div style="font:500 16px/1.15 var(--font-heading); color:#9397ab; margin-top:5px">Pincer</div>
+        </div>
+        <svg width="17" height="17" viewBox="0 0 40 40"><rect x="10" y="18" width="20" height="15" rx="3" fill="none" stroke="#4d5063" stroke-width="2.6"/><path d="M15 18 v-4 a5 5 0 0 1 10 0 v4" fill="none" stroke="#4d5063" stroke-width="2.6"/></svg>
+      </div>
+      <div style="display:flex; gap:9px; font:400 9px/1 var(--font-body); color:#5d6070; margin-top:10px">
+        <span><b style="color:#75798c">12</b> waves</span><span><b style="color:#75798c">63</b> road</span><span><b style="color:#75798c">9</b> turns</span>
+      </div>
+      <div style="margin-top:11px; padding:7px 9px; background:#15161f; border-radius:5px; font:400 9.5px/1.4 var(--font-body); color:#75798c">Hold <b style="color:#9397ab">Cascade</b> to open</div>
+    </div>
+  </div>
+</div>
+<div class="cap">Boards drawn from <code>MapSource.rows</code> — Switchback's six turns, Cascade's three full-width sweeps, Pincer's double hairpin, all visible without a word of prose. Difficulty is a three-way inline; grade sits as a badge; road, waves and turns are three numerals. Locked shows its board dimmed, not hidden — you can see what you are working toward.</div>
+</div>
+
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Each card spends a 62px-minimum block of prose describing a shape, then makes the player go to a second screen to pick a difficulty they almost always pick the same way. Locked cards hide the board entirely, so there is nothing to want.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>A <code style="font-size:11px">boardThumb(map)</code> helper emitting SVG rects from row-runs — the same merge the mocks here were generated with, ~20 rects a board. Difficulty segmented onto the card, seeded from <code style="font-size:11px">lastDifficulty</code>. Blurb moves to a hover tooltip / expanded state.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Road length stays <em>parsed</em> — never a hand-written number. Turn count derives from <code style="font-size:11px">waypoints.length - 2</code>, same discipline. And the thumbnail must use the route's real brightness ramp, so the front door teaches the board's visual grammar before the player ever sees it at size.</p></div>
+</div>
+
+<h3>4.1 &nbsp;Seed, and the paragraph under it</h3>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="padding:13px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+      <div style="font:600 8.5px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#75798c">Seed</div>
+      <div style="height:34px; margin-top:8px; padding:0 11px; display:flex; align-items:center; background:rgba(35,37,50,.72); box-shadow: inset 0 0 0 1px rgba(233,233,237,.16); border-radius:6px; font:400 12px/1 var(--font-body); color:#5d6070">leave blank for a random board</div>
+      <div style="font:400 10px/1.6 var(--font-body); color:#5d6070; margin-top:8px">The same seed always produces the same waves — worth setting if you want to retry a run you just lost, or hand a friend the exact board that beat you.</div>
+    </div>
+    <div class="cap">Thirty-one words of explanation attached to a field most players will never touch, on the screen between them and playing.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="padding:13px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+      <div style="display:flex; align-items:center; gap:8px">
+        <span style="padding:5px 10px; border:1px solid #2a2d40; border-radius:5px; font:400 10px/1 var(--font-body); color:#9397ab">Set a seed</span>
+        <span style="font:400 9.5px/1 var(--font-body); color:#5d6070">same seed, same waves</span>
+      </div>
+      <div style="height:1px; background:#232532; margin:11px 0"></div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <span style="padding:5px 10px; border:1px solid rgba(145,132,217,.5); border-radius:5px; font:400 10px/1 ui-monospace,Menlo,monospace; color:#d2cefd">vela-77</span>
+        <span style="font:400 9.5px/1 var(--font-body); color:#75798c">last run's board · <b style="color:#b5abfc">replay</b></span>
+      </div>
+    </div>
+    <div class="cap">Collapsed to a button by default. When there <em>is</em> a previous seed, offer it directly — "replay the board that beat you" is the actual use case, and it needs no explanation when it is one click.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>An advanced field is given permanent primary space and thirty-one words of justification, in the path of every launch.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Collapse behind a button. Store the last-used seed alongside <code style="font-size:11px">lastDifficulty</code> and surface it as a one-click replay — which is the case the paragraph was describing.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Blank still means random, and a typed seed still reproduces exactly. The field is hidden, never removed — it is how a shared board gets handed between two people.</p></div>
+</div>
+
+<h2 style="break-before: page">5 · Race entry</h2>
+
+<p>Race currently begins with a ghost link that leads to a name field. Everything a player wants to know before committing — is the relay up, is anyone waiting, what is our record — exists in the codebase and is shown nowhere.</p>
+
+<div class="spec">
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="padding:14px; background:#0b0c16; border:1px solid #2a2d40; border-radius:6px; min-height:154px; box-sizing:border-box">
+      <div style="display:flex; height:24px; align-items:center"><span style="font:600 8px/1 var(--font-body); letter-spacing:.2em; text-transform:uppercase; color:#9184d9">Deep Field</span><span style="flex:1"></span><span style="font:400 9.5px/1 var(--font-body); color:#75798c">Race a friend →</span></div>
+      <div style="text-align:center; margin-top:22px">
+        <div style="font:500 22px/1.05 var(--font-heading); color:#e9e9ed">Choose a sector</div>
+      </div>
+      <div style="margin-top:16px; padding:9px 11px; border:1px dashed #2a2d40; border-radius:5px; font:400 10px/1.5 var(--font-body); color:#5d6070; text-align:center">Race lives behind the dimmest text on the screen. Nothing here says a relay exists, or that you have a record.</div>
+    </div>
+    <div class="cap">The entire multiplayer mode: 12px, <code style="font-size:11px">#75798c</code>, <code style="font-size:11px">.mn-btn.ghost</code>.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="padding:0; background:#0b0c16; border:1px solid #2a2d40; border-radius:6px; min-height:154px; overflow:hidden">
+      <div style="padding:13px 14px 14px">
+        <div style="display:flex; align-items:center; gap:8px">
+          <span style="font:600 8px/1 var(--font-body); letter-spacing:.18em; text-transform:uppercase; color:#75798c">Race</span>
+          <span style="flex:1"></span>
+          <span style="display:flex; align-items:center; gap:5px; font:400 9px/1 var(--font-body); color:#86e39b"><i style="display:block; width:5px; height:5px; border-radius:50%; background:#86e39b"></i>relay up</span>
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:14px; margin-top:12px">
+          <div>
+            <div style="font:500 20px/1 var(--font-heading); color:#e9e9ed">vs Vela</div>
+            <div style="display:flex; align-items:baseline; gap:5px; margin-top:8px">
+              <span style="font:600 24px/1 var(--font-body); color:#86e39b">3</span>
+              <span style="font:400 15px/1 var(--font-body); color:#4d5063">–</span>
+              <span style="font:600 24px/1 var(--font-body); color:#e06d6d">2</span>
+              <span style="font:400 9px/1 var(--font-body); color:#75798c; margin-left:6px">1 tie</span>
+            </div>
+          </div>
+          <div style="flex:1"></div>
+          <div style="text-align:right">
+            <div style="font:600 8px/1 var(--font-body); letter-spacing:.14em; text-transform:uppercase; color:#75798c">Room</div>
+            <div style="font:600 17px/1 ui-monospace,Menlo,monospace; letter-spacing:.14em; color:#d2cefd; margin-top:7px">ABCD</div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:14px">
+          <span style="flex:1; text-align:center; padding:8px 0; border:1px solid #9184d9; border-radius:7px; font:600 11px/1 var(--font-body); color:#d2cefd; box-shadow: 0 0 20px rgba(145,132,217,.18)">Open the lobby →</span>
+          <span style="padding:8px 12px; border:1px solid #2a2d40; border-radius:7px; font:600 11px/1 var(--font-body); color:#9397ab">Copy invite</span>
+        </div>
+        <div style="font:400 9px/1.5 var(--font-body); color:#5d6070; margin-top:10px">Vela needs Tailscale running · last race won on Pincer, 8 waves to 7</div>
+      </div>
+    </div>
+    <div class="cap">Relay state as a dot, the standing series as the headline, the room code ready to read aloud, and the invite one click from the front door. The Tailscale requirement is stated once, here, where it is actionable.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The mode with the most engineering behind it has the least presence, and the record that would make a friend want a rematch is buried in localStorage. A player also cannot tell whether a race is even possible right now.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Surface <code style="font-size:11px">formatSeries</code> on the front door, broken into its parts so the numbers can carry weight. Probe the relay on load for the status dot. Pull room code and invite link forward from the lobby.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Series is keyed by opponent <em>name</em> — a rename starts a fresh record, which stays the least surprising behaviour. When there is no history the card shows the mode's pitch instead of an empty 0–0, same rule as first-run Continue.</p></div>
+</div>
+</div>
+
+<h2>6 · Smaller improvements</h2>
+
+<table>
+  <thead><tr><th style="width:22%">Item</th><th style="width:32%">Now</th><th>Proposed</th></tr></thead>
+  <tbody>
+    <tr><td><b>Locked copy</b></td><td>"Clear Switchback to open this sector"</td><td>"Hold <b>Switchback</b> to open" — the game says <em>hold</em> everywhere else ("Sector held", "Waves held"). One verb.</td></tr>
+    <tr><td><b>Grades</b></td><td>A pill per difficulty: "Standard <b>A</b> 14/20 · 4:38", three of them stacking.</td><td>The best grade as one badge on the card; the per-difficulty breakdown on hover or in an expanded row. Three pills is a table pretending to be a chip set.</td></tr>
+    <tr><td><b>Reset progress</b></td><td>Ghost button under the cards, always visible once anything is cleared.</td><td>Move to Settings. A destructive action does not belong one mis-click from Launch.</td></tr>
+    <tr><td><b>Keyboard</b></td><td>Enter submits the seed field only.</td><td>Arrow keys move the sector cursor, 1/2/3 pick difficulty, Enter launches, Esc goes back. The in-game HUD is fully keyboard-driven; the front door should not be the one mouse-only screen.</td></tr>
+    <tr><td><b>Difficulty blurbs</b></td><td>Up to 108 characters, rendered on all three options at once.</td><td>One line each on the card's segmented control (lives + hp factor as numerals); the full blurb on hover. The three tiers differ by two numbers — show the numbers.</td></tr>
+    <tr><td><b>Bank carry</b></td><td>Explained on the victory card, three times, after the run.</td><td>Also stated on the sector card when a bank is pending: "starts with <b>$118</b> banked". The rule becomes playable-around before it costs anything.</td></tr>
+    <tr><td><b>"How to play"</b></td><td>Does not exist. A new player learns the five stations from tooltips mid-wave.</td><td>One short overlay off the home screen: the five stations as glyphs with one line each, and the six contacts. Static, no interaction — a legend, not a tutorial.</td></tr>
+    <tr><td><b>Title lockup</b></td><td>9px, uppercase, letterspaced, in the bar. The word "Deep Field" never appears at size.</td><td>46px on the home screen over its own board. The game is allowed to be named.</td></tr>
+  </tbody>
+</table>
+
+<h2>7 · Acceptance checklist</h2>
+
+<table>
+  <thead><tr><th style="width:6%">✓</th><th style="width:26%">Surface</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td style="color:#4d5063">☐</td><td><b>Time to resume</b></td><td>A returning player with one sector cleared is in a running game in <b>one click</b> from boot.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Continue honesty</b></td><td>With localStorage cleared, disabled, or holding a future version's JSON, the home screen renders the first-run variant — no dead Continue, no crash.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Mode parity</b></td><td>Campaign and Race are the same visual weight. A player who has never raced can find it without reading the top bar.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Board recognition</b></td><td>A player shown the three thumbnails, then dropped onto one of the boards, can say which sector they are on.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>No prose required</b></td><td>Every sector card is understandable with its blurb hidden: shape, length, waves, turns, difficulty, best grade.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>First run</b></td><td>A first-time player sees no locked card and no zero-score before their first game. One primary action, named.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Series visibility</b></td><td>A player with a race history sees the record on the home screen without navigating.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Relay honesty</b></td><td>With the server down, the Race card says so before the player types a name — and the status dot never claims "up" on a stale probe.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Keyboard</b></td><td>Home → campaign → difficulty → launch is completable without a mouse, with a visible focus ring at every step.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Parsed facts</b></td><td>Road length and turn count still derive from the map. Changing a map's rows changes the card with no other edit.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Destructive distance</b></td><td>Reset progress is not reachable in one click from any screen containing a Launch button.</td></tr>
+  </tbody>
+</table>
+
+<h4>Sequence</h4>
+<ol>
+  <li><b>Board thumbnails</b> (<code>boardThumb</code>) — smallest change, biggest visible gain, and every other item uses it.</li>
+  <li><b>Home screen</b>, both variants, with Continue and the two mode cards.</li>
+  <li><b>Sector cards rebuilt</b> on the thumbnail, difficulty inline, seed collapsed.</li>
+  <li><b>Race card wired</b> to <code>raceSeries</code> and a relay probe.</li>
+  <li><b>Keyboard, Settings, How to play</b> — the tail, once the shape is settled.</li>
+</ol>
+
+<h4>Open</h4>
+<ul>
+  <li>Should Continue resume the <em>furthest unlocked</em> sector, or the last one actually played? They differ after a player goes back to farm a better grade. Last-played is more literal; furthest is more often what is wanted.</li>
+  <li>Does the relay probe belong on the home screen at all, or does it make an offline single-player boot feel broken? A dot that says "relay down" on a machine with no server running may be worse than no dot.</li>
+</ul>
+
+<div style="margin-top: 44px; padding-top: 16px; border-top: 1px solid #2a2d40; font: 400 11px/1.5 var(--font-body); color: #75798c">Deep Field · front door spec · read against <code>cbhead/deep-field-td@main</code>. Board thumbnails generated from the real <code>MapSource.rows</code> of Switchback, Cascade and Pincer. Third in the set, after the design review and the build spec.</div>
+
+</div>
+</doc-page>
+
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/styles.css">
+<script src="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/_ds_bundle.js"></script>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  a { color: #b5abfc; text-decoration: none; border-bottom: 1px solid rgba(181,171,252,.35); }
+  a:hover { color: #d2cefd; border-bottom-color: rgba(210,206,253,.6); }
+  .dfx h2 { font: 500 27px/1.15 var(--font-heading); letter-spacing: -0.01em; color: #e9e9ed; margin: 48px 0 6px; }
+  .dfx h3 { font: 500 18px/1.3 var(--font-heading); color: #e9e9ed; margin: 34px 0 4px; }
+  .dfx h4 { font: 600 11px/1.3 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: #9184d9; margin: 22px 0 8px; }
+  .dfx p { font: 400 14.5px/1.68 var(--font-body); color: #c3c5d3; margin: 0 0 13px; text-wrap: pretty; }
+  .dfx li { font: 400 14px/1.6 var(--font-body); color: #c3c5d3; margin: 0 0 6px; text-wrap: pretty; }
+  .dfx ul, .dfx ol { margin: 0 0 14px; padding-left: 20px; }
+  .dfx b, .dfx strong { color: #e9e9ed; font-weight: 600; }
+  .dfx em { color: #d2cefd; font-style: italic; }
+  .dfx code { font: 400 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #a5eefb; background: rgba(165,238,251,.07); padding: 1px 4px; border-radius: 3px; }
+  .dfx table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
+  .dfx th { font: 600 10.5px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: #9397ab; text-align: left; padding: 0 10px 7px 0; border-bottom: 1px solid #2a2d40; }
+  .dfx td { font: 400 13px/1.5 var(--font-body); color: #c3c5d3; padding: 9px 10px 9px 0; border-bottom: 1px solid rgba(42,45,64,.6); vertical-align: top; }
+  .dfx td b { color: #e9e9ed; }
+  .dfx figcaption { font: 400 11.5px/1.5 var(--font-body); color: #75798c; margin-top: 8px; }
+  .dfx .spec { break-inside: avoid; margin: 0 0 10px; }
+  .dfx .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0 0; }
+  .dfx .lbl { font: 600 9.5px/1 var(--font-body); letter-spacing: .15em; text-transform: uppercase; margin-bottom: 8px; }
+  .dfx .cap { font: 400 11px/1.5 var(--font-body); color: #75798c; margin-top: 7px; }
+  .dfx .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #2a2d40; margin: 14px 0 0; break-inside: avoid; }
+  .dfx .why > div { background: #171a27; padding: 11px 12px 12px; }
+  .dfx .why h5 { font: 600 9px/1 var(--font-body); letter-spacing: .14em; text-transform: uppercase; margin: 0 0 7px; }
+  .dfx .why p { font: 400 12px/1.55 var(--font-body); color: #b6b8c6; margin: 0; orphans: 3; widows: 3; }
+  .dfx .frag { position: relative; height: 150px; border: 1px solid #2a2d40; overflow: hidden; }
+</style>
+</helmet>
+
+<doc-page margin="0">
+<div class="dfx" style="background: #12141f; padding: 0.8in 0.85in 0.9in; box-sizing: border-box; font-family: var(--font-body); color: #c3c5d3">
+
+<div style="display: flex; align-items: baseline; gap: 12px; font: 600 10.5px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: #9184d9; margin-bottom: 22px">
+  <span>Deep Field</span>
+  <span style="flex: 1; height: 1px; background: linear-gradient(to right, rgba(145,132,217,.55), rgba(145,132,217,0))"></span>
+  <span style="color: #75798c; letter-spacing: .1em">Build spec v1 · 30 Aug 2026</span>
+</div>
+
+<h1 style="font: 500 44px/1.06 var(--font-heading); letter-spacing: -0.025em; color: #e9e9ed; margin: 0 0 16px">Every surface, before and after</h1>
+
+<p style="font: 400 17px/1.6 var(--font-body); color: #d2cefd; margin: 0 0 8px; max-width: 46em">The companion to the design review: sixteen surfaces, each shown as it renders today beside what it should render, with the reason the change is worth making and the property it must not break.</p>
+
+<p style="max-width: 46em">Read the review first for <em>why these are the priorities</em>. This document is the <em>what</em> — a thing to build from and to check the build against. Every number quoted is live from <code>src/content/</code>; nothing here changes balance, only what the player can see.</p>
+
+<h4>How each entry is laid out</h4>
+<table>
+  <tbody>
+    <tr><td style="width:22%"><b>Before</b></td><td>What ships today, drawn faithfully — including the parts that work.</td></tr>
+    <tr><td><b>After</b></td><td>The proposal, at the size and value it would actually render at.</td></tr>
+    <tr><td><b>Problem</b></td><td>What the current state costs the player, stated as a failure, not a taste.</td></tr>
+    <tr><td><b>Change</b></td><td>The smallest edit that fixes it, named in the terms the code uses.</td></tr>
+    <tr><td><b>Must hold</b></td><td>The existing property the change is not allowed to trade away. If a build breaks one of these, it is wrong even if it looks better.</td></tr>
+  </tbody>
+</table>
+
+<h2 style="break-before: page">1 · The board</h2>
+<p style="color:#9397ab; font-size:13.5px; margin-top:0">Six entries. All of it lives in <code>mapLayer.ts</code>, <code>textures.ts</code> and <code>theme.ts</code>; none of it touches the simulation.</p>
+
+<div class="spec">
+<h3>1.1 &nbsp;The field</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">Ground, grid and starfield — everything under the route.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="background:#07080f">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, #1a1d33 1px, transparent 1px), linear-gradient(to bottom, #1a1d33 1px, transparent 1px); background-size: 25px 25px; opacity:.6"></div>
+      <div style="position:absolute; inset:0; background-image: radial-gradient(#6f7699 0.6px, transparent 0.7px); background-size: 37px 29px; opacity:.5"></div>
+      <div style="position:absolute; left:0; top:0; width:50%; height:25px; background:#0f1222; opacity:.7"></div>
+      <div style="position:absolute; left:50%; top:25px; width:50%; height:25px; background:#0f1222; opacity:.7"></div>
+    </div>
+    <div class="cap">Two ground tints four values apart at 0.72 alpha, a 1px grid at even weight to the board edge, 300 static stars. Flat from corner to corner.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="background: radial-gradient(115% 95% at 88% 74%, rgba(181,171,252,.15), transparent 60%), radial-gradient(90% 75% at 8% 14%, rgba(79,70,120,.16), transparent 64%), #07080f">
+      <div style="position:absolute; inset:0; background-image: radial-gradient(rgba(215,220,240,.75) 0.7px, transparent 0.8px); background-size: 41px 33px; opacity:.55"></div>
+      <div style="position:absolute; inset:0; background-image: radial-gradient(rgba(111,118,153,.8) 0.5px, transparent 0.6px); background-size: 19px 16px; opacity:.4"></div>
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,29,51,.9) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,29,51,.9) 1px, transparent 1px); background-size: 25px 25px; mask-image: radial-gradient(125% 115% at 55% 50%, #000 42%, transparent 90%); -webkit-mask-image: radial-gradient(125% 115% at 55% 50%, #000 42%, transparent 90%)"></div>
+    </div>
+    <div class="cap">A board-wide gradient lit from the pulsar at ~0.14 in <code style="font-size:11px">#b5abfc</code>, a second dimmer star pass for depth, and the grid masked away toward the edges.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>390 identical tiles with a uniform grid read as graph paper. Nothing tells the eye where the board's centre of gravity is, so every corner looks equally important — including the ones with no route in them.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>One <code style="font-size:11px">Graphics</code> gradient node under the tile field, one extra seeded star pass, and a radial mask on the grid stroke. Three additions, all baked once, zero per-frame cost.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Placement legibility near stations. The grid may fade at the far edges; it may not fade anywhere a player builds. And the starfield stays <em>static</em> — motion in the background means "a contact".</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>1.2 &nbsp;The route corridor</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">43 tiles, six turns, spawn at left to pulsar at right.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="background:#07080f">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, #1a1d33 1px, transparent 1px), linear-gradient(to bottom, #1a1d33 1px, transparent 1px); background-size: 25px 25px; opacity:.6"></div>
+      <div style="position:absolute; left:0; top:25px; width:58%; height:25px; background:#1b1f36"></div>
+      <div style="position:absolute; left:calc(58% - 25px); top:25px; width:25px; height:75px; background:#1b1f36"></div>
+      <div style="position:absolute; left:calc(58% - 25px); top:75px; width:42%; height:25px; background:#1b1f36"></div>
+      <div style="position:absolute; left:2px; top:29px; width:0; height:0; border-left:11px solid #f9a8d4; border-top:8px solid transparent; border-bottom:8px solid transparent; opacity:.85"></div>
+    </div>
+    <div class="cap">One flat fill (<code style="font-size:11px">#1b1f36</code>), <code style="font-size:11px">pathEdge: null</code>, square corners. Legible, and silent about everything else.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="background: radial-gradient(115% 95% at 90% 76%, rgba(181,171,252,.14), transparent 60%), #07080f">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,29,51,.9) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,29,51,.9) 1px, transparent 1px); background-size: 25px 25px; mask-image: radial-gradient(125% 115% at 55% 50%, #000 42%, transparent 90%); -webkit-mask-image: radial-gradient(125% 115% at 55% 50%, #000 42%, transparent 90%)"></div>
+      <div style="position:absolute; left:0; top:25px; width:58%; height:25px; background: linear-gradient(to right, rgba(145,132,217,.10), rgba(181,171,252,.28)); box-shadow: 0 0 18px 4px rgba(145,132,217,.20); border-radius: 0 0 3px 0"></div>
+      <div style="position:absolute; left:calc(58% - 25px); top:25px; width:25px; height:75px; background: linear-gradient(to bottom, rgba(181,171,252,.28), rgba(181,171,252,.36)); box-shadow: 0 0 18px 4px rgba(145,132,217,.22)"></div>
+      <div style="position:absolute; left:calc(58% - 25px); top:75px; width:42%; height:25px; background: linear-gradient(to right, rgba(181,171,252,.36), rgba(210,206,253,.5)); box-shadow: 0 0 22px 5px rgba(145,132,217,.26); border-radius: 3px 0 0 0"></div>
+      <div style="position:absolute; left:0; top:36.5px; width:58%; height:2px; background: linear-gradient(to right, rgba(210,206,253,.25), rgba(210,206,253,.75))"></div>
+      <div style="position:absolute; left:calc(58% - 13.5px); top:36px; width:2px; height:52px; background: linear-gradient(to bottom, rgba(210,206,253,.75), rgba(226,222,255,.88))"></div>
+      <div style="position:absolute; left:calc(58% - 13.5px); top:86.5px; width:42%; height:2px; background: linear-gradient(to right, rgba(226,222,255,.88), rgba(240,238,255,.97))"></div>
+      <div style="position:absolute; left:2px; top:29px; width:0; height:0; border-left:11px solid #f9a8d4; border-top:8px solid transparent; border-bottom:8px solid transparent; opacity:.85"></div>
+    </div>
+    <div class="cap">Fill ramps along <em>route distance</em> toward the pulsar, a 2px hot centre line mitred at corners, and an outward spill that lights the tiles beside the road.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>A flat corridor says where contacts walk and nothing else — not which way they travel, not how close to the core they are. The most information-dense object on the board carries one bit.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Per-tile fill interpolated on route distance (the waypoint list already gives it), one <code style="font-size:11px">Graphics</code> polyline for the centre line, one blurred strip texture for spill. Still built once.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Greyscale legibility — the route reads lighter than the field by <em>value</em>, never by hue alone. And the route may glow; it may never out-glow a station.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>1.3 &nbsp;Stream motion</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">The one moving part of the board layer.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:74px; background:#07080f">
+      <div style="position:absolute; left:0; top:25px; width:100%; height:25px; background: linear-gradient(to right, rgba(145,132,217,.14), rgba(210,206,253,.42))"></div>
+      <div style="position:absolute; left:0; top:36.5px; width:100%; height:2px; background: linear-gradient(to right, rgba(210,206,253,.3), rgba(240,238,255,.95))"></div>
+    </div>
+    <div class="cap">Static. Correct, and slightly inert — a current that does not move is a road.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:74px; background:#07080f">
+      <div style="position:absolute; left:0; top:25px; width:100%; height:25px; background: linear-gradient(to right, rgba(145,132,217,.14), rgba(210,206,253,.42))"></div>
+      <div style="position:absolute; left:0; top:36.5px; width:100%; height:2px; background: linear-gradient(to right, rgba(210,206,253,.3), rgba(240,238,255,.95))"></div>
+      <div style="position:absolute; left:0; top:35px; width:100%; height:5px; background-image: repeating-linear-gradient(to right, rgba(232,229,255,.55) 0 9px, transparent 9px 34px); mask-image: linear-gradient(to right, transparent, #000 40%, #000); -webkit-mask-image: linear-gradient(to right, transparent, #000 40%, #000); opacity:.5; filter: blur(.6px)"></div>
+      <div style="position:absolute; right:8px; top:6px; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#75798c">≤ 0.10 α · 0.35 tiles/s</div>
+    </div>
+    <div class="cap">One <code style="font-size:11px">TilingSprite</code> per straight run (seven on Switchback), scrolling toward the pulsar. Corners take a static cap so no run has to turn.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Nothing — this is the one entry that adds a cost rather than removing one. It is here because a static stream undersells the board, and because the cheap way to do it must be written down before someone does it the expensive way.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Seven <code style="font-size:11px">tilePosition.x</code> writes per frame, one shared texture, one batch. Speed is <em>constant</em> and does not scale with the 1×/2×/4× multiplier. Prefs toggle beside reach circles; off by default under <code style="font-size:11px">prefers-reduced-motion</code>.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>At 4× on Switchback, a single Mote is still the first thing the eye finds. If it is not, halve the alpha <em>before</em> touching the speed — a dim fast crawl reads as current, a bright slow one reads as an object.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>1.4 &nbsp;Nebula scenery</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">Blocked tiles — the thing you cannot build on.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:120px; background:#07080f; display:flex; align-items:center; justify-content:center">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, #1a1d33 1px, transparent 1px), linear-gradient(to bottom, #1a1d33 1px, transparent 1px); background-size: 25px 25px; opacity:.6"></div>
+      <div style="display:grid; grid-template-columns: 40px 40px; grid-template-rows: 40px 40px">
+        <div style="background: radial-gradient(closest-side, rgba(47,50,69,.85), rgba(35,37,50,.5) 62%, transparent 96%)"></div>
+        <div style="background: radial-gradient(closest-side, rgba(47,50,69,.85), rgba(35,37,50,.5) 62%, transparent 96%)"></div>
+        <div style="background: radial-gradient(closest-side, rgba(47,50,69,.85), rgba(35,37,50,.5) 62%, transparent 96%)"></div>
+        <div style="background: radial-gradient(closest-side, rgba(47,50,69,.85), rgba(35,37,50,.5) 62%, transparent 96%)"></div>
+      </div>
+    </div>
+    <div class="cap">Puffs inscribed inside each 40px tile. A disc meets its tile edge at one point, so a clump leaves a dark cross tracing the grid — four coins, not one cloud.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:120px; background:#07080f; display:flex; align-items:center; justify-content:center">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,29,51,.85) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,29,51,.85) 1px, transparent 1px); background-size: 25px 25px; opacity:.75"></div>
+      <div style="position:absolute; left:50%; top:50%; transform: translate(-50%,-50%); width:132px; height:110px">
+        <div style="position:absolute; left:6px; top:12px; width:86px; height:74px; border-radius:50%; background: radial-gradient(closest-side, rgba(58,62,86,.8), transparent 78%); filter: blur(7px)"></div>
+        <div style="position:absolute; left:44px; top:2px; width:78px; height:70px; border-radius:50%; background: radial-gradient(closest-side, rgba(50,54,76,.75), transparent 78%); filter: blur(8px)"></div>
+        <div style="position:absolute; left:30px; top:40px; width:82px; height:64px; border-radius:50%; background: radial-gradient(closest-side, rgba(66,70,96,.6), transparent 76%); filter: blur(9px)"></div>
+        <div style="position:absolute; left:48px; top:34px; width:34px; height:30px; border-radius:50%; background: radial-gradient(closest-side, rgba(88,92,120,.55), transparent 74%); filter: blur(5px)"></div>
+      </div>
+      <div style="display:grid; grid-template-columns: 40px 40px; grid-template-rows: 40px 40px; position:relative">
+        <div style="outline:1px solid rgba(120,126,158,.16); outline-offset:-1px"></div>
+        <div style="outline:1px solid rgba(120,126,158,.16); outline-offset:-1px"></div>
+        <div style="outline:1px solid rgba(120,126,158,.16); outline-offset:-1px"></div>
+        <div style="outline:1px solid rgba(120,126,158,.16); outline-offset:-1px"></div>
+      </div>
+    </div>
+    <div class="cap">One seeded blob field in board space, drawn as a single node under the tiles. Blocked tiles keep a faint plate outline so "you cannot build here" is still tile-accurate.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The cloud tiles, and a tiling artefact in a starfield is louder than the seam it was avoiding. Scenery that traces the grid tells the player the board is made of squares at the exact moment it should be telling them it is made of gas.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Move the puffs from the tile bake into one board-space <code style="font-size:11px">Graphics</code> generated from the blocked-tile set, seeded like the starfield so it never reshuffles between reloads.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Blocked tiles must stay <em>readable as tiles</em> — the cloud is atmosphere, the plate is the rule. And the nebula stays below a station in the contrast order.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>1.5 &nbsp;Pulsar and spawn</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">The thing you are defending, and the thing you are defending it from.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:120px; background:#07080f; display:flex; align-items:center; justify-content:space-around">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, #1a1d33 1px, transparent 1px), linear-gradient(to bottom, #1a1d33 1px, transparent 1px); background-size: 25px 25px; opacity:.6"></div>
+      <div style="position:relative; width:0; height:0; border-left:13px solid #f9a8d4; border-top:10px solid transparent; border-bottom:10px solid transparent; opacity:.85"></div>
+      <div style="position:relative; width:38px; height:38px; display:flex; align-items:center; justify-content:center">
+        <span style="position:absolute; width:36px; height:36px; border-radius:50%; border:1px solid rgba(181,171,252,.12)"></span>
+        <span style="position:absolute; width:28px; height:28px; border-radius:50%; border:1.4px solid rgba(181,171,252,.22)"></span>
+        <span style="position:absolute; width:20px; height:20px; border-radius:50%; border:2px solid rgba(181,171,252,.4)"></span>
+        <span style="position:absolute; width:12px; height:12px; border-radius:50%; background:rgba(181,171,252,.28)"></span>
+        <span style="position:absolute; width:6px; height:6px; border-radius:50%; background:rgba(181,171,252,.95)"></span>
+      </div>
+    </div>
+    <div class="cap">Both drawn inside one 40px tile. The core is the game's objective and it is smaller than a station.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:120px; background: radial-gradient(90% 120% at 78% 50%, rgba(181,171,252,.13), transparent 62%), #07080f; display:flex; align-items:center; justify-content:space-around">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,29,51,.9) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,29,51,.9) 1px, transparent 1px); background-size: 25px 25px; mask-image: radial-gradient(125% 130% at 50% 50%, #000 40%, transparent 92%); -webkit-mask-image: radial-gradient(125% 130% at 50% 50%, #000 40%, transparent 92%)"></div>
+      <div style="position:relative; display:flex; align-items:center">
+        <span style="position:absolute; left:-8px; top:-13px; width:34px; height:26px; background: radial-gradient(closest-side, rgba(249,168,212,.20), transparent 76%)"></span>
+        <span style="position:relative; width:0; height:0; border-left:13px solid #f9a8d4; border-top:10px solid transparent; border-bottom:10px solid transparent"></span>
+      </div>
+      <div style="position:relative; width:96px; height:96px; display:flex; align-items:center; justify-content:center">
+        <span style="position:absolute; width:96px; height:96px; border-radius:50%; background: radial-gradient(closest-side, rgba(181,171,252,.16), transparent 74%)"></span>
+        <span style="position:absolute; width:82px; height:82px; border-radius:50%; border:1px solid rgba(181,171,252,.10)"></span>
+        <span style="position:absolute; width:64px; height:64px; border-radius:50%; border:1.4px solid rgba(181,171,252,.18)"></span>
+        <span style="position:absolute; width:46px; height:46px; border-radius:50%; border:2px solid rgba(181,171,252,.34)"></span>
+        <span style="position:absolute; width:28px; height:28px; border-radius:50%; background: radial-gradient(closest-side, rgba(232,229,255,.9) 22%, rgba(181,171,252,.5) 52%, transparent 82%)"></span>
+        <span style="position:absolute; width:9px; height:9px; border-radius:50%; background:#f2f0ff; box-shadow: 0 0 12px 3px rgba(210,206,253,.7)"></span>
+      </div>
+    </div>
+    <div class="cap">Pulsar grown to ~2.5 tiles of falling-alpha rings under a bloomed core. The spawn chevron gets the same treatment at a quarter of the intensity: arrival is quiet, the core is loud.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The player's whole loss condition is a 40px detail at the board edge. When a leak happens the eye has nowhere to have already been looking.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Scale <code style="font-size:11px">PULSAR_RINGS</code> off the tile and onto a ~2.5-tile radius, add a bloom shoulder under the core, and give the spawn a matching low-intensity halo in <code style="font-size:11px">#f9a8d4</code>.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The pulsar is the brightest <em>structural</em> object and still dimmer than a contact taking a hit. It also cannot eat buildable ground — the halo is drawn under the tiles, not over them.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>1.6 &nbsp;Three sector fields</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">Same route grammar, three grounds. Foreground fixed campaign-wide.</p>
+<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-top:12px">
+  <div>
+    <div class="frag" style="height:104px; background: radial-gradient(110% 90% at 84% 72%, rgba(181,171,252,.17), transparent 58%), radial-gradient(80% 70% at 8% 18%, rgba(79,70,120,.30), transparent 64%), #07080f">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,29,51,.85) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,29,51,.85) 1px, transparent 1px); background-size: 20px 20px; mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%); -webkit-mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%)"></div>
+      <div style="position:absolute; left:0; top:58px; width:100%; height:16px; background: linear-gradient(to right, rgba(145,132,217,.10), rgba(210,206,253,.44)); box-shadow: 0 0 15px rgba(145,132,217,.3)"></div>
+      <div style="position:absolute; left:0; top:65px; width:100%; height:2px; background: linear-gradient(to right, rgba(210,206,253,.2), rgba(240,238,255,.95))"></div>
+      <div style="position:absolute; left:18px; top:16px"><svg width="30" height="30" viewBox="0 0 40 40" style="color:#8fc4fa"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5" fill="currentColor"/></svg></div>
+      <div style="position:absolute; left:64px; top:60px; width:12px; height:12px; border-radius:50%; background:#f472b6"></div>
+    </div>
+    <div class="lbl" style="color:#b5abfc; margin-top:8px">01 · Switchback</div>
+    <div class="cap" style="margin-top:3px">Indigo deep field. The shipped baseline, finished.</div>
+  </div>
+  <div>
+    <div class="frag" style="height:104px; background: radial-gradient(110% 90% at 84% 72%, rgba(165,238,251,.15), transparent 58%), radial-gradient(80% 70% at 10% 20%, rgba(38,68,84,.30), transparent 66%), #05090e">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(24,42,54,.9) 1px, transparent 1px), linear-gradient(to bottom, rgba(24,42,54,.9) 1px, transparent 1px); background-size: 20px 20px; mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%); -webkit-mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%)"></div>
+      <div style="position:absolute; left:0; top:58px; width:100%; height:16px; background: linear-gradient(to right, rgba(96,165,190,.10), rgba(196,242,252,.44)); box-shadow: 0 0 15px rgba(120,200,225,.28)"></div>
+      <div style="position:absolute; left:0; top:65px; width:100%; height:2px; background: linear-gradient(to right, rgba(196,242,252,.2), rgba(230,251,255,.95))"></div>
+      <div style="position:absolute; left:18px; top:16px"><svg width="30" height="30" viewBox="0 0 40 40" style="color:#8fc4fa"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5" fill="currentColor"/></svg></div>
+      <div style="position:absolute; left:64px; top:60px; width:12px; height:12px; border-radius:50%; background:#f472b6"></div>
+    </div>
+    <div class="lbl" style="color:#a5eefb; margin-top:8px">02 · Cascade</div>
+    <div class="cap" style="margin-top:3px">Steel-cyan, thin nebula, harder stars. The open board should feel emptier.</div>
+  </div>
+  <div>
+    <div class="frag" style="height:104px; background: radial-gradient(110% 90% at 84% 72%, rgba(134,227,155,.12), transparent 58%), radial-gradient(80% 70% at 10% 18%, rgba(30,58,50,.42), transparent 64%), #05090a">
+      <div style="position:absolute; inset:0; background-image: linear-gradient(to right, rgba(26,48,42,.95) 1px, transparent 1px), linear-gradient(to bottom, rgba(26,48,42,.95) 1px, transparent 1px); background-size: 20px 20px; mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%); -webkit-mask-image: radial-gradient(125% 120% at 50% 50%, #000 40%, transparent 92%)"></div>
+      <div style="position:absolute; left:0; top:58px; width:100%; height:16px; background: linear-gradient(to right, rgba(110,180,150,.10), rgba(206,250,226,.42)); box-shadow: 0 0 15px rgba(120,210,170,.26)"></div>
+      <div style="position:absolute; left:0; top:65px; width:100%; height:2px; background: linear-gradient(to right, rgba(206,250,226,.2), rgba(234,255,244,.95))"></div>
+      <div style="position:absolute; left:18px; top:16px"><svg width="30" height="30" viewBox="0 0 40 40" style="color:#8fc4fa"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5" fill="currentColor"/></svg></div>
+      <div style="position:absolute; left:64px; top:60px; width:12px; height:12px; border-radius:50%; background:#f472b6"></div>
+    </div>
+    <div class="lbl" style="color:#86e39b; margin-top:8px">03 · Pincer</div>
+    <div class="cap" style="margin-top:3px">Cold teal-black, densest nebula pressing both lanes.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Three boards look like one board. The campaign's only sense of travel is the level name in the top bar.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p><code style="font-size:11px">board</code> becomes <code style="font-size:11px">SECTOR_FIELDS</code> keyed by id; <code style="font-size:11px">LevelDef</code> gains <code style="font-size:11px">field</code> — an <em>id</em>, not a colour, so content keeps its no-presentation rule. Textures bake per field at level load.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The same Lance is the same blue and the same Drifter the same pink on every board. And <b>no warm field, at any value</b> — warm belongs to the contacts. Re-verify the contrast budget once per field, not once in total.</p></div>
+</div>
+</div>
+
+<h2 style="break-before: page">2 · The deck</h2>
+<p style="color:#9397ab; font-size:13.5px; margin-top:0">Six entries, all in <code>hud.ts</code> and <code>icons.ts</code>. No new state, no new events, every preview still from <code>nextStats</code>.</p>
+
+<div class="spec">
+<h3>2.1 &nbsp;Build slots — all five states</h3>
+<div class="pair" style="grid-template-columns: 1fr; gap:18px">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="display:flex; gap:8px; align-items:flex-start; padding:12px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+      <div style="width:84px; padding:8px 6px; background:#232532; border:1px solid #2a2d40; border-radius:6px; text-align:center">
+        <div style="font:600 9px/1 var(--font-body); color:#75798c; text-align:left">1</div>
+        <div style="display:flex; justify-content:center; margin:4px 0 5px"><svg width="26" height="26" viewBox="0 0 40 40" style="color:#8fc4fa"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="currentColor" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg></div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#e9e9ed">Lance</div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#9397ab">$75</div>
+      </div>
+      <div style="width:84px; padding:8px 6px; background:#232532; border:1px solid #9184d9; border-radius:6px; text-align:center">
+        <div style="font:600 9px/1 var(--font-body); color:#75798c; text-align:left">3</div>
+        <div style="display:flex; justify-content:center; margin:4px 0 5px"><svg width="26" height="26" viewBox="0 0 40 40" style="color:#a5eefb"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="currentColor" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg></div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#e9e9ed">Singularity</div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#9397ab">$80</div>
+      </div>
+      <div style="width:84px; padding:8px 6px; background:#232532; border:1px solid #2a2d40; border-radius:6px; text-align:center; opacity:.45">
+        <div style="font:600 9px/1 var(--font-body); color:#75798c; text-align:left">2</div>
+        <div style="display:flex; justify-content:center; margin:4px 0 5px"><svg width="26" height="26" viewBox="0 0 40 40" style="color:#fcc08a"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M20 3 L20 37 M6 11 L34 29 M34 11 L6 29" stroke="currentColor" stroke-width="1" stroke-opacity=".3"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg></div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#e9e9ed">Nova</div>
+        <div style="font:400 11px/1.2 var(--font-body); color:#9397ab">$115</div>
+      </div>
+      <div style="width:84px; height:80px; background:#1a1c28; border:1px dashed #2a2d40; border-radius:6px; display:flex; align-items:center; justify-content:center">
+        <div style="font:400 10px/1.35 var(--font-body); color:#75798c; text-align:center">Locked<br>wave 3</div>
+      </div>
+      <div style="width:84px; height:80px; background:#1a1c28; border:1px dashed #2a2d40; border-radius:6px; display:flex; align-items:center; justify-content:center">
+        <div style="font:400 10px/1.35 var(--font-body); color:#75798c; text-align:center">Locked<br>wave 5</div>
+      </div>
+    </div>
+    <div class="cap">Five identical glyphs at 26px; identity carried entirely by the name and a hover tooltip. Can't-afford is a 0.45 opacity drop — the same signal a locked slot uses, applied to a different meaning.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="display:flex; gap:8px; align-items:flex-start; padding:12px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+
+      <div style="position:relative; width:88px; height:104px; background: linear-gradient(#1b1e2c, #161824); border:1px solid #2f3348; border-radius:7px; overflow:hidden">
+        <div style="position:absolute; top:5px; left:6px; font:600 9px/1 var(--font-body); color:#75798c">1</div>
+        <div style="position:absolute; top:5px; right:6px; font:600 10px/1 var(--font-body); color:#e9e9ed">75</div>
+        <div style="position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center"><svg width="40" height="40" viewBox="0 0 40 40" style="color:#8fc4fa"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M4 20 L36 20" stroke="currentColor" stroke-width="1.6" stroke-opacity=".9"/><circle cx="20" cy="20" r="4" fill="currentColor"/><circle cx="29" cy="20" r="2" fill="currentColor" fill-opacity=".55"/><circle cx="35" cy="20" r="1.4" fill="currentColor" fill-opacity=".3"/></svg></div>
+        <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 9px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:#c3c5d3">Lance</div>
+      </div>
+
+      <div style="position:relative; width:88px; height:104px; background: linear-gradient(#1c2130, #171b26); border:1px solid rgba(165,238,251,.6); border-radius:7px; box-shadow: 0 0 0 1px rgba(165,238,251,.16), 0 0 18px rgba(165,238,251,.16); overflow:hidden">
+        <div style="position:absolute; inset:0; background: radial-gradient(120% 80% at 50% 6%, rgba(165,238,251,.14), transparent 70%)"></div>
+        <div style="position:absolute; top:5px; left:6px; font:600 9px/1 var(--font-body); color:rgba(165,238,251,.9)">3</div>
+        <div style="position:absolute; top:5px; right:6px; font:600 10px/1 var(--font-body); color:#e9e9ed">80</div>
+        <div style="position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center"><svg width="40" height="40" viewBox="0 0 40 40" style="color:#a5eefb"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="4" fill="currentColor"/><circle cx="20" cy="20" r="8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-opacity=".7" stroke-dasharray="3 4"/><circle cx="20" cy="20" r="13" fill="none" stroke="currentColor" stroke-width="1" stroke-opacity=".35" stroke-dasharray="2 5"/></svg></div>
+        <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 9px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:#e9e9ed">Singularity</div>
+      </div>
+
+      <div style="position:relative; width:88px; height:104px; background:#15161f; border:1px solid #232532; border-radius:7px; overflow:hidden">
+        <div style="position:absolute; top:5px; left:6px; font:600 9px/1 var(--font-body); color:#4d5063">2</div>
+        <div style="position:absolute; top:5px; right:6px; font:600 10px/1 var(--font-body); color:#e06d6d">115</div>
+        <div style="position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center; opacity:.34"><svg width="40" height="40" viewBox="0 0 40 40" style="color:#fcc08a"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="4.5" fill="currentColor"/><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-opacity=".65"/></svg></div>
+        <div style="position:absolute; bottom:19px; left:0; right:0; text-align:center; font:600 8.5px/1 var(--font-body); letter-spacing:.08em; text-transform:uppercase; color:#e06d6d">short 40</div>
+        <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 9px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:#75798c">Nova</div>
+      </div>
+
+      <div style="position:relative; width:88px; height:104px; background:#101119; border:1px solid #1d1f2b; border-radius:7px; overflow:hidden">
+        <div style="position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center; opacity:.18"><svg width="40" height="40" viewBox="0 0 40 40" style="color:#86e39b"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="4 3"/><path d="M12 15 L20 21 L28 14 L24 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+        <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 9px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:#4d5063">Wave 3</div>
+      </div>
+
+      <div style="position:relative; width:88px; height:104px; background:#101119; border:1px solid #1d1f2b; border-radius:7px; overflow:hidden">
+        <div style="position:absolute; top:24px; left:0; right:0; display:flex; justify-content:center; opacity:.18"><svg width="40" height="40" viewBox="0 0 40 40" style="color:#c4a6ff"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="4 3"/><path d="M13 26 L13 21 M18 26 L18 17 M23 26 L23 14 M28 26 L28 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 9px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:#4d5063">Wave 5</div>
+      </div>
+    </div>
+    <div class="cap">Left to right: <b>available</b> · <b>armed</b> (accent border, glow, lit ground) · <b>can't afford</b> (cost in danger, shortfall named) · <b>locked</b> ×2 (dashed glyph, wave numeral). Each glyph now carries its mechanic: Lance a pierce line with trailing hits, Singularity gravity rings, Nova a blast ring, Arc a chain path, Filament ramp bars.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Five identical glyphs make the roster unlearnable at a glance, and "can't afford" and "locked" share one signal — a dim slot — for two unrelated facts. The player has to read to find out which.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Glyph to 40px with a per-station interior; cost to a corner numeral with no <code style="font-size:11px">$</code>; name to a 9px caps footer. Short states the gap as a number; locked states the wave and nothing else.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The interiors must match the board's station bake, so deck and board teach each other. Hotkeys stay visible — they are the fast path and the tooltip is not. Blurbs stay tooltip-only and stay figure-free, so they cannot go stale.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>2.2 &nbsp;Detail pane, nothing selected</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">The default state — what is coming next.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="padding:12px 13px; background:#141624; border:1px solid #2a2d40; border-radius:6px; min-height:118px; box-sizing:border-box">
+      <div style="display:flex; align-items:center; gap:7px; margin-bottom:9px">
+        <i style="width:7px; height:7px; border-radius:50%; background:#f472b6; display:block"></i>
+        <b style="font:600 13px/1 var(--font-body); color:#e9e9ed">Wave 7</b>
+        <span style="font:400 11.5px/1 var(--font-body); color:#9397ab">24 contacts</span>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:9px">
+        <span style="padding:3px 7px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:4px; font:400 11px/1.3 var(--font-body); color:#f472b6">10 Drifter</span>
+        <span style="padding:3px 7px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:4px; font:400 11px/1.3 var(--font-body); color:#fbcfe8">8 Mote</span>
+        <span style="padding:3px 7px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:4px; font:400 11px/1.3 var(--font-body); color:#e879c9">4 Warden</span>
+        <span style="padding:3px 7px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:4px; font:400 11px/1.3 var(--font-body); color:#d8a0b4">2 Bulwark</span>
+      </div>
+      <div style="font:400 11.5px/1.4 var(--font-body); color:#75798c">Toughest: Warden, 66 + 76 shield</div>
+    </div>
+    <div class="cap">Right instinct, all words. Four text chips plus a sentence that repeats one of them.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="padding:12px 13px; background:#141624; border:1px solid #2a2d40; border-radius:6px; min-height:118px; box-sizing:border-box">
+      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:11px">
+        <b style="font:600 13px/1 var(--font-body); color:#e9e9ed">Wave 7</b>
+        <span style="font:400 11.5px/1 var(--font-body); color:#75798c">24 inbound</span>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:12px">
+        <div style="text-align:center">
+          <div style="height:34px; display:flex; align-items:flex-end; justify-content:center"><span style="display:block; width:17px; height:17px; border-radius:50%; background:#f472b6"></span></div>
+          <div style="font:600 12px/1 var(--font-body); color:#e9e9ed; margin-top:6px">10</div>
+        </div>
+        <div style="text-align:center">
+          <div style="height:34px; display:flex; align-items:flex-end; justify-content:center"><span style="display:block; width:11px; height:11px; border-radius:50%; background:#fbcfe8"></span></div>
+          <div style="font:600 12px/1 var(--font-body); color:#e9e9ed; margin-top:6px">8</div>
+        </div>
+        <div style="text-align:center">
+          <div style="height:34px; display:flex; align-items:flex-end; justify-content:center; position:relative"><span style="display:block; width:20px; height:20px; border-radius:50%; background:#e879c9; box-shadow: 0 0 0 3px rgba(159,188,255,.55)"></span></div>
+          <div style="font:600 12px/1 var(--font-body); color:#e9e9ed; margin-top:6px">4</div>
+        </div>
+        <div style="text-align:center">
+          <div style="height:34px; display:flex; align-items:flex-end; justify-content:center"><svg width="21" height="21" viewBox="0 0 24 24" style="color:#d8a0b4"><path d="M12 2.5 L20 7 L20 17 L12 21.5 L4 17 L4 7 Z" fill="currentColor" stroke="#05060d" stroke-width="2.4" stroke-linejoin="round"/></svg></div>
+          <div style="font:600 12px/1 var(--font-body); color:#e9e9ed; margin-top:6px">2</div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="text-align:right">
+          <div style="font:600 8.5px/1 var(--font-body); letter-spacing:.12em; text-transform:uppercase; color:#75798c; margin-bottom:5px">Toughest</div>
+          <div style="font:600 12px/1 var(--font-body); color:#e9e9ed">142<span style="color:#9fbcff; font-size:10px; margin-left:3px">ehp</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">The real creep glyphs at real tint and <em>relative size</em> — Mote small, Warden ringed in shield blue, Bulwark plated. Count as a numeral beneath. Toughest becomes one effective-health figure, because the biggest glyph already named it.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The one panel whose whole job is "prepare for this" describes the wave in a language the board does not use. The player has to translate "4 Warden" into the ringed pink circle they will actually see.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Chips become the contact glyphs at <code style="font-size:11px">def.radius</code> proportions, drawn from the same source as the board. <code style="font-size:11px">hp + shield</code> collapses to one <em>ehp</em> figure instead of a sentence.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Still grouped by type in order of first arrival, still from <code style="font-size:11px">planWave</code> — the preview cannot promise a wave the spawner won't deliver. Armour and shield must remain visible <em>before</em> the wave, not just during it.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>2.3 &nbsp;Detail pane, station armed</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">A slot is armed and the ghost is on the board.</p>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="padding:12px 13px; background:#141624; border:1px solid #2a2d40; border-radius:6px; min-height:130px; box-sizing:border-box">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px">
+        <svg width="24" height="24" viewBox="0 0 40 40" style="color:#86e39b"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg>
+        <b style="font:600 13px/1 var(--font-body); color:#e9e9ed">Arc — placing</b>
+      </div>
+      <div style="font:400 11.5px/1.45 var(--font-body); color:#9397ab; margin-bottom:9px">Jumps between contacts. Wants them near each other, not lined up.</div>
+      <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:6px; margin-bottom:9px">
+        <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Dmg</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">10</b></span>
+        <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Rate</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">1.3</b></span>
+        <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Rng</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">2.6</b></span>
+        <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Cost</span><b style="font:600 13px/1.4 var(--font-body); color:#9184d9">$105</b></span>
+      </div>
+      <div style="font:400 11.5px/1.4 var(--font-body); color:#c3c5d3; margin-bottom:7px">Jumps to 3 more within 1.6 tiles</div>
+      <div style="font:400 11px/1.4 var(--font-body); color:#75798c">Click to place · <b style="color:#c3c5d3">Esc</b> or right-click to cancel</div>
+    </div>
+    <div class="cap">Thirty-one words to arm a tower, including a hint the player has read every time they have ever armed a tower.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="padding:12px 13px; background:#141624; border:1px solid #2a2d40; border-radius:6px; min-height:130px; box-sizing:border-box">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
+        <svg width="34" height="34" viewBox="0 0 40 40" style="color:#86e39b"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M11 16 L19 22 L28 13 L24 27" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <div>
+          <div style="font:600 11px/1 var(--font-body); letter-spacing:.11em; text-transform:uppercase; color:#e9e9ed">Arc</div>
+          <div style="font:400 10.5px/1 var(--font-body); color:#86e39b; margin-top:4px">placing · 105</div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="display:flex; align-items:center; gap:5px; padding:4px 9px; border:1px solid #2a2d40; border-radius:20px; font:400 10px/1 var(--font-body); color:#75798c"><b style="color:#c3c5d3; font-size:10px">Esc</b> cancel</div>
+      </div>
+      <div style="display:flex; gap:7px; margin-bottom:12px">
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:rgba(134,227,155,.10); border:1px solid rgba(134,227,155,.30); border-radius:20px; font:600 12px/1 var(--font-body); color:#e9e9ed">3<span style="color:#86e39b; font-size:10px">jumps</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:rgba(134,227,155,.10); border:1px solid rgba(134,227,155,.30); border-radius:20px; font:600 12px/1 var(--font-body); color:#e9e9ed">1.6<span style="color:#86e39b; font-size:10px">tl reach</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:20px; font:600 12px/1 var(--font-body); color:#c3c5d3">10<span style="color:#75798c; font-size:10px">dmg</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:20px; font:600 12px/1 var(--font-body); color:#c3c5d3">1.3<span style="color:#75798c; font-size:10px">/s</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:20px; font:600 12px/1 var(--font-body); color:#c3c5d3">2.6<span style="color:#75798c; font-size:10px">tl</span></span>
+      </div>
+      <div style="display:flex; align-items:center; gap:9px; padding:7px 10px; background:#191b27; border:1px solid #232532; border-radius:5px">
+        <span style="font:600 8.5px/1 var(--font-body); letter-spacing:.12em; text-transform:uppercase; color:#75798c">Wants</span>
+        <span style="display:flex; align-items:center; gap:0">
+          <svg width="82" height="20" viewBox="0 0 82 20"><circle cx="12" cy="7" r="4.5" fill="#f472b6"/><circle cx="34" cy="13" r="4.5" fill="#f472b6"/><circle cx="54" cy="5" r="4.5" fill="#f472b6"/><circle cx="70" cy="15" r="4.5" fill="#f472b6"/><path d="M12 7 L34 13 L54 5 L70 15" fill="none" stroke="#86e39b" stroke-width="1.6" stroke-opacity=".9"/></svg>
+        </span>
+        <span style="font:400 11px/1.35 var(--font-body); color:#9397ab">scattered, not lined up</span>
+      </div>
+    </div>
+    <div class="cap">The identity is a picture: four contacts in a scatter with the chain path drawn through them. Chain-specific numbers lead in the station tint; shared axes follow in neutral. Cancel hint shrinks to a keycap.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The armed state is the moment the player is choosing <em>where</em>, and the panel spends its space re-explaining <em>what</em> — in a sentence that is slower to read than the board is to scan.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Blurb becomes a five-station diagram set: a line pierced, a clump blasted, a scatter chained, a well slowing, a bar ramping. Stats become chips; the station's own numbers come first and in tint.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Cost stays visible while armed — it is the number the decision turns on. The ghost's legal/illegal colouring on the board stays the primary yes/no; this panel never becomes the place placement validity is read.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>2.4 &nbsp;Inspector, station selected</h3>
+<p style="margin:6px 0 0; color:#9397ab; font-size:13.5px">Singularity Mk II, wave 9, a Bulwark on the board. The densest state in the game.</p>
+<div style="margin-top:12px">
+  <div class="lbl" style="color:#75798c">Before</div>
+  <div style="padding:11px 13px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px">
+      <svg width="24" height="24" viewBox="0 0 40 40" style="color:#a5eefb"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg>
+      <b style="font:600 13px/1 var(--font-body); color:#e9e9ed">Singularity · Mk II</b>
+      <span style="font:400 11px/1 var(--font-body); color:#9397ab">tile 12,7 · 418 dmg dealt</span>
+    </div>
+    <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:6px; margin-bottom:7px">
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Dmg</span><b style="font:600 13px/1.4 var(--font-body); color:#9184d9">5</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Rate</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">3.6</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Rng</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">3.8</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.08em">Kills</span><b style="font:600 13px/1.4 var(--font-body); color:#e9e9ed">62</b></span>
+    </div>
+    <div style="font:400 11.5px/1.4 var(--font-body); color:#c3c5d3; margin-bottom:6px">Slows to 74% for 1.2s</div>
+    <div style="font:400 11.5px/1.4 var(--font-body); color:#c3c5d3; margin-bottom:8px">On the board: <b style="color:#e9e9ed">Bulwark</b> · <b style="color:#e06d6d">0.8 → 1.4</b> per hit · armour eats 84%</div>
+    <div style="display:flex; gap:6px; margin-bottom:8px">
+      <span style="flex:1; padding:6px 8px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px"><span style="display:block; font:400 9.5px/1 var(--font-body); color:#9397ab">Damage</span><b style="display:block; font:600 11.5px/1.5 var(--font-body); color:#e9e9ed">5 → 8</b><em style="font:400 10px/1 var(--font-body); color:#9184d9; font-style:normal">$120</em></span>
+      <span style="flex:1; padding:6px 8px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px"><span style="display:block; font:400 9.5px/1 var(--font-body); color:#9397ab">Range</span><b style="display:block; font:600 11.5px/1.5 var(--font-body); color:#e9e9ed">3.8 → 4.4</b><em style="font:400 10px/1 var(--font-body); color:#9184d9; font-style:normal">$120</em></span>
+      <span style="flex:1; padding:6px 8px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px"><span style="display:block; font:400 9.5px/1 var(--font-body); color:#9397ab">Slow</span><b style="display:block; font:600 11.5px/1.5 var(--font-body); color:#e9e9ed">74% → 68%</b><em style="font:400 10px/1 var(--font-body); color:#9184d9; font-style:normal">$120</em></span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px">
+      <div style="display:flex; border:1px solid #2a2d40; border-radius:5px; overflow:hidden">
+        <span style="padding:5px 9px; background:rgba(145,132,217,.16); font:400 10.5px/1.2 var(--font-body); color:#b5abfc">First</span>
+        <span style="padding:5px 9px; font:400 10.5px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">Last</span>
+        <span style="padding:5px 9px; font:400 10.5px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">Strong</span>
+        <span style="padding:5px 9px; font:400 10.5px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">Close</span>
+      </div>
+      <span style="padding:5px 11px; border:1px solid #2a2d40; border-radius:5px; font:400 10.5px/1.2 var(--font-body); color:#c3c5d3">Sell +$147</span>
+    </div>
+  </div>
+  <div class="cap">Roughly sixty words and two dozen numbers in a 150px band, while contacts are walking. The dial that teaches the board's collar code is 24px and easy to miss entirely.</div>
+</div>
+
+<div style="margin-top:18px">
+  <div class="lbl" style="color:#9184d9">After</div>
+  <div style="display:grid; grid-template-columns: 132px 1fr; background:#141624; border:1px solid #2a2d40; border-radius:8px; overflow:hidden">
+    <div style="padding:14px 12px; border-right:1px solid #2a2d40; background: radial-gradient(120% 70% at 50% 0%, rgba(165,238,251,.10), transparent 70%)">
+      <div style="display:flex; justify-content:center; height:64px">
+        <svg width="64" height="64" viewBox="0 0 64 64" style="color:#a5eefb">
+          <path d="M32 12 L47 20.5 L47 43.5 L32 52 L17 43.5 L17 20.5 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+          <circle cx="32" cy="32" r="6.5" fill="currentColor"/>
+          <circle cx="32" cy="32" r="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-opacity=".45" stroke-dasharray="3 4"/>
+          <path d="M32 4 A28 28 0 0 1 55.9 17.4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity=".95"/>
+          <path d="M58.8 23.1 A28 28 0 0 1 44.6 56.2" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity=".95"/>
+          <path d="M38.4 59.2 A28 28 0 0 1 6.1 40.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity=".18"/>
+        </svg>
+      </div>
+      <div style="text-align:center; font:600 11px/1.2 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#e9e9ed; margin-top:6px">Singularity</div>
+      <div style="text-align:center; font:400 10px/1.2 var(--font-body); color:#a5eefb; margin-top:3px">Mk II · 62 kills</div>
+    </div>
+    <div style="padding:12px 14px 13px">
+      <div style="display:flex; gap:7px; margin-bottom:11px">
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:rgba(165,238,251,.10); border:1px solid rgba(165,238,251,.28); border-radius:20px; font:600 12px/1 var(--font-body); color:#e9e9ed"><span style="color:#a5eefb; font-size:12px">↓</span>74%</span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:rgba(165,238,251,.10); border:1px solid rgba(165,238,251,.28); border-radius:20px; font:600 12px/1 var(--font-body); color:#e9e9ed">1.2<span style="color:#9397ab; font-size:10px">s</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:20px; font:600 12px/1 var(--font-body); color:#c3c5d3">3.6<span style="color:#75798c; font-size:10px">/s</span></span>
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:4px 9px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:20px; font:600 12px/1 var(--font-body); color:#c3c5d3">3.8<span style="color:#75798c; font-size:10px">tl</span></span>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:7px; margin-bottom:11px">
+        <div style="padding:8px 9px 9px; background:#1a1d2b; border:1px solid #2f3348; border-radius:6px">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:5px">
+            <svg width="18" height="18" viewBox="0 0 24 24" style="color:#a5eefb"><path d="M6.14 6.14 A8 8 0 0 1 17.86 6.14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M19.65 8.35 A8 8 0 0 1 13.4 19.65" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/><path d="M10.6 19.65 A8 8 0 0 1 4.35 8.35" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/></svg>
+            <span style="font:600 9px/1 var(--font-body); letter-spacing:.11em; text-transform:uppercase; color:#9397ab">Damage</span>
+          </div>
+          <div style="font:600 17px/1 var(--font-body); color:#e9e9ed">5<span style="color:#4d5063; margin:0 4px">→</span><span style="color:#a5eefb">8</span></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:7px">
+            <span style="display:flex; gap:3px"><i style="width:5px;height:5px;border-radius:50%;background:#a5eefb"></i><i style="width:5px;height:5px;border-radius:50%;background:#a5eefb"></i><i style="width:5px;height:5px;border-radius:50%;border:1px solid #4d5063"></i></span>
+            <span style="font:600 11px/1 var(--font-body); color:#e9e9ed">120</span>
+          </div>
+        </div>
+        <div style="padding:8px 9px 9px; background:#1a1d2b; border:1px solid #2f3348; border-radius:6px">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:5px">
+            <svg width="18" height="18" viewBox="0 0 24 24" style="color:#a5eefb"><path d="M19.65 8.35 A8 8 0 0 1 13.4 19.65" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M6.14 6.14 A8 8 0 0 1 17.86 6.14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/><path d="M10.6 19.65 A8 8 0 0 1 4.35 8.35" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/></svg>
+            <span style="font:600 9px/1 var(--font-body); letter-spacing:.11em; text-transform:uppercase; color:#9397ab">Range</span>
+          </div>
+          <div style="font:600 17px/1 var(--font-body); color:#e9e9ed">3.8<span style="color:#4d5063; margin:0 4px">→</span><span style="color:#a5eefb">4.4</span></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:7px">
+            <span style="display:flex; gap:3px"><i style="width:5px;height:5px;border-radius:50%;background:#a5eefb"></i><i style="width:5px;height:5px;border-radius:50%;border:1px solid #4d5063"></i><i style="width:5px;height:5px;border-radius:50%;border:1px solid #4d5063"></i></span>
+            <span style="font:600 11px/1 var(--font-body); color:#e9e9ed">120</span>
+          </div>
+        </div>
+        <div style="padding:8px 9px 9px; background:#1a1d2b; border:1px solid rgba(165,238,251,.4); border-radius:6px; box-shadow: 0 0 0 1px rgba(165,238,251,.12)">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:5px">
+            <svg width="18" height="18" viewBox="0 0 24 24" style="color:#a5eefb"><path d="M10.6 19.65 A8 8 0 0 1 4.35 8.35" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M6.14 6.14 A8 8 0 0 1 17.86 6.14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/><path d="M19.65 8.35 A8 8 0 0 1 13.4 19.65" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".2"/></svg>
+            <span style="font:600 9px/1 var(--font-body); letter-spacing:.11em; text-transform:uppercase; color:#a5eefb">Slow</span>
+          </div>
+          <div style="font:600 17px/1 var(--font-body); color:#e9e9ed">74<span style="color:#4d5063; margin:0 4px">→</span><span style="color:#a5eefb">68%</span></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:7px">
+            <span style="display:flex; gap:3px"><i style="width:5px;height:5px;border-radius:50%;background:#a5eefb"></i><i style="width:5px;height:5px;border-radius:50%;background:#a5eefb"></i><i style="width:5px;height:5px;border-radius:50%;border:1px solid #4d5063"></i></span>
+            <span style="font:600 11px/1 var(--font-body); color:#e9e9ed">120</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:#191b27; border:1px solid #2a2d40; border-radius:6px; margin-bottom:11px">
+        <svg width="20" height="20" viewBox="0 0 24 24" style="color:#d8a0b4; flex:none"><path d="M12 3.5 L19 7.5 L19 16.5 L12 20.5 L5 16.5 L5 7.5 Z" fill="currentColor" fill-opacity=".35" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 6.5 L16.3 9 L16.3 15 L12 17.5 L7.7 15 L7.7 9 Z" fill="none" stroke="currentColor" stroke-width="1" stroke-opacity=".6"/></svg>
+        <div style="flex:1">
+          <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:5px">
+            <span style="font:600 9px/1 var(--font-body); letter-spacing:.11em; text-transform:uppercase; color:#9397ab">Bulwark · per hit</span>
+            <span style="font:600 11px/1 var(--font-body); color:#e06d6d">0.8 <span style="color:#4d5063">→</span> 1.4</span>
+          </div>
+          <div style="height:5px; border-radius:3px; background:#e06d6d; overflow:hidden; display:flex">
+            <span style="width:16%; background:#a5eefb; display:block"></span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <div style="display:flex; background:#1c1f2d; border:1px solid #2a2d40; border-radius:5px; overflow:hidden">
+          <span style="padding:5px 9px; background:rgba(165,238,251,.14); color:#a5eefb; font:600 10px/1.2 var(--font-body)">◀</span>
+          <span style="padding:5px 9px; color:#75798c; font:600 10px/1.2 var(--font-body); border-left:1px solid #2a2d40">▶</span>
+          <span style="padding:5px 9px; color:#75798c; font:600 10px/1.2 var(--font-body); border-left:1px solid #2a2d40">▲</span>
+          <span style="padding:5px 9px; color:#75798c; font:600 10px/1.2 var(--font-body); border-left:1px solid #2a2d40">◎</span>
+        </div>
+        <span style="flex:1"></span>
+        <span style="padding:5px 11px; border:1px solid #2a2d40; border-radius:5px; font:600 10.5px/1.2 var(--font-body); color:#9397ab">Sell 147</span>
+      </div>
+    </div>
+  </div>
+  <div class="cap">Eight words. The station wears its <em>real collar</em> at 64px — two bright sectors, one dim — so the board's positional code is taught at full size and the per-card dials only have to jog the memory. Armour's 16% is the cyan sliver, not a percentage to divide.</div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The panel a player consults <em>while under attack</em> is the most text-dense surface in the game, and the 24px dial carrying its only positional legend is the smallest thing on it. Reading it costs a wave.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Portrait column with the live collar; mechanics as numeral chips; three upgrade cards each carrying dial, delta, pips and price; armour as a proportional bar; targeting iconic with labels on hover. Prices drop the <code style="font-size:11px">$</code>.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Every preview still comes from <code style="font-size:11px">nextStats</code> — the same function the purchase runs. The maxed state still reads <em>Max</em>, not a blank. The armour line still appears only when something armoured is in play.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>2.5 &nbsp;Collapsed deck</h3>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="padding:10px 12px; background:#141624; border:1px solid #2a2d40; border-radius:6px; display:flex; align-items:center; gap:10px">
+      <i style="width:7px; height:7px; border-radius:50%; background:#e06d6d; display:block; flex:none"></i>
+      <span style="font:400 11.5px/1.3 var(--font-body); color:#c3c5d3">Wave 7 running — 6 of 24 alive</span>
+      <span style="flex:1"></span>
+      <span style="padding:5px 10px; border:1px solid #2a2d40; border-radius:5px; font:400 10.5px/1.2 var(--font-body); color:#c3c5d3">Deck ▲ <b style="font-size:9px; color:#75798c">Tab</b></span>
+    </div>
+    <div class="cap">A live status strip repeating what the Incoming ribbon says forty pixels above it, in the same words — and doing it in space that belongs to the board.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="padding:10px 12px; background:transparent; display:flex; align-items:center; justify-content:flex-end">
+      <span style="padding:6px 11px; background:#141624; border:1px solid #2a2d40; border-radius:5px; font:400 10.5px/1.2 var(--font-body); color:#c3c5d3">Deck ▲ <b style="font-size:9px; color:#75798c">Tab</b></span>
+    </div>
+    <div class="cap">The handle alone, bottom-right. <code style="font-size:11px">DECK_PX</code> becomes state-dependent, so a closed deck gives the board back most of 150px.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Two live readouts of one fact is one readout and one distraction — and the duplicate is the one sitting where the play area should be. It also rebuilds on every kill, because <code style="font-size:11px">deckKey</code> folds the alive count in whenever the deck is closed.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Delete <code style="font-size:11px">renderStripStatus</code>. Move the crit signal into the ribbon (fill goes <code style="font-size:11px">--danger</code> at ≤5 lives). The closed deck's key becomes a constant and stops touching the DOM entirely.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The crit signal must survive the cut — it is the strip's one non-duplicate. And <code style="font-size:11px">fitCanvas</code> has to letterbox board and deck as one unit at <em>both</em> deck heights, so the board must not jump distractingly on Tab.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>2.6 &nbsp;Top bar and the Incoming ribbon</h3>
+<div class="pair" style="grid-template-columns:1fr; gap:16px">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div style="display:flex; align-items:center; gap:16px; padding:8px 12px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Cash</span><b style="font:600 14px/1.5 var(--font-body); color:#e9e9ed">$430</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Lives</span><b style="font:600 14px/1.5 var(--font-body); color:#e06d6d">4</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Waves held</span><b style="font:600 14px/1.5 var(--font-body); color:#e9e9ed">6 / 10</b></span>
+      <span style="flex:1; position:relative; height:22px; background:#1c1f2d; border:1px solid #2a2d40; border-radius:4px; display:flex; align-items:center; padding:0 9px; overflow:hidden">
+        <i style="position:absolute; left:0; top:0; bottom:0; width:42%; background:rgba(145,132,217,.22); display:block"></i>
+        <span style="position:relative; font:400 10.5px/1 var(--font-body); color:#c3c5d3">wave 7 · 6 of 24 alive</span>
+      </span>
+      <span style="display:flex; border:1px solid #2a2d40; border-radius:5px; overflow:hidden"><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#b5abfc; background:rgba(145,132,217,.16)">1×</b><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">2×</b><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">4×</b></span>
+      <span style="padding:4px 8px; border:1px solid #2a2d40; border-radius:5px; font:400 10px/1.2 var(--font-body); color:#c3c5d3">❚❚</span>
+    </div>
+    <div class="cap">Works. Lives crit is a red numeral; the ribbon fill is accent whatever is happening.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div style="display:flex; align-items:center; gap:16px; padding:8px 12px; background:#141624; border:1px solid #2a2d40; border-radius:6px">
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Cash</span><b style="font:600 14px/1.5 var(--font-body); color:#e9e9ed">430</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Lives</span><b style="font:600 14px/1.5 var(--font-body); color:#e06d6d">4</b></span>
+      <span><span style="display:block; font:400 9px/1 var(--font-body); color:#75798c; text-transform:uppercase; letter-spacing:.09em">Waves held</span><b style="font:600 14px/1.5 var(--font-body); color:#e9e9ed">6 / 10</b></span>
+      <span style="flex:1; position:relative; height:22px; background:#1c1f2d; border:1px solid rgba(224,109,109,.45); border-radius:4px; display:flex; align-items:center; padding:0 9px; overflow:hidden; box-shadow: 0 0 12px rgba(224,109,109,.14)">
+        <i style="position:absolute; left:0; top:0; bottom:0; width:42%; background:rgba(224,109,109,.22); display:block"></i>
+        <span style="position:relative; display:flex; align-items:center; gap:7px; font:400 10.5px/1 var(--font-body); color:#e9e9ed"><span style="display:flex; gap:2px"><i style="display:block; width:6px; height:6px; border-radius:50%; background:#f472b6"></i><i style="display:block; width:6px; height:6px; border-radius:50%; background:#f472b6"></i><i style="display:block; width:6px; height:6px; border-radius:50%; background:#f472b6"></i></span>wave 7 · 6 of 24</span>
+      </span>
+      <span style="display:flex; border:1px solid #2a2d40; border-radius:5px; overflow:hidden"><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#b5abfc; background:rgba(145,132,217,.16)">1×</b><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">2×</b><b style="padding:4px 8px; font:400 10px/1.2 var(--font-body); color:#75798c; border-left:1px solid #2a2d40">4×</b></span>
+      <span style="padding:4px 8px; border:1px solid #2a2d40; border-radius:5px; font:400 10px/1.2 var(--font-body); color:#c3c5d3">❚❚</span>
+    </div>
+    <div class="cap">At ≤5 lives the whole ribbon goes danger — fill, border and a soft rim — so the alarm is the width of the screen rather than one numeral. Three contact dots replace the word "alive"; the <code style="font-size:11px">$</code> goes.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The ribbon has to absorb the deleted strip's crit signal, and a single red digit is a weak alarm on a screen where the player is looking at the board. It also has to carry the strip's job without gaining the strip's word count.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>Danger state on the ribbon container, not just the Lives cell. Dots for inbound count. Drop the currency sigil now that costs elsewhere have dropped it too.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The ribbon's fill is still a <em>progress</em> value — the danger tint must not make it read as a second quantity. Verify side by side before shipping: if it reads as "42% doomed", use a rim and border only and leave the fill accent.</p></div>
+</div>
+</div>
+
+<h2 style="break-before: page">3 · Status effects</h2>
+<p style="color:#9397ab; font-size:13.5px; margin-top:0">The channel budget, decided once: <b>shape</b> for permanent properties, <b>bar-adjacent</b> for pools, <b>one ring</b> for one timed debuff, <b>emitter-side</b> for anything about the tower's own state.</p>
+
+<div class="spec">
+<h3>3.1 &nbsp;Slow, in a crowd</h3>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:96px; background:#0a0c16; display:flex; align-items:center; justify-content:center; gap:2px">
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+      <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; box-shadow: 0 0 0 2px #a5eefb; display:block"></span>
+    </div>
+    <div class="cap">One cyan ring per held contact. A slow's whole job is to bunch contacts into a file, so the effect manufactures the exact density at which its own indicator stops working.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:96px; background:#0a0c16; display:flex; align-items:center; justify-content:center">
+      <div style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:168px; height:52px; border-radius:26px; background: radial-gradient(closest-side, rgba(165,238,251,.16), transparent 82%); border:1px solid rgba(165,238,251,.22)"></div>
+      <div style="position:relative; display:flex; align-items:center; gap:2px">
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+        <span style="width:22px; height:22px; border-radius:50%; background:#f472b6; display:block"></span>
+      </div>
+      <div style="position:absolute; right:8px; bottom:6px; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#5d7f8c">merge at ≥3</div>
+    </div>
+    <div class="cap">Rings merge: at three or more overlapping, draw one soft field enclosing the group instead of N outlines. One contact keeps its ring — the singular case is where a ring reads best.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Ring soup. Six outlines at 40px spacing become a texture, and the player loses both "which are slowed" and "how many are there" at once.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>In <code style="font-size:11px">effects.ts</code>, cluster slowed contacts by proximity per frame and draw one capsule field per cluster of ≥3. Same colour, same layer, fewer marks.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The ring stays the <em>only</em> ring on a contact. Shield is a band, armour is a silhouette — nothing else may claim this channel, or the merge stops meaning "slowed".</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>3.2 &nbsp;Filament ramp</h3>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:96px; background:#0a0c16; display:flex; align-items:center; justify-content:center; gap:36px">
+      <svg width="42" height="42" viewBox="0 0 40 40" style="color:#c4a6ff"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg>
+      <svg width="42" height="42" viewBox="0 0 40 40" style="color:#c4a6ff"><path d="M20 3 L34 11 L34 29 L20 37 L6 29 L6 11 Z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="20" r="5.5" fill="currentColor"/></svg>
+      <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#5d5170">cold and charged look identical</div>
+    </div>
+    <div class="cap">Nothing is drawn. A Filament three seconds into a Monolith is at ×3 damage and looks exactly like one that just switched target and lost everything.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:96px; background:#0a0c16; display:flex; align-items:center; justify-content:center; gap:36px">
+      <div style="position:relative; width:56px; height:56px">
+        <svg width="56" height="56" viewBox="0 0 56 56" style="color:#c4a6ff; position:absolute; inset:0"><path d="M28 10 L41 17.5 L41 32.5 L28 40 L15 32.5 L15 17.5 Z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="28" cy="25" r="4.5" fill="currentColor"/><circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-opacity=".12"/><path d="M28 4 A24 24 0 0 1 45 11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-opacity=".45"/></svg>
+      </div>
+      <div style="position:relative; width:56px; height:56px">
+        <svg width="56" height="56" viewBox="0 0 56 56" style="color:#c4a6ff; position:absolute; inset:0"><path d="M28 10 L41 17.5 L41 32.5 L28 40 L15 32.5 L15 17.5 Z" fill="currentColor" fill-opacity=".3" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><circle cx="28" cy="25" r="6" fill="#efe6ff"/><circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-opacity=".12"/><path d="M28 4 A24 24 0 1 1 12.3 45.6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-opacity=".95"/></svg>
+        <span style="position:absolute; inset:-6px; border-radius:50%; background: radial-gradient(closest-side, rgba(196,166,255,.18), transparent 74%)"></span>
+      </div>
+      <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#8b7fb0">spin-up 20% · at ceiling</div>
+    </div>
+    <div class="cap">Charge drawn <em>on the emitter</em>, as a ring that fills clockwise to the ceiling and visibly snaps back to zero on target switch. Core brightens with it. Nothing is added to the target.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>The mechanic whose entire value is time-on-target has no representation, so the player cannot see that a retarget just cost them a ×3 multiplier — and therefore cannot learn to pair it with a slow.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>A per-tower charge arc in <code style="font-size:11px">towerChrome.ts</code>, driven by <code style="font-size:11px">focusTime</code> against <code style="font-size:11px">rampMax / rampPerSecond</code>. The snap-back on reset is the important frame — do not tween it.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>The collar's three upgrade sectors own fixed angles. The charge ring must sit at a <em>different radius</em>, not steal a sector, or the two positional codes collide.</p></div>
+</div>
+</div>
+
+<div class="spec">
+<h3>3.3 &nbsp;Cluster split, and shield regen</h3>
+<div class="pair">
+  <div>
+    <div class="lbl" style="color:#75798c">Before</div>
+    <div class="frag" style="height:96px; background:#0a0c16">
+      <div style="position:absolute; left:26px; top:36px; display:flex; align-items:center; gap:5px">
+        <span style="width:24px; height:24px; border-radius:50%; background:#fb7185; display:block"></span>
+        <span style="font:400 11px/1 var(--font-body); color:#cfe4ff">−44</span>
+      </div>
+      <div style="position:absolute; right:26px; top:30px">
+        <span style="display:block; width:20px; height:20px; border-radius:50%; background:#e879c9"></span>
+        <span style="display:block; width:26px; height:3px; background:#9fbcff; margin-top:5px; margin-left:-3px"></span>
+        <span style="display:block; width:26px; height:3px; background:#f472b6; margin-top:2px; margin-left:-3px"></span>
+      </div>
+      <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#5d5170">a Cluster death looks like any death · regen start is silent</div>
+    </div>
+    <div class="cap">Left: the kill that makes things worse is indistinguishable from the kill that makes things better. Right: the shield band is correct, but nothing marks the moment regen begins.</div>
+  </div>
+  <div>
+    <div class="lbl" style="color:#9184d9">After</div>
+    <div class="frag" style="height:96px; background:#0a0c16">
+      <div style="position:absolute; left:20px; top:30px; width:40px; height:36px">
+        <span style="position:absolute; left:8px; top:8px; width:22px; height:22px; border-radius:50%; background: radial-gradient(closest-side, rgba(251,113,133,.35), transparent 78%)"></span>
+        <span style="position:absolute; left:4px; top:2px; width:8px; height:8px; border-radius:50%; background:#fbcfe8"></span>
+        <span style="position:absolute; left:26px; top:9px; width:8px; height:8px; border-radius:50%; background:#fbcfe8"></span>
+        <span style="position:absolute; left:13px; top:26px; width:8px; height:8px; border-radius:50%; background:#fbcfe8"></span>
+      </div>
+      <div style="position:absolute; right:20px; top:26px">
+        <span style="display:block; width:20px; height:20px; border-radius:50%; background:#e879c9; box-shadow: 0 0 0 3px rgba(159,188,255,.35)"></span>
+        <span style="display:block; width:26px; height:3px; background:linear-gradient(to right, #9fbcff 34%, rgba(159,188,255,.22) 34%); margin-top:5px; margin-left:-3px"></span>
+        <span style="display:block; width:26px; height:3px; background:#f472b6; margin-top:2px; margin-left:-3px"></span>
+      </div>
+      <div style="position:absolute; bottom:6px; left:0; right:0; text-align:center; font:600 8.5px/1 var(--font-body); letter-spacing:.1em; text-transform:uppercase; color:#8b7fb0">three pips outward · regen halo while filling</div>
+    </div>
+    <div class="cap">Left: a Cluster's death fires three Mote-tinted pips outward from the kill point — the split is announced before the children walk. Right: the band fills visibly and the contact wears a faint blue halo <em>while</em> regen is running.</div>
+  </div>
+</div>
+<div class="why">
+  <div><h5 style="color:#e06d6d">Problem</h5><p>Two mechanics that punish the player fire silently. A Cluster killed at the front of the route is a mistake the player only learns about three Motes later, and a Warden that healed in a coverage gap arrives whole with no prior warning.</p></div>
+  <div><h5 style="color:#9184d9">Change</h5><p>A death signature keyed on <code style="font-size:11px">splitInto</code> in the <code style="font-size:11px">creepKilled</code> handler — three pips in the child's tint, ~250ms. A halo on any contact whose <code style="font-size:11px">shieldTimer</code> has expired and whose shield is below max.</p></div>
+  <div><h5 style="color:#86e39b">Must hold</h5><p>Both are <em>transient</em> and must not compete with the hit flash, which stays the brightest event on the board. The regen halo is blue and must not read as the cyan slow field.</p></div>
+</div>
+</div>
+
+<h2>4 · Acceptance checklist</h2>
+<p>Build against this, not against the pictures. Each line is a pass/fail a second person can run.</p>
+
+<table>
+  <thead><tr><th style="width:6%">✓</th><th style="width:26%">Surface</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td style="color:#4d5063">☐</td><td><b>Contrast order</b></td><td>Desaturate a frame with a wave running. Order brightest-last is field, nebula, grid, route, pulsar, station, projectile, contact, hit flash. Any inversion fails.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Route direction</b></td><td>A player shown a still frame, with no chevron visible, can say which way contacts travel.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Stream motion budget</b></td><td>At 4× on Switchback, a single Mote is the first thing the eye finds. Also: the board layer still does no tessellation per frame.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Nebula</b></td><td>No tile boundary is traceable in the cloud. Blocked tiles are still individually identifiable as unbuildable.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Three fields</b></td><td>Same Lance, same blue; same Drifter, same pink — on all three boards. No field contains a warm value above the nebula's brightness.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Slot states</b></td><td>Available, armed, can't-afford and locked are distinguishable with the type hidden. Can't-afford and locked never look alike.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Glyph learning</b></td><td>A player who has built a station once can pick its slot out of five by the glyph alone.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Inspector word count</b></td><td>Ten words or fewer in the selected state, including the sell button. Every figure still sourced from <code>nextStats</code>.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Collar legend</b></td><td>A player shown an upgraded station on the board can name which path was bought, having only ever seen the inspector.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Deck toggle</b></td><td>Tab does not make the board jump distractingly, and the closed deck triggers no DOM writes on kills.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Ribbon danger</b></td><td>At 4 lives the alarm is noticed within one second from a board-focused gaze — and the fill still reads as progress, not as a second quantity.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td><b>Status channels</b></td><td>One ring per contact, ever. Six slowed contacts in a file are countable. A charged Filament is distinguishable from a cold one at a glance.</td></tr>
+  </tbody>
+</table>
+
+<h4>Deliberately not in this spec</h4>
+<ul>
+  <li><b>Race HUD and results screen.</b> Undesigned, and they should inherit this vocabulary rather than invent beside it. Next document.</li>
+  <li><b>Audio.</b> Several of the entries above ("regen start is silent", "a Cluster death looks like any death") are cheaper to solve with sound than with pixels. Worth a pass once the visual channels are settled.</li>
+  <li><b>Balance.</b> Nothing here moves a number. Every figure shown is live from <code>src/content/</code>.</li>
+</ul>
+
+<div style="margin-top: 44px; padding-top: 16px; border-top: 1px solid #2a2d40; font: 400 11px/1.5 var(--font-body); color: #75798c">Deep Field · build spec v1 · companion to the design review. Read against <code>cbhead/deep-field-td@main</code>. Mocks are drawn at target values; where a mock and the acceptance checklist disagree, the checklist wins.</div>
+
+</div>
+</doc-page>
+
+</x-dc>
+</body>
+</html>
