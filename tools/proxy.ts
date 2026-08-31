@@ -42,6 +42,85 @@ const dialSocket = (path: string): Promise<string> =>
     setTimeout(() => resolve('timeout'), 3000);
   });
 
+/**
+ * Do credentials in the environment actually reach the token route?
+ *
+ * This exists because they did not. Node does not read `.env`, and Vite's
+ * loading of it covers only the VITE_ half at build time — so a correctly
+ * filled-in `.env` produced a relay that still answered "not configured", with
+ * nothing anywhere to explain why. The fix is one flag in the launch scripts,
+ * and this is the check that would have caught its absence.
+ *
+ * Runs a second relay with credentials injected directly, which proves the
+ * server reads the environment. It cannot prove `.env` *parsing* works without
+ * writing a `.env` into the repo mid-test, so the launch scripts' `--env-file`
+ * is exercised separately below by running through `npm run server`.
+ */
+async function credentialsPhase(): Promise<void> {
+  console.log('\ncredentials reach the token route');
+
+  const port = PORT + 1;
+  const withCreds = spawn(
+    process.execPath,
+    [
+      '--experimental-strip-types',
+      '--disable-warning=ExperimentalWarning',
+      fileURLToPath(new URL('../server/index.ts', import.meta.url)),
+    ],
+    {
+      env: {
+        ...process.env,
+        PORT: String(port),
+        // Only the VITE_-prefixed id, deliberately: the server is supposed to
+        // fall back to it so `.env` needs two values rather than three.
+        VITE_DISCORD_CLIENT_ID: '000000000000000000',
+        DISCORD_CLIENT_SECRET: 'not-a-real-secret',
+      },
+      stdio: 'ignore',
+    },
+  );
+
+  try {
+    let up = false;
+    for (let i = 0; i < 40 && !up; i++) {
+      await sleep(150);
+      up = await fetch(`http://127.0.0.1:${port}/info`).then(
+        (r) => r.ok,
+        () => false,
+      );
+    }
+    if (!up) throw new Error('the configured relay never came up');
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'definitely-invalid' }),
+    });
+    const body = (await res.json()) as { error?: string };
+
+    // 502 means it got as far as asking Discord and Discord said no, which is
+    // the correct answer to a fake code and proves the credentials were seen.
+    // 503 would mean the server never found them — the original bug.
+    check(
+      'a configured relay reaches Discord instead of giving up',
+      res.status === 502,
+      `${res.status} ${JSON.stringify(body)}${res.status === 503 ? '  ← credentials not seen' : ''}`,
+    );
+    check(
+      'the id falls back to VITE_DISCORD_CLIENT_ID',
+      res.status !== 503,
+      'server started with only the VITE_-prefixed id set',
+    );
+    check(
+      'and a rejected exchange still says nothing useful to an attacker',
+      JSON.stringify(body) === JSON.stringify({ error: 'token exchange rejected' }),
+      JSON.stringify(body),
+    );
+  } finally {
+    withCreds.kill();
+  }
+}
+
 async function main(): Promise<void> {
   const server = spawn(
     process.execPath,
@@ -113,6 +192,8 @@ async function main(): Promise<void> {
     // contain the secret, whatever it is asked.
     const leaked = JSON.stringify(body).includes('secret') && JSON.stringify(body).length > 200;
     check('and leaks nothing', !leaked);
+
+    await credentialsPhase();
 
     console.log(
       failures === 0

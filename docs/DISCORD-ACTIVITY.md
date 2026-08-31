@@ -202,12 +202,52 @@ and the SDK chunk appearing in the output is the positive signal that it was
 seen. **Set `VITE_DISCORD_CLIENT_ID` before building anything you intend to
 serve to Discord.**
 
+### Setting it up
+
+Two values, one file. From
+[the developer portal](https://discord.com/developers/applications), with your
+application open:
+
+| `.env` key | Portal location | Secret? |
+|---|---|---|
+| `VITE_DISCORD_CLIENT_ID` | **General Information → Application ID** (identical to OAuth2 → Client ID) | No — it ships in the bundle |
+| `DISCORD_CLIENT_SECRET` | **OAuth2 → Client Secret → Reset Secret**, shown once | Yes |
+
+```sh
+cp .env.example .env     # then fill in the two blanks
+npm run play             # build + serve, reading .env for both halves
+```
+
+Then in the portal: **Activities → Settings** to enable it, and
+**Activities → URL Mappings** with the root prefix `/` pointing at your public
+HTTPS origin (gap #1 — `cloudflared tunnel --url http://localhost:8787` is the
+usual way to get one before there is real hosting).
+
+Two things about that file are easy to get wrong, and both used to be silent:
+
+- **The id is read at build time, the secret at run time.** `npm run play`
+  builds and then serves, so `.env` must be complete *before* it runs. Editing
+  the id and restarting only the server changes nothing — the old bundle is
+  still on disk.
+- **Node does not read `.env` by itself.** Vite reads the `VITE_` half for the
+  build, which made it look as though the whole file was loaded, while the
+  secret never reached the relay and the handshake failed with an unexplained
+  503. `scripts/server.sh` and `scripts/play.sh` now pass `--env-file` when the
+  file exists, and `npm run proxy` asserts that credentials in the environment
+  actually reach the token route.
+
+`.env.example` asked for the application id twice, under two names, which was a
+trap rather than a feature. The server now falls back to `VITE_DISCORD_CLIENT_ID`,
+so `DISCORD_CLIENT_ID` is an override nobody normally sets.
+
 ### What is verified, and what is not
 
 `npm run proxy` starts the built relay and asserts the prefix is optional both
 ways, that the socket upgrades on `/ws` and `/.proxy/ws` and is refused
-elsewhere, and that the token route answers honestly when it has no credentials
-instead of crashing. `npm run teardown` additionally asserts that a *failed*
+elsewhere, that the token route answers honestly when it has no credentials
+instead of crashing, and — the check that would have caught the `.env` bug —
+that credentials in the environment reach it, by watching a fake code get a 502
+from Discord rather than a 503 from us. `npm run teardown` additionally asserts that a *failed*
 handshake leaves the game playable — its URL carries a `frame_id`, so every run
 exercises the misconfigured-Activity path. The production build was confirmed to
 boot and render a board with `base: './'`.

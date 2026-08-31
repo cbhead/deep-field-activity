@@ -7,5 +7,11 @@ set -e
 cd "${0:A:h}/.."
 . scripts/use-node.sh
 
+# See scripts/server.sh for why .env is loaded here rather than left to Node.
+# The build below reads the VITE_ half of the same file on its own, which is
+# why the id has to be in place *before* this runs, not after.
+envflag=()
+[[ -f .env ]] && envflag=(--env-file=.env)
+
 zsh scripts/build.sh
-exec node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts "$@"
+exec node "${envflag[@]}" --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts "$@"

@@ -54,7 +54,12 @@ const stripProxy = (path: string): string =>
  * repo. Both absent is the normal case: a plain Tailscale match needs neither,
  * and the token route below says so rather than pretending to work.
  */
-const DISCORD_CLIENT_ID = process.env['DISCORD_CLIENT_ID'] ?? '';
+// The id falls back to the VITE_-prefixed one so `.env` needs two values, not
+// three. They are always the same string — the application id — and asking for
+// it twice under two names was a trap rather than a feature. The unprefixed
+// name still wins if it is set, for a deployment that separates them.
+const DISCORD_CLIENT_ID =
+  process.env['DISCORD_CLIENT_ID'] ?? process.env['VITE_DISCORD_CLIENT_ID'] ?? '';
 const DISCORD_CLIENT_SECRET = process.env['DISCORD_CLIENT_SECRET'] ?? '';
 
 /** Env-overridable, like FORFEIT_MS: visual checks need to hold the countdown. */
