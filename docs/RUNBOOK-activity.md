@@ -205,6 +205,8 @@ Mostly predicted, not observed. Correct it as you learn.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `tailscale funnel` prints a link and exits | HTTPS certs or the funnel node attribute not enabled for the tailnet | Follow the link; both are one-time admin-console changes |
+| `listener already exists for port 443` | A funnel is already serving this machine — usually the Step 1 check, left running in another terminal | Not a problem. `npm run tunnel` reuses it now. If you would rather start clean, Ctrl-C that terminal, or `tailscale funnel --https=443 off` |
+| The public URL returns **502** | The funnel is up and forwarding, but nothing is listening on 8787 behind it | The relay is not running. `npm run play` in the repo, or re-run `npm run tunnel`. A 502 is good news in one sense: it proves the mapping and the funnel are correct |
 | Activity shows a blank or endlessly loading frame | The URL Mapping target is wrong, or the tunnel is down | Step 4's `curl`. Target is a bare hostname — a `https://` prefix or trailing slash in that form is the classic cause |
 | Game loads but no `[td] Discord activity:` line | Bundle built without `VITE_DISCORD_CLIENT_ID`, so the handshake was eliminated as dead code | Check `.env`, re-run `npm run tunnel`, and watch for its warning. `npm run build` prints one too |
 | Console shows `token exchange failed (503)` | The relay has no `DISCORD_CLIENT_SECRET` | It is read at run time from `.env`; confirm the file exists and restart. `npm run proxy` asserts this path |

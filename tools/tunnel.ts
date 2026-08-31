@@ -71,6 +71,24 @@ function bundleHasSdk(): boolean {
     .some((f) => readFileSync(`${assets}/${f}`, 'utf8').includes('frame_id query param'));
 }
 
+/** The public origin, and what to do with it. Printed once, however we got here. */
+function announce(host: string): void {
+  console.log(
+    `\n${'─'.repeat(72)}\n` +
+      `  ${bold('Public origin')}   https://${host}\n\n` +
+      `  Set this ${bold('once')} at https://discord.com/developers/applications\n` +
+      `    → your app → Activities → URL Mappings\n\n` +
+      `        PREFIX   /\n` +
+      `        TARGET   ${host}\n\n` +
+      `  ${dim('Target is the hostname only — no https://, no trailing slash.')}\n` +
+      `  ${dim('Also enable Activities → Settings for the app.')}\n\n` +
+      `  Then launch the activity from a voice channel in your test server.\n` +
+      `  ${dim('While this runs, that URL serves the game to anyone who knows it.')}\n` +
+      `  ${dim('Ctrl-C takes it down.')}\n` +
+      `${'─'.repeat(72)}\n`,
+  );
+}
+
 async function main(): Promise<void> {
   if (spawnSync('tailscale', ['version'], { stdio: 'ignore' }).status !== 0) {
     die('tailscale is not on PATH.', '  Install it from https://tailscale.com/download');
@@ -148,39 +166,50 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n${bold('opening the funnel')}…`);
-  const funnel = spawn('tailscale', ['funnel', String(PORT)], { stdio: 'inherit' });
+  // Piped rather than inherited, so the failure below can be told apart from
+  // the others by what Tailscale actually said. Still echoed, because when it
+  // wants something enabled it prints a link that is the whole answer.
+  const funnel = spawn('tailscale', ['funnel', String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(funnel);
+  let funnelSaid = '';
+  for (const stream of [funnel.stdout, funnel.stderr]) {
+    stream?.on('data', (c: Buffer) => {
+      const text = c.toString();
+      funnelSaid += text;
+      process.stdout.write(text);
+    });
+  }
+
   funnel.on('exit', (code) => {
-    if (code !== 0 && code !== null) {
-      // Funnel refuses until HTTPS certs and the funnel node attribute are
-      // enabled for the tailnet. Tailscale prints a link to do exactly that,
-      // which has already gone to stdout above — pointing at it beats
-      // paraphrasing it.
-      console.error(
-        `\n${red('✗')} tailscale funnel exited (${code}). If it asked you to enable something,\n` +
-          `  follow the link it printed — Funnel needs HTTPS certificates and the\n` +
-          `  funnel node attribute enabled for your tailnet, both one-time.\n`,
+    if (code === 0 || code === null) return;
+
+    // "listener already exists for port 443" means somebody already funnelled
+    // this machine — most likely the operator, running `tailscale funnel 8787`
+    // by hand to check it worked, and leaving it up. That is not a failure: the
+    // public URL is live and pointing here, which is the entire goal. Reuse it.
+    //
+    // Worth distinguishing because the first version of this treated every
+    // non-zero exit as "you have not enabled Funnel yet" and sent the operator
+    // to the admin console to fix something that was already correct.
+    if (funnelSaid.includes('listener already exists')) {
+      console.log(
+        `\n${dim('a funnel is already serving this machine — reusing it rather than opening a second.')}`,
       );
-      stop();
-      process.exit(1);
+      announce(host);
+      return;
     }
+
+    console.error(
+      `\n${red('✗')} tailscale funnel exited (${code}).\n` +
+        `  If it printed a link above, follow it — Funnel needs HTTPS certificates\n` +
+        `  and the funnel node attribute enabled for your tailnet, both one-time.\n`,
+    );
+    stop();
+    process.exit(1);
   });
 
   await sleep(1500);
-  console.log(
-    `\n${'─'.repeat(72)}\n` +
-      `  ${bold('Public origin')}   https://${host}\n\n` +
-      `  Set this ${bold('once')} at https://discord.com/developers/applications\n` +
-      `    → your app → Activities → URL Mappings\n\n` +
-      `        PREFIX   /\n` +
-      `        TARGET   ${host}\n\n` +
-      `  ${dim('Target is the hostname only — no https://, no trailing slash.')}\n` +
-      `  ${dim('Also enable Activities → Settings for the app.')}\n\n` +
-      `  Then launch the activity from a voice channel in your test server.\n` +
-      `  ${dim('While this runs, that URL serves the game to anyone who knows it.')}\n` +
-      `  ${dim('Ctrl-C takes it down.')}\n` +
-      `${'─'.repeat(72)}\n`,
-  );
+  announce(host);
 }
 
 await main();
