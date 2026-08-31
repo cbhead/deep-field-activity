@@ -19,6 +19,19 @@ This does not replace [match night](RUNBOOK-match-night.md) — the Tailscale pa
 is the one that works and has hosted a real cross-internet match. This is the
 port being exercised.
 
+Throughout, `<funnel-host>` means this machine's public Funnel hostname — the
+`<machine>.<tailnet>.ts.net` name Tailscale gives it. `npm run tunnel` prints
+yours, or:
+
+```sh
+tailscale status --json | sed -n 's/.*"DNSName": "\(.*\)\.".*/\1/p' | head -1
+```
+
+It is left as a placeholder rather than written out for the same reason the
+match-night runbook does not name a tailnet address: while the funnel is open
+that hostname is a live public URL, and a repository is a poor place to publish
+one.
+
 ## Prerequisites
 
 - [ ] `npm run play` already works (see the [README](../README.md))
@@ -74,20 +87,19 @@ In the developer portal, with your app open:
 - **Activities → URL Mappings** — add:
 
       PREFIX   /
-      TARGET   chandlers-macbook-pro.tail58cbdb.ts.net
+      TARGET   <funnel-host>
 
   Hostname only. No `https://`, no trailing slash, no port.
 
 While you are in there, **Legal → Terms of Service URL / Privacy Policy URL**:
 
-    https://chandlers-macbook-pro.tail58cbdb.ts.net/terms
-    https://chandlers-macbook-pro.tail58cbdb.ts.net/privacy
+    https://<funnel-host>/terms
+    https://<funnel-host>/privacy
 
 These are only needed for verification, not to launch the app in your own
-server. Both pages ship with the build. Before submitting anything, fill in the
-`CONTACT_EMAIL_HERE` and `GOVERNING_JURISDICTION_HERE` placeholders, and move
-them somewhere that stays up — served from here they only exist while the tunnel
-does, and a reviewer will look when they look. See §6 of
+server. Both pages ship with the build and are complete. Before submitting for
+verification, move them somewhere that stays up — served from here they only
+exist while the tunnel does, and a reviewer will look when they look. See §6 of
 [DISCORD-ACTIVITY.md](DISCORD-ACTIVITY.md).
 
 This is why the runbook uses Funnel rather than a `cloudflared` quick tunnel:
@@ -114,8 +126,8 @@ and nobody will be signed in. Fix `.env` and run it again.
 From anywhere:
 
 ```sh
-curl -sI https://chandlers-macbook-pro.tail58cbdb.ts.net/ | head -1
-curl -s  https://chandlers-macbook-pro.tail58cbdb.ts.net/info
+curl -sI https://<funnel-host>/ | head -1
+curl -s  https://<funnel-host>/info
 ```
 
 `200` and a JSON blob. If this fails, Discord has no chance — fix it here,

@@ -281,17 +281,18 @@ display names and connecting IP addresses to its own terminal. A reviewer can
 check every claim in it against the source, which is the point — a policy that
 overstates what a game collects is as wrong as one that understates it.
 
-Two things before submitting:
+Filled in: the contact address is `cbhead@icloud.com`, and the governing law is
+Indiana — the operator's own state, which is the convention, since the point of
+the clause is that a dispute lands somewhere the operator is actually subject to.
+The terms also carry the usual carve-out saying they cannot remove a consumer
+protection someone's local law makes unwaivable.
 
-- **Fill the placeholders.** `CONTACT_EMAIL_HERE` in both files, and
-  `GOVERNING_JURISDICTION_HERE` in the terms. They are deliberately loud so they
-  cannot be missed, and deliberately not guessed — a contact address and a
-  jurisdiction are the author's to choose.
+One thing still outstanding:
+
 - **Host them somewhere that stays up.** Serving them from the relay means they
   are only reachable while the tunnel is running, and a reviewer will look when
-  they look. Making the repository public and enabling GitHub Pages, or pasting
-  the two files into a public gist, both give a URL that does not depend on a
-  laptop being awake.
+  they look. GitHub Pages on this repository, or the two files in a public gist,
+  give a URL that does not depend on a laptop being awake.
 
 If the game's data handling changes — a new stored key, a wider scope, anything
 persisted server-side — the privacy policy is now a file that has to change with
