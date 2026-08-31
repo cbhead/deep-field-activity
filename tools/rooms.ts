@@ -13,6 +13,7 @@
  * the chooser rule and seed fairness — the parts an instance changed. Whether
  * the match then plays correctly is what a real match night is for.
  */
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,8 @@ import { sleep } from './cdp.ts';
 import { WS_PATH, PROTOCOL_VERSION, type C2S, type S2C } from '../src/net/protocol.ts';
 
 const PORT = 8795;
+/** Stands in for Discord: the relay posts match reports here. */
+const HOOK_PORT = 8796;
 
 let failures = 0;
 
@@ -88,6 +91,20 @@ class Client {
 }
 
 async function main(): Promise<void> {
+  // A webhook the relay can actually reach, so the report path is exercised end
+  // to end rather than mocked. Discord's real endpoint would reject us and, more
+  // to the point, would post to a channel.
+  const posted: string[] = [];
+  const hook = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      posted.push(Buffer.concat(chunks).toString('utf8'));
+      res.writeHead(204).end();
+    });
+  });
+  await new Promise<void>((r) => hook.listen(HOOK_PORT, '127.0.0.1', r));
+
   const relay = spawn(
     process.execPath,
     [
@@ -95,7 +112,15 @@ async function main(): Promise<void> {
       '--disable-warning=ExperimentalWarning',
       fileURLToPath(new URL('../server/index.ts', import.meta.url)),
     ],
-    { env: { ...process.env, PORT: String(PORT), COUNTDOWN_MS: '50' }, stdio: 'ignore' },
+    {
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        COUNTDOWN_MS: '50',
+        DISCORD_WEBHOOK_URL: `http://127.0.0.1:${HOOK_PORT}/hook`,
+      },
+      stdio: 'ignore',
+    },
   );
 
   const clients: Client[] = [];
@@ -194,6 +219,25 @@ async function main(): Promise<void> {
       `${startA?.level ?? '—'} / ${startB?.level ?? '—'}`,
     );
 
+    console.log('\nthe relay files the match report');
+    // Both finish, which settles the match and triggers the post.
+    const done = { wave: 7, lives: 12, elapsedMs: 84_000 };
+    a.send({ t: 'dead', ...done });
+    b.send({ t: 'dead', wave: 5, lives: 3, elapsedMs: 91_000 });
+    await a.next('result');
+    await sleep(600);
+
+    check('a report was sent, without any browser holding a webhook', posted.length === 1, `${posted.length} post(s)`);
+    const body = posted[0] === undefined ? null : (JSON.parse(posted[0]) as { content?: string });
+    const content = body?.content ?? '';
+    check('it names the winner', content.includes('Ada defeats Bo'), content.split('\n')[0] ?? '(empty)');
+    check(
+      'the board by its name, not its id, and the seed to reproduce it',
+      content.includes('Pincer') && !content.includes('level03') && content.includes('seed 0x'),
+      content.split('\n')[1] ?? '',
+    );
+    check('and both pilots’ figures', content.includes('Ada — wave 7') && content.includes('Bo — wave 5'));
+
     console.log(
       failures === 0
         ? '\n\x1b[32minstance rooms hold together\x1b[0m'
@@ -202,6 +246,7 @@ async function main(): Promise<void> {
   } finally {
     for (const c of clients) c.close();
     relay.kill();
+    hook.close();
   }
 
   if (failures > 0) process.exitCode = 1;

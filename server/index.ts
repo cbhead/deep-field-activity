@@ -24,6 +24,9 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } from '../src/net/protocol.ts';
+import { matchReport } from '../src/net/report.ts';
+import { CAMPAIGN, levelById } from '../src/content/levels.ts';
+import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from '../src/content/difficulty.ts';
 
 const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
 
@@ -62,6 +65,20 @@ const DISCORD_CLIENT_ID =
   process.env['DISCORD_CLIENT_ID'] ?? process.env['VITE_DISCORD_CLIENT_ID'] ?? '';
 const DISCORD_CLIENT_SECRET = process.env['DISCORD_CLIENT_SECRET'] ?? '';
 
+/**
+ * Where match reports go, if anywhere. A Discord channel webhook URL.
+ *
+ * Set here rather than pasted into a browser, which is where it used to live.
+ * Two reasons, one of them fatal: inside a Discord Activity the page cannot
+ * reach `discord.com/api/webhooks` at all, because the iframe's CSP forbids it.
+ * And a single sender means a single message — the old arrangement had to warn
+ * you to configure exactly one machine or receive every result twice.
+ *
+ * Unset is the normal case, and means no reports. The channel is then simply
+ * not a match ledger, which is a fine way to run.
+ */
+const DISCORD_WEBHOOK_URL = process.env['DISCORD_WEBHOOK_URL'] ?? '';
+
 /** Env-overridable, like FORFEIT_MS: visual checks need to hold the countdown. */
 const COUNTDOWN_MS = Number(process.env['COUNTDOWN_MS'] ?? 3000);
 const HEARTBEAT_MS = 15_000;
@@ -90,6 +107,8 @@ type Room = {
   forfeitTimer: ReturnType<typeof setTimeout> | null;
   /** The Discord instance this room belongs to, so expiry can unindex it. */
   instance: string | null;
+  /** The seed dealt for the match in progress — the report's reproduction handle. */
+  seed: number;
 };
 
 const rooms = new Map<string, Room>();
@@ -116,7 +135,7 @@ function newRoom(instance: string | null = null): Room {
   const room: Room = {
     code, players: [], started: false, level: 'level01', diff: 'standard',
     roster: new Map(), finals: new Map(), lastStatus: new Map(), forfeitTimer: null,
-    instance,
+    instance, seed: 0,
   };
   rooms.set(code, room);
   if (instance !== null) byInstance.set(instance, code);
@@ -155,6 +174,47 @@ const standingFor = (room: Room, id: string): Standing =>
     ...(room.lastStatus.get(id) ?? { wave: 0, lives: 0, elapsedMs: 0 }),
   };
 
+/**
+ * Send the match report, if a webhook is configured. Never throws, never
+ * blocks: the result is already on its way to both clients and a channel post
+ * that fails is a missing line in a log, not a lost game.
+ */
+function postReport(
+  room: Room,
+  winnerId: string | null,
+  standings: Standing[],
+  forfeit: boolean,
+): void {
+  if (DISCORD_WEBHOOK_URL === '') return;
+
+  const level = levelById(room.level) ?? CAMPAIGN[0]!;
+  const diffId: DifficultyId = Object.hasOwn(DIFFICULTIES, room.diff)
+    ? (room.diff as DifficultyId)
+    : DEFAULT_DIFFICULTY;
+  const content = matchReport(
+    `${level.name} · ${DIFFICULTIES[diffId].name}`,
+    room.code,
+    room.seed,
+    winnerId,
+    standings,
+    forfeit,
+  );
+
+  void fetch(DISCORD_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content }),
+  }).then(
+    (r) => {
+      if (r.ok) console.log(`[report] room ${room.code} posted to Discord`);
+      else console.error(`[report] room ${room.code} rejected by Discord: ${r.status}`);
+    },
+    (err: unknown) => {
+      console.error(`[report] room ${room.code} could not be sent`, err);
+    },
+  );
+}
+
 function settle(room: Room, forfeitWinner?: string): void {
   const standings = [...room.roster.keys()].map((id) => standingFor(room, id)).sort(rank);
   let winnerId: string | null;
@@ -170,6 +230,9 @@ function settle(room: Room, forfeitWinner?: string): void {
     t: 'result', winnerId, standings,
     ...(forfeitWinner !== undefined ? { reason: 'forfeit' as const } : {}),
   });
+  // After the broadcast, deliberately: the players' results card should not
+  // wait on a round trip to Discord.
+  postReport(room, winnerId, standings, forfeitWinner !== undefined);
   // Reset for a rematch: same room, fresh readies, next start deals a new seed.
   room.started = false;
   room.finals.clear();
@@ -420,6 +483,10 @@ wss.on('connection', (ws: WebSocket, req) => {
           // A fresh match: only current seat-holders count toward the result.
           room.roster = new Map(room.players.map((p) => [p.id, p.name]));
           const seed = (Math.random() * 0x100000000) >>> 0;
+          // Kept on the room, not just broadcast: the match report names the
+          // seed, and by the time a result settles the start message is long
+          // gone.
+          room.seed = seed;
           console.log(`[start] room ${room.code} seed=${seed} ${room.level}/${room.diff}`);
           broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS, level: room.level, diff: room.diff });
         }

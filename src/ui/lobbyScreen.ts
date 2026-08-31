@@ -187,8 +187,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     `placeholder="https://discord.com/api/webhooks/…" value="${localStorage.getItem('discord-webhook') ?? ''}">` +
     `<div style="display:flex;align-items:center;gap:12px">` +
     `<button id="race-webhook-save" class="lb-btn dim" style="height:36px;font-size:12px">Save & send</button>` +
-    `<span class="lb-fine">Discord: channel → Edit → Integrations → Webhooks → New Webhook → Copy URL. Stays in this browser. ` +
-    `Match results post to the same channel — set this on one machine only, or they arrive twice.</span>` +
+    // No longer warns about configuring one machine only: match results are
+    // sent by the relay now, from DISCORD_WEBHOOK_URL in its environment. This
+    // webhook sends the invite and nothing else, so two browsers holding one is
+    // harmless.
+    `<span class="lb-fine">Discord: channel → Edit → Integrations → Webhooks → New Webhook → Copy URL. Stays in this browser, ` +
+    `and sends the invite only. Match results are posted by the relay — see DISCORD_WEBHOOK_URL in .env.example.</span>` +
     `</div></div>`;
 
   const bar = raceBar;

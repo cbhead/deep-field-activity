@@ -41,7 +41,7 @@ accident of having been built for one friend on one Tailscale box:
 | 3 | ~~**The OAuth handshake.**~~ **Built, unverified.** See §5. | |
 | 4 | **Navigation.** `location.search = '?race'` and its siblings in `src/main.ts` throw away Discord's launch params (`frame_id`, `instance_id`) and break the SDK on reload. | **The real refactor**, and bigger than the eight call sites suggest — see §4. Also drags in the rematch-by-reload path, which leans on `sessionStorage` surviving a navigation. |
 | 5 | ~~**Rooms become the instance.**~~ **Done**, and verified with two real clients. See §7. | |
-| 6 | **Match reports move server-side.** The client can't reach `discord.com/api/webhooks` through the CSP. | `src/ui/discord.ts` keeps its formatter; only the transport moves. |
+| 6 | ~~**Match reports move server-side.**~~ **Done**, and verified against a stub webhook. See §8. | |
 | 7 | **More than two people.** The relay seats exactly two and answers "room is full" to the third. A voice channel routinely holds five. | Needs a spectator or queue path. Not hard, but it's the first impression. |
 | 8 | **Terms of Service and Privacy Policy URLs.** Required by Discord before an app can be verified — a gap the original survey missed entirely. | Drafted and served; see §6. Two placeholders still to fill, and they need a host that is up when a reviewer looks. |
 
@@ -356,6 +356,41 @@ clients are dealt the same seed and the same board.
 
 What that still does not cover is the match itself — whether the game then plays
 correctly across two machines is what a real match night is for.
+
+## §8 — The relay files the report
+
+Match reports used to be posted by whichever browser had a webhook pasted into
+it. That cannot work inside an Activity — the iframe's CSP will not let the page
+reach `discord.com/api/webhooks` — and it came with a caveat that was really an
+admission: *set this on one machine only, or results arrive twice.*
+
+So the relay sends them. It already decides the result, it is a single place,
+and it has no CSP. `DISCORD_WEBHOOK_URL` in its environment turns reports on;
+unset means none, which is a fine way to run.
+
+- **The formatter moved to `src/net/report.ts`**, DOM-free, because `src/ui/` is
+  unimportable from Node. `fmtTime` went with it and the results card now imports
+  it back from there.
+- **The room remembers its seed.** It was only ever broadcast, and by the time a
+  match settles the start message is long gone — but the seed is the report's
+  reproduction handle, so it is the thing worth keeping.
+- **The report drops the series tally.** That running "who leads the rivalry"
+  line is each client's own reckoning out of its own localStorage, so the two
+  players do not necessarily agree on it, and publishing one of them as though
+  it were the score was always slightly dishonest. It still appears on the
+  results card, where it is plainly *your* record.
+- **`src/ui/discord.ts` shrank to the invite button**, which is Tailscale-only
+  and already hidden inside an Activity — there is no link to send when the
+  instance *is* the invitation.
+- **The results card lost its "logged to Discord ✓" line.** The page has nothing
+  truthful to say about a post it no longer makes, which happens after the card
+  is already up. The channel is the confirmation; the relay logs failures.
+
+Verified for real rather than mocked: `npm run rooms` stands up a local HTTP
+server, points the relay's `DISCORD_WEBHOOK_URL` at it, plays a match to a
+result, and asserts exactly one post arrives naming the winner, the sector by
+name rather than id, the seed, and both pilots' figures — with no browser
+holding a webhook anywhere.
 
 ## Relationship to upstream
 

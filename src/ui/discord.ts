@@ -1,13 +1,17 @@
 /**
- * The one Discord door a plain-http page has: a channel webhook the user
- * pastes in once. Shared by the lobby's invite button and the post-match
- * report, so both land in the same channel — the channel history becomes the
- * match ledger. The URL stays in localStorage, this browser only; configure
- * it on ONE machine, because every browser with a webhook posts results.
+ * The lobby's "Send to Discord" invite button, and nothing else.
+ *
+ * A channel webhook is the one Discord door a plain-http page has: no OAuth, no
+ * SDK, and the POST is https so there is no mixed-content problem. That is
+ * still true for *inviting* someone to a tailnet race, which is the only job
+ * left here.
+ *
+ * Match reports used to go out through this same webhook, from whichever
+ * browser had one pasted in. They now leave from the relay — see
+ * `net/report.ts` for why, and `server/index.ts` for where. Inside a Discord
+ * Activity this whole module is unreachable anyway: the invite button does not
+ * exist there, because there is no link to send.
  */
-import type { Standing } from '../net/protocol.ts';
-import { formatSeed } from '../sim/util/rng.ts';
-import { fmtTime } from './resultsScreen.ts';
 
 const KEY = 'discord-webhook';
 export const WEBHOOK_PREFIX = 'https://discord.com/api/webhooks/';
@@ -33,29 +37,4 @@ export function postToDiscord(content: string): Promise<boolean> {
     (r) => r.ok,
     () => false,
   );
-}
-
-/**
- * One match, one message. The seed is included because it's the reproduction
- * handle — "rematch that exact board" is `?seed=` away in single player.
- */
-export function matchReport(
-  sector: string,
-  room: string,
-  seed: number,
-  winnerId: string | null,
-  standings: Standing[],
-  forfeit: boolean,
-): string {
-  const winner = winnerId !== null ? standings.find((s) => s.playerId === winnerId) : undefined;
-  const loser = standings.find((s) => s.playerId !== winner?.playerId);
-  const headline = winner === undefined
-    ? `Dead heat between ${standings.map((s) => s.name).join(' and ')}`
-    : forfeit
-      ? `${winner.name} wins by forfeit over ${loser?.name ?? 'their opponent'}`
-      : `${winner.name} defeats ${loser?.name ?? 'their opponent'}`;
-  const lines = standings.map(
-    (s) => `${s.name} — wave ${s.wave} · ${s.lives} lives · ${fmtTime(s.elapsedMs)}`,
-  );
-  return `🏁 **${headline}**\n${sector} · room ${room} · seed 0x${formatSeed(seed)}\n${lines.join('\n')}`;
 }

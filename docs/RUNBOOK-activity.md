@@ -66,6 +66,10 @@ the file is an override; leave it alone.
 `.env` has to be complete before you start it. Editing the id and restarting
 only the server changes nothing — the old bundle is still on disk.
 
+Optionally add `DISCORD_WEBHOOK_URL` (channel → Edit Channel → Integrations →
+Webhooks) and the relay posts one message per finished race, turning the channel
+into the match ledger. Read at run time, so this one *is* just a restart.
+
 ### Step 1 — (First time only) Enable Funnel
 
 ```sh
@@ -215,8 +219,6 @@ exactly as [match night](RUNBOOK-match-night.md) describes.
 
 - **The relay seats exactly two.** A third person in the channel is refused with
   "both seats in this channel are taken". Gap #7.
-- **Match reports still post from the browser** to a webhook pasted into
-  localStorage, which the CSP may well block inside the iframe. Gap #6.
 - **Mobile is not expected to work well.** The board and HUD scale as one unit,
   so a phone in landscape cannot reach a 44px touch target.
 

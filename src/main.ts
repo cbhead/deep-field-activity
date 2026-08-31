@@ -37,7 +37,6 @@ import { MatchController } from './net/MatchController.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceCues, type RaceHud } from './ui/raceHud.ts';
 import { showResults } from './ui/resultsScreen.ts';
-import { getWebhook, matchReport, postToDiscord } from './ui/discord.ts';
 import { recordSeries, formatSeries } from './app/raceSeries.ts';
 
 /**
@@ -120,11 +119,10 @@ async function openActivity(): Promise<void> {
     activity = await connectActivity();
     if (activity === null) return;
     console.info(`[td] Discord activity: ${activity.displayName} in instance ${activity.instanceId}`);
-    // The one thing identity is spent on so far. Race mode remembers the last
-    // name typed; inside Discord we already know it, so the lobby opens with it
-    // filled in rather than asking a question Discord has answered. It stays
-    // editable — this seeds the field, it does not own it. Making the *room*
-    // follow the instance is gap #5, and a larger change.
+    // Seeds the saved callsign for the plain-URL lobby, which is the only place
+    // a name is still typed. Inside an Activity the lobby does not ask at all —
+    // it is handed this session and uses the display name directly — so this
+    // only matters if the same browser later opens the game outside Discord.
     if (localStorage.getItem('race-name') === null) {
       localStorage.setItem('race-name', activity.displayName);
     }
@@ -400,18 +398,11 @@ function mountRace(
                 router.remount();
               },
             });
-            // Log the match to the shared channel — the webhook doubles as
-            // the match ledger. Only browsers with a webhook configured post
-            // (normally just the host's), so results arrive once.
-            if (getWebhook() !== null) {
-              void postToDiscord(
-                matchReport(matchSector, currentRoom, matchSeed, winnerId, standings, reason === 'forfeit') +
-                  `\n${series}`,
-              ).then((ok) => {
-                const log = document.getElementById('results-log');
-                if (log) log.textContent = ok ? 'match logged to Discord ✓' : "couldn't log to Discord — check the webhook";
-              });
-            }
+            // No Discord post from here any more. The relay sends the match
+            // report, because a browser inside an Activity cannot reach
+            // discord.com at all and because one sender means one message
+            // without anyone being told to configure only one machine. See
+            // net/report.ts.
           },
           boot: (seed, levelId, diffId) => {
             matchSeed = seed;

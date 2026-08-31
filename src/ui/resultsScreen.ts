@@ -12,11 +12,7 @@
 import type { Standing } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
 import { ensureRaceStyle, raceBar, hexSvg, escapeHtml, YOU, THEM } from './raceTheme.ts';
-
-export const fmtTime = (ms: number): string => {
-  const s = Math.round(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
+import { fmtTime } from '../net/report.ts';
 
 export interface ResultsOptions {
   myId: string;
@@ -81,7 +77,11 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
     `<div style="display:flex;align-items:center;gap:20px">` +
     `<button id="race-rematch" class="lb-btn" style="width:220px;height:50px;font-size:15px">Rematch</button>` +
     `<a href="?race" style="color:#75798c;text-decoration:none">leave</a>` +
-    `<span id="results-log" class="lb-fine" style="min-height:15px"></span>` +
+    // There used to be a "match logged to Discord ✓" line here, written by
+    // whichever browser held the webhook. The relay sends the report now and
+    // does so after this card is already up, so the page has nothing truthful
+    // to say about it — and an empty element that once meant something is worse
+    // than none. The channel is the confirmation; the relay logs the failures.
     `</div></div></div>`;
 
   el.querySelector('#race-rematch')!.addEventListener('click', opts.onRematch);
