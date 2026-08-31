@@ -28,6 +28,7 @@ import { TOWERS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, type EnemyId } from '../src/content/enemies.ts';
 import { parseMap } from '../src/sim/util/grid.ts';
 import type { MapDef } from '../src/sim/types.ts';
+import { buildOrder, type Ranking } from './buildOrder.ts';
 import { DEFAULT_RULES, resolveRules, type Rules } from '../src/sim/rules.ts';
 import type { DifficultyId } from '../src/content/difficulty.ts';
 import { createWorld } from '../src/sim/world.ts';
@@ -35,82 +36,6 @@ import { stepWorld } from '../src/sim/step.ts';
 import { waveCount } from '../src/sim/wavePlan.ts';
 
 const map = parseMap(LEVEL01);
-
-/**
- * Two tile rankings, because on a multi-lane board they disagree and the
- * disagreement is the finding — see the same pair in `tools/campaign.ts`.
- *
- * `cluster` scores every tile against the whole road and sorts, which packs the
- * busiest stretch. `spread` is a greedy set cover: each pick reaches the most
- * road *nothing has covered yet*. On one lane `cluster` wins comfortably; on
- * lanes of unequal length it piles everything onto the long one, because a tile
- * beside a 50-tile coil always outscores a tile beside a 20-tile chute.
- */
-type Ranking = 'cluster' | 'spread';
-
-const spotCache = new Map<string, [number, number][]>();
-
-function rankedSpots(board: MapDef, range: number, how: Ranking = 'cluster'): [number, number][] {
-  const key = `${board.id}:${Math.round(range * 10)}:${how}`;
-  const hit = spotCache.get(key);
-  if (hit !== undefined) return hit;
-
-  const road: number[] = [];
-  for (let i = 0; i < board.tiles.length; i++) if (board.tiles[i] === 'path') road.push(i);
-
-  const ground: { col: number; row: number; reach: number[] }[] = [];
-  for (let row = 0; row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      if (board.tiles[row * board.cols + col] !== 'ground') continue;
-      const reach = road.filter((i) => {
-        const dx = (i % board.cols) - col;
-        const dy = ((i / board.cols) | 0) - row;
-        return dx * dx + dy * dy <= range * range;
-      });
-      ground.push({ col, row, reach });
-    }
-  }
-
-  let out: [number, number][];
-  if (how === 'cluster') {
-    out = ground
-      .slice()
-      .sort((a, b) => b.reach.length - a.reach.length || a.col - b.col || a.row - b.row)
-      .map((s) => [s.col, s.row] as [number, number]);
-  } else {
-    out = [];
-    const covered = new Set<number>();
-    const taken = new Set<number>();
-    for (;;) {
-      let best = -1;
-      let bestGain = -1;
-      for (let i = 0; i < ground.length; i++) {
-        if (taken.has(i)) continue;
-        let gain = 0;
-        for (const t of ground[i]!.reach) if (!covered.has(t)) gain++;
-        if (gain > bestGain) {
-          best = i;
-          bestGain = gain;
-        }
-      }
-      if (best < 0 || bestGain <= 0) break;
-      taken.add(best);
-      out.push([ground[best]!.col, ground[best]!.row]);
-      for (const t of ground[best]!.reach) covered.add(t);
-    }
-    // Once the road is covered, doubling up on the busiest stretch is what a
-    // player with money left over would do.
-    for (const s of ground
-      .map((s, i) => ({ s, i }))
-      .filter(({ i }) => !taken.has(i))
-      .sort((a, b) => b.s.reach.length - a.s.reach.length || a.s.col - b.s.col || a.s.row - b.s.row)) {
-      out.push([s.s.col, s.s.row]);
-    }
-  }
-
-  spotCache.set(key, out);
-  return out;
-}
 
 interface Result {
   won: boolean;
@@ -135,7 +60,7 @@ function run(
 ): Result {
   // Ranked by the widest reach in the build, so every strategy shares one
   // notion of a good tile and none is flattered by its own ordering.
-  const spots = rankedSpots(board, Math.max(...build.map((b) => TOWERS[b].range)), how);
+  const spots = buildOrder(board, Math.max(...build.map((b) => TOWERS[b].range)), how);
   const w = createWorld(board, seed, rules);
   let next = 0;
 
