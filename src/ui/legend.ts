@@ -62,7 +62,7 @@ export function legendHtml(): string {
 
   const contacts = ENEMY_IDS.map(
     (id) =>
-      `<li><span class="lg-ic c-${id}">${contactIcon(id, 30)}</span>` +
+      `<li><span class="lg-ic">${contactIcon(id, 30)}</span>` +
       `<span><b>${ENEMIES[id].name}</b><span>${describeContact(ENEMIES[id])}</span></span></li>`,
   ).join('');
 

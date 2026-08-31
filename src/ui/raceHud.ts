@@ -38,7 +38,28 @@ const TILE_PX = 5;
 const pinColor = (kind: string): string =>
   css((THEME.towers as Record<string, number | undefined>)[kind] ?? 0xe9e9ed);
 
-export function createRaceHud(parent: HTMLElement, opponentName: string, room: string, map: MapDef): RaceHud {
+/**
+ * The two opponent moments worth hearing.
+ *
+ * Optional, and kept as a callback rather than an engine reference so this file
+ * stays what its header says it is — pure presentation fed by status blobs.
+ * Both cues are deliberately quiet and heavily lowpassed at the palette end: the
+ * race strip is peripheral, and an opponent cue that could be mistaken for one
+ * of your own stations has cost the player attention on the board, which is the
+ * only place it is worth spending.
+ */
+export interface RaceCues {
+  opponentWave(): void;
+  leadChange(): void;
+}
+
+export function createRaceHud(
+  parent: HTMLElement,
+  opponentName: string,
+  room: string,
+  map: MapDef,
+  cues?: RaceCues,
+): RaceHud {
   const el = document.createElement('div');
   el.id = 'race-hud';
   el.style.cssText =
@@ -58,6 +79,8 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
     'font:13px/1.5 var(--hud-font,ui-monospace,monospace);opacity:0;transition:opacity 0.3s;pointer-events:none';
   parent.appendChild(toastEl);
 
+  /** Which way the standing last resolved: 1 ahead, -1 behind, 0 not yet known. */
+  let lead = 0;
   let mine: RaceStatus | null = null;
   let theirs: RaceStatus | null = null;
   let lastPeerWave = 0;
@@ -148,6 +171,12 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
     if (mine && theirs) {
       const cmp = mine.wave - theirs.wave || mine.lives - theirs.lives;
       standing = cmp > 0 ? ' — ahead' : cmp < 0 ? ' — behind' : ' — level';
+      // Only the *change* is worth a sound, and only between ahead and behind:
+      // passing through level on the way is not news, and cueing it would fire
+      // twice for every overtake.
+      const side = cmp > 0 ? 1 : cmp < 0 ? -1 : 0;
+      if (side !== 0 && lead !== 0 && side !== lead) cues?.leadChange();
+      if (side !== 0) lead = side;
     }
     el.textContent = `${my}   |   ${their}${standing}`;
   }
@@ -161,6 +190,7 @@ export function createRaceHud(parent: HTMLElement, opponentName: string, room: s
       if (status.wave > lastPeerWave) {
         lastPeerWave = status.wave;
         toast(`${opponentName} cleared wave ${status.wave}`);
+        cues?.opponentWave();
       }
       if (status.towers !== undefined) {
         pins = status.towers;

@@ -1,32 +1,19 @@
 import { Sprite, type Container, type Texture } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
 import { visualTier } from '../sim/build.ts';
+import { contactShape } from './contactShape.ts';
 import type { TowerId } from '../content/towers.ts';
-import type { EntityId, SimEvent, Tower } from '../sim/types.ts';
+import type { Creep, EntityId, Tower } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import type { Layers } from './pixiApp.ts';
 import { TILE_PX } from './constants.ts';
 import { THEME } from './theme.ts';
 import { CREEP_BAKE_RADIUS, type Textures } from './textures.ts';
 
-/**
- * How long a hit flash takes to fall back to the contact's own colour, in
- * wall-clock seconds. Short enough that a contact under sustained fire reads as
- * bright rather than as a strobe.
- */
-const FLASH_SECONDS = 0.1;
-
 interface EntityView {
   sprite: Sprite;
   /** Frame this view was last matched to a live entity. See the sweep below. */
   seen: number;
-  /**
-   * Hit flash remaining, 1 → 0. It lives on the view rather than in a table of
-   * its own so the sweep below disposes of it along with the sprite; a side
-   * table would have to be swept in step, and would leak the first time it
-   * wasn't. Only contacts ever raise it.
-   */
-  flash: number;
 }
 
 interface TowerView {
@@ -71,12 +58,11 @@ export class WorldView {
   ) {}
 
   /**
-   * `dt` is wall-clock seconds, not sim time: the hit flash is presentation and
-   * must look identical at 1× and 4×. It is defaulted rather than required so a
-   * call site that has not been updated decays at an assumed 60Hz instead of
-   * leaving struck contacts stuck white.
+   * No `dt` any more: the hit flash was the only thing here that needed
+   * wall-clock time, and it has moved to `creepChrome` — a coloured bake cannot
+   * be brightened by lerping a tint, so the mechanism had to change with it.
    */
-  sync(w: World, dt = 1 / 60): void {
+  sync(w: World): void {
     this.frame++;
 
     for (const t of w.towers) {
@@ -120,17 +106,20 @@ export class WorldView {
     // costs nothing.
     this.syncEntities(w.creeps, this.creeps, this.layers.creeps, (c) => {
       const def = ENEMIES[c.defId];
-      // Armour is a property of the type and never changes, so the silhouette
-      // is chosen once at creation — unlike a tower's tier, which has to be
-      // watched every frame for upgrades.
-      const sprite = new Sprite(def.armor > 0 ? this.textures.creepPlated : this.textures.creep);
+      // One bake per type, chosen once at creation — a contact's type never
+      // changes, unlike a tower's tier, which has to be watched every frame.
+      //
+      // **No tint.** Each contact is baked in its own final colours, because a
+      // `tint` multiplies and so can never produce a highlight brighter than
+      // the token — which is exactly what the Mote's core and the Cluster's
+      // nuclei are.
+      const sprite = new Sprite(this.textures.contacts[c.defId]);
       sprite.anchor.set(0.5);
-      sprite.tint = THEME.enemies[c.defId];
       sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);
       return sprite;
     });
 
-    this.stepFlashes(w, dt);
+    this.aimRotated(w);
 
     this.syncEntities(w.projectiles, this.projectiles, this.layers.projectiles, (p) => {
       const sprite = new Sprite(this.textures.projectile);
@@ -153,40 +142,25 @@ export class WorldView {
   }
 
   /**
-   * A contact that just took damage flashes toward `THEME.fx.hitFlash`.
+   * Point the comet along the road.
    *
-   * `creepDamaged` carries the contact's id, so this is an O(1) lookup and the
-   * flash is exact. Resolving it by proximity instead would light the wrong
-   * contact whenever two overlap, and drop the effect entirely when a hitch
-   * moved them further than the match radius in one frame — and would need a
-   * per-frame scan budget to stay cheap. One field on the event removed all
-   * three problems.
+   * The Mote is the only rotated contact, and the only one that should be: a
+   * comet that does not point along travel is meaningless, while a tumbling
+   * trefoil would read as debris. Everything else keeps `rotation = 0`.
    *
-   * A hit on something already gone (killed earlier in the same drain) finds
-   * nothing and does nothing, which is correct.
+   * Nothing new is stored on the sim: the heading is derived from the route
+   * every frame by `routeHeading`, below.
    */
-  onEvent(ev: SimEvent): void {
-    if (ev.type !== 'creepDamaged') return;
-    // A second hit restarts the flash rather than stacking on it, so a burst of
-    // events costs one number per contact however many of them land.
-    const view = this.creeps.get(ev.id);
-    if (view !== undefined) view.flash = 1;
-  }
-
-  /**
-   * Decay the live flashes and write the tint they imply.
-   *
-   * The step that takes a flash to zero writes `THEME.enemies[...]` exactly, so
-   * a contact always lands back on its own colour rather than a rounding error
-   * away from it, and every later frame skips it for nothing.
-   */
-  private stepFlashes(w: World, dt: number): void {
-    const decay = dt / FLASH_SECONDS;
+  private aimRotated(w: World): void {
     for (const c of w.creeps) {
+      if (!contactShape(c.defId).rotates) continue;
+
       const view = this.creeps.get(c.id);
-      if (view === undefined || view.flash <= 0) continue;
-      view.flash = Math.max(0, view.flash - decay);
-      view.sprite.tint = mix(THEME.enemies[c.defId], THEME.fx.hitFlash, view.flash);
+      const heading = routeHeading(w, c);
+      // On the frame movement snaps to a corner there is no heading. Hold the
+      // last one through it rather than snapping the comet to east.
+      if (view === undefined || heading === undefined) continue;
+      view.sprite.rotation = heading;
     }
   }
 
@@ -205,7 +179,7 @@ export class WorldView {
       if (view === undefined) {
         const sprite = create(entity);
         layer.addChild(sprite);
-        view = { sprite, seen: 0, flash: 0 };
+        view = { sprite, seen: 0 };
         views.set(entity.id, view);
       }
       view.seen = this.frame;
@@ -219,6 +193,33 @@ export class WorldView {
       }
     }
   }
+}
+
+/**
+ * Which way a contact is travelling, in radians, or `undefined` if it cannot be
+ * told this frame.
+ *
+ * Exported because the hit flash draws the contact's own texture a second time
+ * in `creepChrome`, and a flash that did not share the body's rotation would
+ * paint a bright comet pointing east over a comet pointing north. One function,
+ * so the two can never disagree about which way the Mote is facing.
+ *
+ * **`Creep.leg` is the waypoint being walked *toward*** — `movement.ts` does
+ * `const target = route[c.leg]`. Taking the heading from the contact's own
+ * position to that target rather than from a waypoint pair is both simpler and
+ * safer: it needs no special case at the spawn, and it cannot be off by one,
+ * which here would ship a comet flying tail-first.
+ */
+export function routeHeading(w: World, c: Creep): number | undefined {
+  const target = w.map.waypoints[c.leg];
+  if (target === undefined) return undefined;
+
+  const dx = target.x - c.x;
+  const dy = target.y - c.y;
+  // On the frame movement snaps to a corner the delta is ~0 and atan2 would
+  // answer "east" — which is a heading, just not this contact's.
+  if (Math.abs(dx) + Math.abs(dy) < 1e-4) return undefined;
+  return Math.atan2(dy, dx);
 }
 
 /**

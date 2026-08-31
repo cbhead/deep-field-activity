@@ -1,11 +1,14 @@
-import { Graphics } from 'pixi.js';
+import { Container, Graphics, Sprite } from 'pixi.js';
 import { ENEMIES } from '../content/enemies.ts';
-import type { Creep } from '../sim/types.ts';
+import type { Creep, EntityId, SimEvent } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
+import { contactShape } from './contactShape.ts';
 import { TILE_PX } from './constants.ts';
 import { strokeArc } from './draw.ts';
 import type { Layers } from './pixiApp.ts';
 import { THEME } from './theme.ts';
+import { CREEP_BAKE_RADIUS, type Textures } from './textures.ts';
+import { routeHeading } from './worldView.ts';
 
 /**
  * Everything drawn *on a contact* to report its state: what is keeping it alive,
@@ -42,6 +45,7 @@ import { THEME } from './theme.ts';
  * | band              | what                | drawn when                  |
  * |-------------------|---------------------|-----------------------------|
  * | 0 – R             | the baked sprite    | always (owned by `worldView`)|
+ * | 0 – R             | additive hit flash  | struck in the last 0.12s    |
  * | R + 3             | status clock ring   | a status is active          |
  * | above R + 6       | hull bar            | damaged, or shielded        |
  * | above the hull bar| shield band         | the contact has a shield    |
@@ -206,7 +210,13 @@ const HALO_PAD = 3;
  */
 function drawHealth(g: Graphics, c: Creep, r: number): void {
   const frac = c.hp / c.maxHp;
-  const shieldFrac = c.maxShield > 0 ? c.shield / c.maxShield : 0;
+  // **1, not 0, when there is no shield.** At 0 the suppression below could
+  // never fire for the four contacts that carry no overshield, so every
+  // untouched Drifter, Mote, Cluster and Bulwark wore a full bar for its whole
+  // life — the exact wall of noise the rule above exists to prevent, and
+  // invisible in review because a full bar over a full-health contact looks
+  // like a correctly working health bar.
+  const shieldFrac = c.maxShield > 0 ? c.shield / c.maxShield : 1;
   if (frac >= 0.999 && shieldFrac >= 0.999) return;
 
   const x = c.x * TILE_PX - BAR_W / 2;
@@ -226,11 +236,67 @@ function drawHealth(g: Graphics, c: Creep, r: number): void {
   }
 }
 
+/**
+ * How long a struck contact stays lit. Short enough that overlapping hits read
+ * as a rate rather than as a steady glow, long enough to survive a dropped
+ * frame — the same window the tint lerp used before the mechanism changed.
+ */
+const FLASH_SECONDS = 0.12;
+
+/**
+ * How bright a fresh hit is, as the additive sprite's alpha at t=0.
+ *
+ * Under 1 on purpose. Additive compositing already pushes a body toward its own
+ * clipped white, and at full alpha the two brightest contacts — the Mote's core
+ * and the Cluster's nuclei, which are the only baked values above their token —
+ * would blow out to a shapeless blob, losing the silhouette in the one moment
+ * the player is most likely to be looking at it.
+ */
+const FLASH_ALPHA = 0.7;
+
+/** One contact's flash: how much is left, and which way its body is facing. */
+interface Flash {
+  t: number;
+  rotation: number;
+}
+
 export class CreepChrome {
   private readonly gfx = new Graphics();
+  /**
+   * Its own container, added *before* the Graphics so every flash sits under
+   * the bars and clocks. A hit must never white out the health bar that says
+   * whether the hit mattered.
+   */
+  private readonly flashLayer = new Container();
+  private readonly flashes = new Map<EntityId, Flash>();
+  /** Grown on demand, never shrunk — a board's peak hit count is its steady state. */
+  private readonly pool: Sprite[] = [];
 
-  constructor(layers: Layers) {
+  constructor(
+    layers: Layers,
+    private readonly textures: Textures,
+  ) {
+    layers.effects.addChild(this.flashLayer);
     layers.effects.addChild(this.gfx);
+  }
+
+  /**
+   * The hit flash, which used to live in `worldView` as a tint lerped toward
+   * white.
+   *
+   * That mechanism died with the neutral bake: `tint` multiplies, so against a
+   * contact baked in its own final colours it can only ever darken. Brightening
+   * now needs a second draw in `blendMode: 'add'` — the contact's own texture,
+   * over itself, fading out.
+   */
+  onEvent(ev: SimEvent): void {
+    if (ev.type !== 'creepDamaged') return;
+    // Re-arm rather than accumulate: a contact under fire from four stations
+    // should read as *lit*, not as four times as bright as one under fire from
+    // one. Rate is already carried by the health bar draining.
+    const flash = this.flashes.get(ev.id);
+    if (flash === undefined) this.flashes.set(ev.id, { t: FLASH_SECONDS, rotation: 0 });
+    else flash.t = FLASH_SECONDS;
   }
 
   /**
@@ -243,13 +309,15 @@ export class CreepChrome {
    * couple of hundred times a frame, which is the one place in the renderer
    * where an indirection per entity would actually be felt.
    */
-  sync(w: World): void {
+  sync(w: World, dt: number): void {
     const g = this.gfx;
     g.clear();
 
     // A pass of its own, before the loop, because call order is stacking order:
     // the field has to sit *behind* the clocks rather than replace them.
     drawSlowFields(g, w);
+
+    this.syncFlashes(w, dt);
 
     for (const c of w.creeps) {
       if (c.dead) continue;
@@ -258,5 +326,72 @@ export class CreepChrome {
       drawSlowClock(g, c, r + RING_GAP);
       drawHealth(g, c, r);
     }
+  }
+
+  /**
+   * Age every flash, then draw the ones still burning.
+   *
+   * Driven off the live creep list rather than off the flash map, so a contact
+   * that died mid-flash simply stops being drawn — no separate cleanup, and no
+   * frame where a bright ghost hangs over empty road. Stale entries are swept
+   * by the timer regardless, which is what stops the map growing without bound
+   * across a long run.
+   *
+   * `dt` is wall-clock, so the fade lasts the same tenth of a second at 1x and
+   * at 4x. It is not a sim quantity and must not be scaled by one.
+   */
+  private syncFlashes(w: World, dt: number): void {
+    for (const [id, flash] of this.flashes) {
+      flash.t -= dt;
+      if (flash.t <= 0) this.flashes.delete(id);
+    }
+
+    let used = 0;
+    for (const c of w.creeps) {
+      if (c.dead) continue;
+      const flash = this.flashes.get(c.id);
+      if (flash === undefined) continue;
+
+      const def = ENEMIES[c.defId];
+      const sprite = this.take(used++);
+      sprite.texture = this.textures.contacts[c.defId];
+      sprite.scale.set(def.radius / CREEP_BAKE_RADIUS);
+      sprite.position.set(c.x * TILE_PX, c.y * TILE_PX);
+
+      // Share the body's heading, or the Mote's flash would be a bright comet
+      // pointing east over a comet pointing north. Held through the corner
+      // frame where there is no heading to read.
+      if (contactShape(c.defId).rotates) {
+        flash.rotation = routeHeading(w, c) ?? flash.rotation;
+        sprite.rotation = flash.rotation;
+      } else {
+        sprite.rotation = 0;
+      }
+
+      // Linear rather than eased: the fall-off is over a tenth of a second, so
+      // a curve would cost a pow per struck contact per frame to describe
+      // something nobody can see.
+      sprite.alpha = FLASH_ALPHA * (flash.t / FLASH_SECONDS);
+      sprite.visible = true;
+    }
+
+    // Suppression, the rule this whole layer is built on: a contact that is not
+    // being struck draws nothing.
+    for (let i = used; i < this.pool.length; i++) this.pool[i]!.visible = false;
+  }
+
+  /** Pooled, because at full board this is called ~50 times a second. */
+  private take(i: number): Sprite {
+    const existing = this.pool[i];
+    if (existing !== undefined) return existing;
+
+    const sprite = new Sprite();
+    sprite.anchor.set(0.5);
+    // The whole point of the layer. `add` against a coloured bake is the only
+    // way to get *brighter* than the token — which is what a hit has to be.
+    sprite.blendMode = 'add';
+    this.pool.push(sprite);
+    this.flashLayer.addChild(sprite);
+    return sprite;
   }
 }

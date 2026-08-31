@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/styles.css">
+<script src="_ds/nocturne-57818f21-b74e-4078-a828-da1edd610f31/_ds_bundle.js"></script>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  a { color: #b5abfc; text-decoration: none; border-bottom: 1px solid rgba(181,171,252,.35); }
+  a:hover { color: #d2cefd; border-bottom-color: rgba(210,206,253,.6); }
+  .dfx h2 { font: 500 26px/1.15 var(--font-heading); letter-spacing: -0.01em; color: #e9e9ed; margin: 42px 0 6px; }
+  .dfx h3 { font: 500 18px/1.3 var(--font-heading); color: #e9e9ed; margin: 0 0 4px; }
+  .dfx h4 { font: 600 11px/1.3 var(--font-body); letter-spacing: .14em; text-transform: uppercase; color: #9184d9; margin: 20px 0 8px; }
+  .dfx p { font: 400 14.5px/1.68 var(--font-body); color: #c3c5d3; margin: 0 0 13px; text-wrap: pretty; }
+  .dfx li { font: 400 14px/1.6 var(--font-body); color: #c3c5d3; margin: 0 0 6px; text-wrap: pretty; }
+  .dfx ul, .dfx ol { margin: 0 0 14px; padding-left: 20px; }
+  .dfx b, .dfx strong { color: #e9e9ed; font-weight: 600; }
+  .dfx em { color: #d2cefd; font-style: italic; }
+  .dfx code { font: 400 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #a5eefb; background: rgba(165,238,251,.07); padding: 1px 4px; border-radius: 3px; }
+  .dfx table { width: 100%; border-collapse: collapse; margin: 4px 0 16px; }
+  .dfx th { font: 600 10px/1.3 var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: #9397ab; text-align: left; padding: 0 9px 6px 0; border-bottom: 1px solid #2a2d40; }
+  .dfx td { font: 400 12.5px/1.5 var(--font-body); color: #c3c5d3; padding: 7px 9px 7px 0; border-bottom: 1px solid rgba(42,45,64,.6); vertical-align: top; }
+  .dfx td b { color: #e9e9ed; }
+  .dfx .mono td, .dfx .mono th { font-family: ui-monospace, Menlo, monospace; }
+  .dfx .cap { font: 400 11px/1.5 var(--font-body); color: #75798c; margin-top: 8px; }
+  .dfx .lbl { font: 600 9.5px/1 var(--font-body); letter-spacing: .15em; text-transform: uppercase; margin-bottom: 9px; }
+  .dfx .card { break-inside: avoid; display: grid; grid-template-columns: 128px 1fr; gap: 0; background: #171a27; border: 1px solid #2a2d40; margin: 0 0 12px; }
+  .dfx .art { background: #07080f; border-right: 1px solid #2a2d40; display: grid; justify-items: center; align-content: start; gap: 10px; padding: 16px 8px; }
+  .dfx .body { padding: 13px 15px 14px; }
+  .dfx .cls { display: inline-flex; align-items: center; gap: 6px; font: 600 8.5px/1 var(--font-body); letter-spacing: .13em; text-transform: uppercase; padding: 4px 8px; border-radius: 20px; background: #1c1f2d; border: 1px solid #2a2d40; }
+  .dfx .g { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: #2a2d40; margin-top: 11px; }
+  .dfx .g > div { background: #141724; padding: 9px 11px 10px; }
+  .dfx .g h5 { font: 600 8.5px/1 var(--font-body); letter-spacing: .13em; text-transform: uppercase; color: #9184d9; margin: 0 0 6px; }
+  .dfx .g p { font: 400 11.5px/1.5 var(--font-body); color: #b6b8c6; margin: 0; orphans: 3; widows: 3; }
+  .dfx .grey { filter: grayscale(1); }
+  .dfx .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+</style>
+</helmet>
+
+<doc-page margin="0">
+<div class="dfx" style="background: #12141f; padding: 0.8in 0.85in 0.9in; box-sizing: border-box; font-family: var(--font-body); color: #c3c5d3">
+
+<div style="display: flex; align-items: baseline; gap: 12px; font: 600 10.5px/1 var(--font-body); letter-spacing: .16em; text-transform: uppercase; color: #9184d9; margin-bottom: 22px">
+  <span>Deep Field</span>
+  <span style="flex: 1; height: 1px; background: linear-gradient(to right, rgba(145,132,217,.55), rgba(145,132,217,0))"></span>
+  <span style="color: #75798c; letter-spacing: .1em">Contact spec · final · 31 Aug 2026</span>
+</div>
+
+<h1 style="font: 500 42px/1.08 var(--font-heading); letter-spacing: -0.025em; color: #e9e9ed; margin: 0 0 14px">The six contacts, specified</h1>
+
+<p style="font: 400 16.5px/1.6 var(--font-body); color: #d2cefd; margin: 0 0 22px; max-width: 46em">No options in this document. Every shape, every value and every state is decided, in units that can be typed straight into <code>contactShape.ts</code> and <code>theme.ts</code>.</p>
+
+<h4>What was chosen, and where it came from</h4>
+<table>
+  <thead><tr><th style="width:19%">Contact</th><th style="width:26%">Form</th><th>Decision</th></tr></thead>
+  <tbody>
+    <tr><td><b>Drifter</b></td><td>Disc, mantle + nucleus</td><td>Option B. Baseline class, pink, unchanged hue.</td></tr>
+    <tr><td><b>Mote</b></td><td>Comet, rotated to travel</td><td><b>M1 · Lineage.</b> New <em>swarm</em> class in coral — the light end of the Cluster's red, so a split reads as lineage.</td></tr>
+    <tr><td><b>Monolith</b></td><td>Solid disc + strata</td><td>Option B. Mass class, deep wine.</td></tr>
+    <tr><td><b>Warden</b></td><td>Disc + inner rim + band</td><td>Option B. Protected class, washed.</td></tr>
+    <tr><td><b>Cluster</b></td><td>Trefoil, three nuclei</td><td>Option A silhouette. Punishes-you class, red. Lobe count is <code>splitInto.count</code>.</td></tr>
+    <tr><td><b>Bulwark</b></td><td>Hexagon, six wedge plates</td><td><b>B2 · Segmented.</b> Protected class. Faceting survives scale where a 1px highlight does not.</td></tr>
+  </tbody>
+</table>
+
+<h2 style="margin-top:34px">1 · The one rendering rule</h2>
+
+<p>Contacts were baked neutral and GPU-tinted per type, because one texture for the whole roster was worth a lot. <b>That is no longer what is happening:</b> six distinct silhouettes already mean six bakes, so the tint is buying nothing — and in the first draft of this spec it was paid for by dropping the Mote's and the Cluster's highlights, which is the wrong trade. So:</p>
+
+<div style="padding:14px 16px; background:#171a27; border-left:2px solid #9184d9; margin:0 0 14px">
+  <p style="margin:0"><b>Each contact bakes in its own final colours, and every internal value is derived from its token by a lightness multiplier.</b> No tint, no alpha tricks: a highlight is a multiplier above 1, a darker step one below. A reskin is still one line in <code>theme.enemies</code>, because the whole ramp is computed from that single value at bake time.</p>
+</div>
+
+<p>Three consequences:</p>
+<ul>
+  <li><b>The token stays the class hue.</b> The Bulwark keeps <code>#c9a6ae</code>; its lit apex <code>#e3c3c9</code> is that value at ×1.13 and its deepest wedge <code>#5f4148</code> at ×0.47. Nothing in the palette table moves to accommodate the renderer.</li>
+  <li><b>The approved highlights are kept.</b> The Mote's near-white core <code>#fff1ec</code> and the Cluster's <code>#ffc9c2</code> nuclei are ×1.35 and ×1.22 of their tokens. They are the pop that makes M1 and the trefoil read at 12px.</li><li><b>Mocks and bakes now use the same numbers.</b> Every value is a resolved colour rather than an alpha over an unknown ground, so a specimen here and the texture the game bakes cannot disagree — a class of error the alpha rule quietly allowed.</li><li><b>The hit flash changes mechanism, and it has to.</b> <code>tint</code> multiplies, so lerping toward <code>fx.hitFlash</code> (<code>0xffffff</code>) brightens a <em>neutral</em> bake and is a no-op against a coloured one. The flash becomes an <b>additive re-draw of the contact's own texture</b> at lerped alpha — no new texture, one extra sprite only while a contact is actually flashing, and additive can exceed the source, which is what keeps it the top of the contrast hierarchy. <code>fx.hitFlash</code> stays as the additive colour.</li>
+</ul>
+
+<h4>The palette</h4>
+<table class="mono">
+  <thead><tr><th style="width:19%">Contact</th><th style="width:19%">Tint</th><th style="width:24%">Was</th><th>Class</th></tr></thead>
+  <tbody>
+    <tr><td>drifter</td><td><span class="sw" style="background:#f472b6"></span>#f472b6</td><td style="color:#75798c">#f472b6 · unchanged</td><td style="font-family:var(--font-body)">Baseline</td></tr>
+    <tr><td>mote</td><td><span class="sw" style="background:#ffb0a3"></span>#ffb0a3</td><td style="color:#75798c">#fbcfe8</td><td style="font-family:var(--font-body)">Swarm</td></tr>
+    <tr><td>monolith</td><td><span class="sw" style="background:#9e2f58"></span>#9e2f58</td><td style="color:#75798c">#c2557f</td><td style="font-family:var(--font-body)">Mass</td></tr>
+    <tr><td>warden</td><td><span class="sw" style="background:#d59ac0"></span>#d59ac0</td><td style="color:#75798c">#e879c9</td><td style="font-family:var(--font-body)">Protected</td></tr>
+    <tr><td>cluster</td><td><span class="sw" style="background:#f4483f"></span>#f4483f</td><td style="color:#75798c">#fb7185</td><td style="font-family:var(--font-body)">Punishes you</td></tr>
+    <tr><td>bulwark</td><td><span class="sw" style="background:#c9a6ae"></span>#c9a6ae</td><td style="color:#75798c">#d8a0b4</td><td style="font-family:var(--font-body)">Protected</td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:13px; color:#9397ab"><code>fx.shield</code> <code>#9fbcff</code>, <code>fx.slowRing</code> <code>#a5eefb</code>, <code>fx.hpFull</code>, <code>fx.hpLow</code>, <code>fx.hitFlash</code> and <code>fx.textOutline</code> are all unchanged. <b>No contact glyph contains a cool value</b> — the shield band is drawn by the chrome layer, not baked into the sprite.</p>
+
+<h4>Geometry conventions</h4>
+<p>All radii below are fractions of <b><code>R</code></b>, the contact's own body radius (<code>def.radius × TILE_PX</code>) — the same quantity <code>worldView</code> scales the sprite by, so every shape holds across the roster's 2.7× size range. Angles are degrees clockwise from three o'clock, as <code>COLLAR_SECTORS</code> uses. All six bake into the <b>same square frame</b> fixed by the existing halo circle at <code>glowRatio</code> 1.75, so nothing about <code>worldView</code>'s scaling changes.</p>
+
+<h2 style="break-before: page">2 · The six</h2>
+
+<div class="card">
+  <div class="art">
+    <svg width="60" height="60" viewBox="0 0 60 60"><circle cx="30" cy="30" r="20" fill="#f472b6" fill-opacity=".42"/><circle cx="30" cy="30" r="10" fill="#f472b6"/></svg>
+    <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="13" cy="13" r="5.5" fill="#f472b6"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Drifter</h3><span class="cls" style="color:#f472b6"><i class="sw" style="background:#f472b6; margin:0"></i>Baseline</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 20 · speed 1.8 · radius 0.30 · bounty 6</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">mantle</td><td>disc 1.00R</td><td>token at α .42</td></tr>
+      <tr><td>nucleus</td><td>disc 0.50R</td><td>token, ×1.0</td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p>None, and that is the point — the Drifter is the shape every other contact is a deviation from. It gets the plainest form available so the others have something to be read against.</p></div>
+      <div><h5>States</h5><p>Damaged · slowed · slow field · hit flash · dying. No shield, no armour, no split.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="76" height="46" viewBox="0 0 76 46"><path d="M40 20 Q56 23 40 26 Q11 23 40 20 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="30" cy="23" r="2.2" fill="#ffb0a3" fill-opacity=".35"/><circle cx="35.5" cy="23" r="3.2" fill="#ffb0a3" fill-opacity=".55"/><circle cx="45" cy="23" r="7.3" fill="#ffb0a3" fill-opacity=".35"/><circle cx="45" cy="23" r="4.2" fill="#fff1ec"/></svg>
+    <svg width="40" height="24" viewBox="0 0 40 24"><path d="M21 10.5 Q29 12 21 13.5 Q6 12 21 10.5 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="16" cy="12" r="1.2" fill="#ffb0a3" fill-opacity=".35"/><circle cx="18.5" cy="12" r="1.7" fill="#ffb0a3" fill-opacity=".55"/><circle cx="23.5" cy="12" r="3.8" fill="#ffb0a3" fill-opacity=".35"/><circle cx="23.5" cy="12" r="2.2" fill="#fff1ec"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Mote</h3><span class="cls" style="color:#ffb0a3"><i class="sw" style="background:#ffb0a3; margin:0"></i>Swarm</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 7 · speed 2.9 · radius 0.17 · bounty 2 · up to 54 per wave</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">nucleus</td><td>disc 0.30R at +0.35R</td><td>×1.35 → #fff1ec</td></tr>
+      <tr><td>halo</td><td>disc 0.52R at +0.35R</td><td>token at α .35</td></tr>
+      <tr><td>tail</td><td>lens +0.35R → −1.45R, half-height 0.30R</td><td>token at α .22</td></tr>
+      <tr><td>ghost pip 1</td><td>disc 0.23R at −0.30R</td><td>token at α .55</td></tr>
+      <tr><td>ghost pip 2</td><td>disc 0.16R at −0.72R</td><td>token at α .35</td></tr>
+      <tr><td>rotation</td><td>sprite rotates to the route tangent</td><td>—</td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p>The comet is the top of the speed range (2.9 against the roster's 0.85 floor). Coral is the light end of the Cluster's ramp, because Clusters are what produce Motes — the only causal relationship between two contact types the game shows.</p></div>
+      <div><h5>States</h5><p>Damaged · slowed · slow field · hit flash · dying. <b>The only rotated contact</b>: a comet that does not point along travel is meaningless. Tail length is capped at 1.45R so it fits the existing bake frame.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="60" height="60" viewBox="0 0 60 60"><circle cx="30" cy="30" r="24" fill="#9e2f58"/><circle cx="30" cy="30" r="16.3" fill="none" stroke="#631a37" stroke-width="3.4"/><circle cx="30" cy="30" r="8.2" fill="#631a37"/></svg>
+    <svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="13.5" fill="#9e2f58"/><circle cx="15" cy="15" r="9.2" fill="none" stroke="#631a37" stroke-width="1.9"/><circle cx="15" cy="15" r="4.6" fill="#631a37"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Monolith</h3><span class="cls" style="color:#c2557f"><i class="sw" style="background:#9e2f58; margin:0"></i>Mass</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 150 · speed 0.85 · radius 0.46 · bounty 34</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">body</td><td>disc 1.00R</td><td>token, ×1.0</td></tr>
+      <tr><td>strata</td><td>ring at 0.68R, width 0.14R</td><td>×0.62 → #631a37</td></tr>
+      <tr><td>core</td><td>disc 0.34R</td><td>×0.62 → #631a37</td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p>The only contact with a fully opaque body, because it is the only one that is nothing but hull. Strata and core sit <em>darker</em> than the shell so it reads as dense rather than as hollow — the inverse of the Drifter's translucent mantle.</p></div>
+      <div><h5>States</h5><p>Damaged · slowed · slow field · hit flash · dying. Slowest in the roster, so it is the contact most often <em>in</em> a slow field.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="60" height="66" viewBox="0 0 60 66"><rect x="10" y="4" width="40" height="4.4" rx="2.2" fill="#9fbcff"/><circle cx="30" cy="36" r="20" fill="#d59ac0" fill-opacity=".38"/><circle cx="30" cy="36" r="15" fill="none" stroke="#d59ac0" stroke-width="2.6"/><circle cx="30" cy="36" r="8.6" fill="#d59ac0"/></svg>
+    <svg width="30" height="34" viewBox="0 0 30 34"><rect x="4" y="2" width="22" height="2.6" rx="1.3" fill="#9fbcff"/><circle cx="15" cy="20" r="11.5" fill="#d59ac0" fill-opacity=".38"/><circle cx="15" cy="20" r="8.6" fill="none" stroke="#d59ac0" stroke-width="1.5"/><circle cx="15" cy="20" r="4.9" fill="#d59ac0"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Warden</h3><span class="cls" style="color:#d59ac0"><i class="sw" style="background:#d59ac0; margin:0"></i>Protected</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 26 · shield 30 · regen 14/s after 2.2s · speed 1.5 · radius 0.33</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">mantle</td><td>disc 1.00R</td><td>token at α .38</td></tr>
+      <tr><td>inner rim</td><td>ring at 0.75R, width 0.13R</td><td>token, ×1.0</td></tr>
+      <tr><td>nucleus</td><td>disc 0.43R</td><td>token, ×1.0</td></tr>
+      <tr><td style="color:#9fbcff">shield band</td><td colspan="2" style="color:#75798c">chrome layer, above the hull bar — <b style="color:#c3c5d3">not baked</b></td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p>The inner rim is the overshield's <em>shape</em>, read as a layer inside the hull — but drawn in the contact's own tint, so it never competes with the blue band that reports the shield's actual level.</p></div>
+      <div><h5>States</h5><p><b>The only contact that can hold every state at once:</b> damaged, shielded, shield broken, regenerating, slowed, in a slow field, flashing. Its hull bar is always drawn once the shield is below full — that is deliberate and stays.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="60" height="60" viewBox="0 0 60 60"><circle cx="30" cy="19.4" r="13.4" fill="#f4483f" fill-opacity=".55"/><circle cx="20.8" cy="35.3" r="13.4" fill="#f4483f" fill-opacity=".55"/><circle cx="39.2" cy="35.3" r="13.4" fill="#f4483f" fill-opacity=".55"/><circle cx="30" cy="19.4" r="5.5" fill="#ffc9c2"/><circle cx="20.8" cy="35.3" r="5.5" fill="#ffc9c2"/><circle cx="39.2" cy="35.3" r="5.5" fill="#ffc9c2"/></svg>
+    <svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="9.4" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="9.8" cy="18.4" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="20.2" cy="18.4" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="15" cy="9.4" r="3.1" fill="#ffc9c2"/><circle cx="9.8" cy="18.4" r="3.1" fill="#ffc9c2"/><circle cx="20.2" cy="18.4" r="3.1" fill="#ffc9c2"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Cluster</h3><span class="cls" style="color:#f4483f"><i class="sw" style="background:#f4483f; margin:0"></i>Punishes you</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 44 · speed 1.3 · radius 0.40 · bounty 12 · dies into 3 Motes</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">lobes ×3</td><td>disc 0.56R at 0.44R, angles −90 / 30 / 150</td><td>token at α .55</td></tr>
+      <tr><td>nuclei ×3</td><td>disc 0.23R at each lobe centre</td><td>×1.22 → #ffc9c2</td></tr>
+      <tr><td>rotation</td><td>none — fixed, apex up</td><td>—</td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p><b>Lobe count is <code>splitInto.count</code>.</b> A Cluster that split into four would draw four lobes with no other edit. The nuclei make the children countable, which is the whole reason this contact needs a silhouette instead of an interior — it must be identifiable <em>before</em> the killing shot, not after.</p></div>
+      <div><h5>States</h5><p>Damaged · slowed · slow field · hit flash · dying · <b>split death signature</b> (§3.9). Not rotated: it is a cluster, not a vehicle, and a tumbling trefoil reads as debris.</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="art">
+    <svg width="60" height="60" viewBox="0 0 60 60"><path d="M30 6 L50.8 18 L50.8 42 L30 54 L9.2 42 L9.2 18 Z" fill="#5f4148"/><path d="M30 6 L50.8 18 L30 30 Z" fill="#e3c3c9"/><path d="M50.8 18 L50.8 42 L30 30 Z" fill="#c9a6ae"/><path d="M50.8 42 L30 54 L30 30 Z" fill="#9d7d85"/><path d="M30 54 L9.2 42 L30 30 Z" fill="#7a5c63"/><path d="M9.2 42 L9.2 18 L30 30 Z" fill="#9d7d85"/><path d="M9.2 18 L30 6 L30 30 Z" fill="#c9a6ae"/><path d="M30 6 L50.8 18 L50.8 42 L30 54 L9.2 42 L9.2 18 Z" fill="none" stroke="#07080f" stroke-opacity=".55" stroke-width="2.6"/><circle cx="30" cy="30" r="4.8" fill="#3a262b"/></svg>
+    <svg width="30" height="30" viewBox="0 0 30 30"><path d="M15 2 L26.3 8.5 L26.3 21.5 L15 28 L3.7 21.5 L3.7 8.5 Z" fill="#5f4148"/><path d="M15 2 L26.3 8.5 L15 15 Z" fill="#e3c3c9"/><path d="M26.3 8.5 L26.3 21.5 L15 15 Z" fill="#c9a6ae"/><path d="M26.3 21.5 L15 28 L15 15 Z" fill="#9d7d85"/><path d="M15 28 L3.7 21.5 L15 15 Z" fill="#7a5c63"/><path d="M3.7 21.5 L3.7 8.5 L15 15 Z" fill="#9d7d85"/><path d="M3.7 8.5 L15 2 L15 15 Z" fill="#c9a6ae"/><path d="M15 2 L26.3 8.5 L26.3 21.5 L15 28 L3.7 21.5 L3.7 8.5 Z" fill="none" stroke="#07080f" stroke-opacity=".55" stroke-width="1.4"/><circle cx="15" cy="15" r="2.4" fill="#3a262b"/></svg>
+  </div>
+  <div class="body">
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:3px">
+      <h3>Bulwark</h3><span class="cls" style="color:#c9a6ae"><i class="sw" style="background:#c9a6ae; margin:0"></i>Protected</span>
+    </div>
+    <p style="margin:0 0 2px; font-size:13px; color:#9397ab">hp 26 · armour 5 flat per hit · speed 1.4 · radius 0.38 · bounty 18</p>
+    <table class="mono" style="margin:9px 0 0"><tbody>
+      <tr><td style="width:34%">hull</td><td>pointy-top hexagon, circumradius 1.00R</td><td>×0.47 → #5f4148</td></tr>
+      <tr><td>wedges ×6</td><td>centre → each edge, clockwise from apex</td><td>×1.13 #e3c3c9 · ×1.0 #c9a6ae · ×0.78 #9d7d85 · ×0.58 #7a5c63 · ×0.78 · ×1.0</td></tr>
+      <tr><td>seam</td><td>outer edge stroke, board bg, width 0.055R × (armour ÷ 5), clamp 0.03–0.10R</td><td>board bg at α .55</td></tr>
+      <tr><td>core</td><td>disc 0.20R</td><td>×0.28 → #3a262b</td></tr>
+      <tr><td>rotation</td><td>none — fixed, apex up</td><td>—</td></tr>
+    </tbody></table>
+    <div class="g">
+      <div><h5>Derivation</h5><p>The hexagon still means <em>plated</em> — it remains the only non-round contact. The six wedges give it a machined read no other contact has, and the <b>seam width is derived from <code>armor</code></b>: a contact with armour 2 gets a visibly thinner plate line. The lit apex fixes a single light source at the top.</p></div>
+      <div><h5>States</h5><p>Damaged · slowed · slow field · hit flash · dying. No shield. Armour is <em>permanent</em>, so it is carried by the silhouette and never by transient chrome.</p></div>
+    </div>
+  </div>
+</div>
+
+<h2 style="break-before: page">3 · States</h2>
+
+<p>Every state below is drawn by <code>creepChrome.ts</code> or <code>worldView.ts</code>, not baked. The governing rule stands and is not relaxed by anything here: <b>draw nothing for a contact that has nothing to report.</b> Offsets are measured out from <code>R</code>, as the current code already does.</p>
+
+<div style="background:#07080f; border:1px solid #2a2d40; padding:16px 14px 12px; margin-bottom:4px">
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px">
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><circle cx="45" cy="42" r="15" fill="#f472b6" fill-opacity=".42"/><circle cx="45" cy="42" r="7.5" fill="#f472b6"/></svg>
+      <div class="lbl" style="color:#9397ab; margin:6px 0 0">Untouched</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Sprite only. No bar, no ring, no halo.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><rect x="29" y="21" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="21" width="19" height="4" fill="#f472b6"/><circle cx="45" cy="42" r="15" fill="#f472b6" fill-opacity=".42"/><circle cx="45" cy="42" r="7.5" fill="#f472b6"/></svg>
+      <div class="lbl" style="color:#9397ab; margin:6px 0 0">Damaged</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Hull bar appears at R+6. Fixed 32px track — a fraction is only readable against a common width.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><rect x="29" y="21" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="21" width="7" height="4" fill="#e06d6d"/><circle cx="45" cy="42" r="15" fill="#f472b6" fill-opacity=".42"/><circle cx="45" cy="42" r="7.5" fill="#f472b6"/></svg>
+      <div class="lbl" style="color:#9397ab; margin:6px 0 0">Critical</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Below 30% the fill goes <code style="font-size:9px">fx.hpLow</code>. Unchanged.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><circle cx="45" cy="42" r="15" fill="#f472b6" fill-opacity=".42"/><circle cx="45" cy="42" r="7.5" fill="#f472b6"/><circle cx="45" cy="42" r="17.5" fill="none" stroke="#a5eefb" stroke-opacity=".16" stroke-width="3.5"/><path d="M45 24.5 A17.5 17.5 0 0 1 60.2 50.7" fill="none" stroke="#a5eefb" stroke-opacity=".85" stroke-width="3.5" stroke-linecap="round"/></svg>
+      <div class="lbl" style="color:#a5eefb; margin:6px 0 0">Slowed</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Clock at R+3. Width 1.5 + bite×5; arc burns down clockwise from twelve.</div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px">
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><rect x="29" y="14" width="32" height="2.5" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="14" width="32" height="2.5" fill="#9fbcff"/><rect x="29" y="20" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="20" width="24" height="4" fill="#d59ac0"/><circle cx="45" cy="42" r="15" fill="#d59ac0" fill-opacity=".38"/><circle cx="45" cy="42" r="11.3" fill="none" stroke="#d59ac0" stroke-width="2"/><circle cx="45" cy="42" r="6.5" fill="#d59ac0"/></svg>
+      <div class="lbl" style="color:#9fbcff; margin:6px 0 0">Shielded</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Band above the hull bar, never a ring. Bar is drawn even at full hull.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><rect x="29" y="14" width="32" height="2.5" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="20" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="20" width="21" height="4" fill="#d59ac0"/><circle cx="45" cy="42" r="15" fill="#d59ac0" fill-opacity=".38"/><circle cx="45" cy="42" r="11.3" fill="none" stroke="#d59ac0" stroke-width="2"/><circle cx="45" cy="42" r="6.5" fill="#d59ac0"/></svg>
+      <div class="lbl" style="color:#9397ab; margin:6px 0 0">Shield broken</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Band empties; <code style="font-size:9px">shieldBroke</code> fires once at the point of the hit.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><rect x="29" y="14" width="32" height="2.5" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="14" width="11" height="2.5" fill="#9fbcff"/><rect x="29" y="20" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="29" y="20" width="21" height="4" fill="#d59ac0"/><circle cx="45" cy="42" r="18" fill="#9fbcff" fill-opacity=".14"/><circle cx="45" cy="42" r="15" fill="#d59ac0" fill-opacity=".38"/><circle cx="45" cy="42" r="11.3" fill="none" stroke="#d59ac0" stroke-width="2"/><circle cx="45" cy="42" r="6.5" fill="#d59ac0"/></svg>
+      <div class="lbl" style="color:#9fbcff; margin:6px 0 0">Regenerating</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">Filled halo at R+3 while the band refills. A <em>fill</em>, where the slow is a <em>stroke</em>.</div>
+    </div>
+    <div style="text-align:center">
+      <svg width="100%" height="74" viewBox="0 0 90 74" style="display:block"><circle cx="45" cy="42" r="15" fill="#ffffff" fill-opacity=".9"/><circle cx="45" cy="42" r="7.5" fill="#ffffff"/><text x="45" y="20" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#cfe4ff">−18</text></svg>
+      <div class="lbl" style="color:#e9e9ed; margin:6px 0 0">Hit flash</div>
+      <div style="font:400 9.5px/1.4 var(--font-body); color:#5d6070; margin-top:4px">The contact's own texture, drawn over itself in <b style="color:#c3c5d3">additive</b> blend at lerped alpha. Remains the brightest event on the board.</div>
+    </div>
+  </div>
+</div>
+<div class="cap">The Drifter carries states 1–4 and the Warden 5–7, because those are the contacts that can hold them. The flash applies to all six.</div>
+
+<h3 style="margin-top:30px">Slow field — three or more held together</h3>
+<div style="position:relative; height:80px; background:#0a0c16; border:1px solid #2a2d40; overflow:hidden; margin-top:10px">
+  <div style="position:absolute; left:0; top:31px; width:100%; height:18px; background:linear-gradient(to right, rgba(145,132,217,.12), rgba(210,206,253,.28))"></div>
+  <svg width="100%" height="80" viewBox="0 0 651 80" style="position:relative; display:block"><g fill="#a5eefb" fill-opacity=".07"><circle cx="150" cy="40" r="27"/><circle cx="186" cy="40" r="27"/><circle cx="222" cy="40" r="30"/><circle cx="258" cy="40" r="27"/><circle cx="294" cy="40" r="28"/><circle cx="330" cy="40" r="27"/><circle cx="366" cy="40" r="27"/><circle cx="402" cy="40" r="30"/><circle cx="438" cy="40" r="27"/><circle cx="474" cy="40" r="28"/><circle cx="510" cy="40" r="27"/><circle cx="546" cy="40" r="27"/></g><g><circle cx="150" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="150" cy="40" r="5.6" fill="#f472b6"/><circle cx="186" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="186" cy="40" r="5.6" fill="#f472b6"/><circle cx="222" cy="40" r="13.5" fill="#9e2f58"/><circle cx="222" cy="40" r="9.2" fill="none" stroke="#631a37" stroke-width="1.9"/><circle cx="222" cy="40" r="4.6" fill="#631a37"/><circle cx="258" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="258" cy="40" r="5.6" fill="#f472b6"/><circle cx="294" cy="35.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="288.8" cy="44.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="299.2" cy="44.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="294" cy="35.2" r="3.1" fill="#ffc9c2"/><circle cx="288.8" cy="44.2" r="3.1" fill="#ffc9c2"/><circle cx="299.2" cy="44.2" r="3.1" fill="#ffc9c2"/><circle cx="330" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="330" cy="40" r="5.6" fill="#f472b6"/><circle cx="366" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="366" cy="40" r="5.6" fill="#f472b6"/><circle cx="402" cy="40" r="13.5" fill="#9e2f58"/><circle cx="402" cy="40" r="9.2" fill="none" stroke="#631a37" stroke-width="1.9"/><circle cx="402" cy="40" r="4.6" fill="#631a37"/><circle cx="438" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="438" cy="40" r="5.6" fill="#f472b6"/><circle cx="474" cy="35.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="468.8" cy="44.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="479.2" cy="44.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="474" cy="35.2" r="3.1" fill="#ffc9c2"/><circle cx="468.8" cy="44.2" r="3.1" fill="#ffc9c2"/><circle cx="479.2" cy="44.2" r="3.1" fill="#ffc9c2"/><circle cx="510" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="510" cy="40" r="5.6" fill="#f472b6"/><circle cx="546" cy="40" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="546" cy="40" r="5.6" fill="#f472b6"/></g><g fill="none" stroke="#a5eefb" stroke-width="4" stroke-linecap="round"><circle cx="150" cy="40" r="14" stroke-opacity=".16"/><path d="M150.0 26.0 A14 14 0 0 1 161.8 47.5" stroke-opacity=".85"/><circle cx="186" cy="40" r="14" stroke-opacity=".16"/><path d="M186.0 26.0 A14 14 0 1 1 173.3 34.0" stroke-opacity=".85"/><circle cx="222" cy="40" r="16.5" stroke-opacity=".16"/><path d="M222.0 23.5 A16.5 16.5 0 1 1 216.9 55.7" stroke-opacity=".85"/><circle cx="258" cy="40" r="14" stroke-opacity=".16"/><path d="M258.0 26.0 A14 14 0 0 1 270.7 34.0" stroke-opacity=".85"/><circle cx="294" cy="40" r="15.5" stroke-opacity=".16"/><path d="M294.0 24.5 A15.5 15.5 0 1 1 279.0 43.9" stroke-opacity=".85"/><circle cx="330" cy="40" r="14" stroke-opacity=".16"/><path d="M330.0 26.0 A14 14 0 0 1 335.2 53.0" stroke-opacity=".85"/><circle cx="366" cy="40" r="14" stroke-opacity=".16"/><path d="M366.0 26.0 A14 14 0 1 1 357.8 28.7" stroke-opacity=".85"/><circle cx="402" cy="40" r="16.5" stroke-opacity=".16"/><path d="M402.0 23.5 A16.5 16.5 0 0 1 418.4 42.1" stroke-opacity=".85"/><circle cx="438" cy="40" r="14" stroke-opacity=".16"/><path d="M438.0 26.0 A14 14 0 1 1 428.4 50.2" stroke-opacity=".85"/><circle cx="474" cy="40" r="15.5" stroke-opacity=".16"/><path d="M474.0 24.5 A15.5 15.5 0 0 1 475.9 55.4" stroke-opacity=".85"/><circle cx="510" cy="40" r="14" stroke-opacity=".16"/><path d="M510.0 26.0 A14 14 0 1 1 496.0 39.1" stroke-opacity=".85"/><circle cx="546" cy="40" r="14" stroke-opacity=".16"/><path d="M546.0 26.0 A14 14 0 0 1 559.6 36.5" stroke-opacity=".85"/></g></svg>
+</div>
+<div class="cap">Twelve held contacts in a file: one soft field <em>behind</em> the group at 0.07 alpha, and every contact keeps its own clock on top. The field says "this mass is held"; the clocks say which one is about to speed up. Threshold is 3, reach 1.15 tiles, pad 0.62 tiles — as shipped.</div>
+
+<h3 style="margin-top:26px">Split death — Cluster only</h3>
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px; background:#07080f; border:1px solid #2a2d40; padding:14px 12px 12px">
+  <div style="text-align:center">
+    <svg width="100%" height="64" viewBox="0 0 120 64" style="display:block"><circle cx="60" cy="27" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="54.8" cy="36" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="65.2" cy="36" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="60" cy="27" r="3.1" fill="#ffc9c2"/><circle cx="54.8" cy="36" r="3.1" fill="#ffc9c2"/><circle cx="65.2" cy="36" r="3.1" fill="#ffc9c2"/><rect x="44" y="10" width="32" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="44" y="10" width="4" height="4" fill="#e06d6d"/></svg>
+    <div class="lbl" style="color:#9397ab; margin-top:4px">0 ms · about to die</div>
+  </div>
+  <div style="text-align:center">
+    <svg width="100%" height="64" viewBox="0 0 120 64" style="display:block"><circle cx="60" cy="32" r="15" fill="#f4483f" fill-opacity=".2"/><circle cx="60" cy="20" r="4.4" fill="#ffb0a3"/><circle cx="47.6" cy="38" r="4.4" fill="#ffb0a3"/><circle cx="72.4" cy="38" r="4.4" fill="#ffb0a3"/><text x="60" y="9" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#cfe4ff">+12</text></svg>
+    <div class="lbl" style="color:#ffb0a3; margin-top:4px">~120 ms · three pips out</div>
+  </div>
+  <div style="text-align:center">
+    <svg width="100%" height="64" viewBox="0 0 120 64" style="display:block"><path d="M50 30 L34 32 L34 34 L50 36 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="54" cy="33" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="54" cy="33" r="2.5" fill="#fff1ec"/><path d="M74 22 L58 24 L58 26 L74 28 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="78" cy="25" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="78" cy="25" r="2.5" fill="#fff1ec"/><path d="M70 40 L54 42 L54 44 L70 46 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="74" cy="43" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="74" cy="43" r="2.5" fill="#fff1ec"/></svg>
+    <div class="lbl" style="color:#9397ab; margin-top:4px">~250 ms · three Motes walking</div>
+  </div>
+</div>
+<div class="cap">Three pips in the <em>child's</em> tint, fired outward from the kill point over ~250ms, keyed on <code>splitInto</code> in the <code>creepKilled</code> handler. This is the payoff for the coral lineage: the parent is red, the pips are coral, and the Motes that appear are the same coral — so the causal chain is visible in one continuous read.</div>
+
+<h3 style="margin-top:26px">State matrix</h3>
+<table>
+  <thead><tr><th style="width:20%"></th><th>Drifter</th><th>Mote</th><th>Monolith</th><th>Warden</th><th>Cluster</th><th>Bulwark</th></tr></thead>
+  <tbody>
+    <tr><td><b>Hull bar</b></td><td>when hurt</td><td>when hurt</td><td>when hurt</td><td><b style="color:#9fbcff">always*</b></td><td>when hurt</td><td>when hurt</td></tr>
+    <tr><td><b>Shield band</b></td><td>—</td><td>—</td><td>—</td><td><b style="color:#9fbcff">yes</b></td><td>—</td><td>—</td></tr>
+    <tr><td><b>Regen halo</b></td><td>—</td><td>—</td><td>—</td><td><b style="color:#9fbcff">yes</b></td><td>—</td><td>—</td></tr>
+    <tr><td><b>Slow clock</b></td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+    <tr><td><b>Slow field</b></td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+    <tr><td><b>Hit flash</b></td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+    <tr><td><b>Split pips</b></td><td>—</td><td>—</td><td>—</td><td>—</td><td><b style="color:#ffb0a3">yes</b></td><td>—</td></tr>
+    <tr><td><b>Rotated</b></td><td>—</td><td><b style="color:#ffb0a3">yes</b></td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+<p style="font-size:12.5px; color:#9397ab; margin-top:-6px">* whenever the shield is below full, which is the existing rule and stays: a shield refilling is exactly what the player needs to see.</p>
+
+<h2 style="break-before: page">4 · What changes in code</h2>
+
+<table>
+  <thead><tr><th style="width:26%">File</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><b><code>contactShape.ts</code></b><br><span style="font-size:11.5px; color:#75798c">new</span></td><td>Pure geometry in units of <code>R</code>, no colour, no Pixi, no DOM — the <code>stationShape.ts</code> precedent. Discs, lenses, polygons and wedges, each carrying a lightness multiplier (and an alpha where the shape is meant to be translucent). Both renderers read it; neither imports the other.</td></tr>
+    <tr><td><b><code>textures.ts</code></b></td><td><code>drawCreep</code> becomes one bake per contact type, from <code>contactShape</code>, <b>in final colour</b> — each internal value a lightness multiple of the type's token. Contacts no longer take a <code>tint</code>; stations and projectiles keep <code>BAKE_NEUTRAL</code> and theirs. Frame still fixed by the halo circle, so <code>worldView</code>'s <code>def.radius / CREEP_BAKE_RADIUS</code> scaling is untouched.</td></tr>
+    <tr><td><b><code>icons.ts</code></b></td><td><code>contactIcon</code> reads the same geometry and emits the <b>same resolved ramp</b> — it already imports <code>THEME</code>, so it calls the same <code>step(token, k)</code> the bake does. <b><code>currentColor</code> is gone:</b> a single colour cannot express a six-wedge Bulwark or a Mote with a near-white core, and a legend that renders a flat silhouette while the board renders a ramp is exactly the drift <code>stationShape.ts</code> exists to prevent. The size-compression band stays — it preserves order across a 2.7× radius span and keeps the smallest readable.</td></tr>
+    <tr><td><b><code>theme.ts</code></b></td><td>Six values in <code>enemies</code>, plus a small <code>step(token, k)</code> helper. <b><code>step</code> is shared by both consumers</b> — the bake and <code>contactIcon</code> — for the same reason the geometry is: two copies of a ramp is two ramps that drift. No second table of hexes; every internal value derives from the one token.</td></tr>
+    <tr><td><b><code>worldView.ts</code></b></td><td>Rotation for the Mote only, from the route tangent; everything else keeps <code>rotation = 0</code>. <b>The tint-lerp flash is removed</b> — contacts are no longer tinted, so it would do nothing.</td></tr><tr><td><b><code>creepChrome.ts</code></b><br><span style="font-size:11.5px; color:#75798c">flash</span></td><td>The flash moves here: a second sprite of the contact's own texture, <code>blendMode: 'add'</code>, alpha lerped down over the flash window. Suppressed like everything else on this layer — a contact that is not being struck draws nothing.</td></tr>
+    <tr><td><b><code>creepChrome.ts</code></b></td><td>One addition: the split pips, with their own suppression (<code>splitInto !== null</code> only). Bars, clocks, fields and halos are unchanged.</td></tr>
+    <tr><td><b><code>legend.ts</code></b></td><td>Nothing structural — it already calls <code>contactIcon</code> and derives its copy from the def. <b>But drop the <code>.c-&lt;id&gt;</code> colour hook</b> it and <code>hud.ts</code> set today: contact glyphs now carry their own resolved values, so that class no longer drives anything and will otherwise sit there looking load-bearing.</td></tr>
+  </tbody>
+</table>
+
+<div style="padding:13px 15px; background:#171a27; border-left:2px solid #e06d6d; margin:0 0 16px">
+  <p style="margin:0"><b>The one budget that moves.</b> The contact layer goes from two baked textures to six, and contacts stop being tinted. The property that mattered was never "exactly two" or "tinted" — it was <em>not one per entity</em>, and six textures for 250 contacts keeps that completely. Do not add a seventh bake for a state; states are chrome.</p>
+</div>
+
+<h4>Acceptance</h4>
+<table>
+  <thead><tr><th style="width:6%">✓</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td style="color:#4d5063">☐</td><td>All six types are nameable at 22px <b>in greyscale</b>. Tint may confirm; it may not be required.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>No contact sprite contains a cool value. Sample the bakes: every internal value is its token at the stated lightness multiple, and the specimens in this document match the bakes exactly.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>A Cluster is identifiable <em>before</em> the killing shot, in a bunch of eight, at 4×.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>Forty Motes read as one spray; <b>one</b> Mote is still clearly visible alone on the darkest part of the board.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>Ring means slowed, filled halo means regenerating, band means shielded, hexagon means plated. Nothing new competes with any of the four.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>An untouched contact draws no bar, no ring and no halo. Verified with a fresh wave before first contact.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>Legend, wave preview and board show the same silhouette per contact — one <code>contactShape.ts</code>, two consumers.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>A contact taking a hit is still the brightest object in its frame — <b>verified with the additive flash, not the old tint lerp</b>. Check the Monolith and the Bulwark specifically: they are the two darkest bodies and the two the flash has the least headroom on.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>Contact layer is at most six textures, and no bake grew the frame — sprite centres still land on contact centres across all six.</td></tr>
+    <tr><td style="color:#4d5063">☐</td><td>Coral Mote checked on a board with a Nova beside the road. <code>#ffb0a3</code> against <code>#fcc08a</code> is the tightest pair in the game.</td></tr>
+  </tbody>
+</table>
+
+<h4>Final check strip</h4>
+<div style="display:grid; grid-template-columns:1fr; gap:8px; margin-top:8px">
+  <div style="position:relative; height:64px; background:#0a0c16; border:1px solid #2a2d40; overflow:hidden">
+    <div style="position:absolute; left:0; top:23px; width:100%; height:18px; background:linear-gradient(to right, rgba(145,132,217,.12), rgba(210,206,253,.28))"></div>
+    <svg width="100%" height="64" viewBox="0 0 651 64" style="position:relative; display:block">
+      <path d="M60 30 L38 32 L38 34 L60 36 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="53" cy="33" r="1.7" fill="#ffb0a3" fill-opacity=".35"/><circle cx="63" cy="32" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="63" cy="32" r="2.5" fill="#fff1ec"/>
+      <path d="M118 30 L96 32 L96 34 L118 36 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="111" cy="33" r="1.7" fill="#ffb0a3" fill-opacity=".35"/><circle cx="121" cy="32" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="121" cy="32" r="2.5" fill="#fff1ec"/>
+      <circle cx="190" cy="32" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="190" cy="32" r="5.6" fill="#f472b6"/>
+      <circle cx="262" cy="32" r="12" fill="#f4483f" fill-opacity=".2"/><circle cx="262" cy="27.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="256.8" cy="36.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="267.2" cy="36.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="262" cy="27.2" r="3.1" fill="#ffc9c2"/><circle cx="256.8" cy="36.2" r="3.1" fill="#ffc9c2"/><circle cx="267.2" cy="36.2" r="3.1" fill="#ffc9c2"/>
+      <circle cx="346" cy="32" r="13.5" fill="#9e2f58"/><circle cx="346" cy="32" r="9.2" fill="none" stroke="#631a37" stroke-width="1.9"/><circle cx="346" cy="32" r="4.6" fill="#631a37"/>
+      <rect x="418" y="13" width="23" height="2.5" fill="#0b0c16" fill-opacity=".8"/><rect x="418" y="13" width="14" height="2.5" fill="#9fbcff"/><rect x="418" y="19" width="23" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="418" y="19" width="17" height="4" fill="#d59ac0"/><circle cx="429.5" cy="32" r="11.5" fill="#d59ac0" fill-opacity=".38"/><circle cx="429.5" cy="32" r="8.6" fill="none" stroke="#d59ac0" stroke-width="1.5"/><circle cx="429.5" cy="32" r="4.9" fill="#d59ac0"/>
+      <g><path d="M520 21 L531.3 27.5 L531.3 40.5 L520 47 L508.7 40.5 L508.7 27.5 Z" fill="#5f4148"/><path d="M520 21 L531.3 27.5 L520 34 Z" fill="#e3c3c9"/><path d="M531.3 27.5 L531.3 40.5 L520 34 Z" fill="#c9a6ae"/><path d="M531.3 40.5 L520 47 L520 34 Z" fill="#9d7d85"/><path d="M520 47 L508.7 40.5 L520 34 Z" fill="#7a5c63"/><path d="M508.7 40.5 L508.7 27.5 L520 34 Z" fill="#9d7d85"/><path d="M508.7 27.5 L520 21 L520 34 Z" fill="#c9a6ae"/><path d="M520 21 L531.3 27.5 L531.3 40.5 L520 47 L508.7 40.5 L508.7 27.5 Z" fill="none" stroke="#07080f" stroke-opacity=".55" stroke-width="1.4"/><circle cx="520" cy="34" r="2.4" fill="#3a262b"/></g>
+      <circle cx="600" cy="32" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="600" cy="32" r="5.6" fill="#f472b6"/><circle cx="600" cy="32" r="14" fill="none" stroke="#a5eefb" stroke-opacity=".16" stroke-width="3"/><path d="M600 18 A14 14 0 0 1 611.7 24.2" fill="none" stroke="#a5eefb" stroke-opacity=".85" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="grey" style="position:relative; height:64px; background:#0a0c16; border:1px solid #2a2d40; overflow:hidden">
+    <div style="position:absolute; left:0; top:23px; width:100%; height:18px; background:linear-gradient(to right, rgba(145,132,217,.12), rgba(210,206,253,.28))"></div>
+    <svg width="100%" height="64" viewBox="0 0 651 64" style="position:relative; display:block">
+      <path d="M60 30 L38 32 L38 34 L60 36 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="53" cy="33" r="1.7" fill="#ffb0a3" fill-opacity=".35"/><circle cx="63" cy="32" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="63" cy="32" r="2.5" fill="#fff1ec"/>
+      <path d="M118 30 L96 32 L96 34 L118 36 Z" fill="#ffb0a3" fill-opacity=".22"/><circle cx="111" cy="33" r="1.7" fill="#ffb0a3" fill-opacity=".35"/><circle cx="121" cy="32" r="4.4" fill="#ffb0a3" fill-opacity=".35"/><circle cx="121" cy="32" r="2.5" fill="#fff1ec"/>
+      <circle cx="190" cy="32" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="190" cy="32" r="5.6" fill="#f472b6"/>
+      <circle cx="262" cy="32" r="12" fill="#f4483f" fill-opacity=".2"/><circle cx="262" cy="27.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="256.8" cy="36.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="267.2" cy="36.2" r="7.6" fill="#f4483f" fill-opacity=".55"/><circle cx="262" cy="27.2" r="3.1" fill="#ffc9c2"/><circle cx="256.8" cy="36.2" r="3.1" fill="#ffc9c2"/><circle cx="267.2" cy="36.2" r="3.1" fill="#ffc9c2"/>
+      <circle cx="346" cy="32" r="13.5" fill="#9e2f58"/><circle cx="346" cy="32" r="9.2" fill="none" stroke="#631a37" stroke-width="1.9"/><circle cx="346" cy="32" r="4.6" fill="#631a37"/>
+      <rect x="418" y="13" width="23" height="2.5" fill="#0b0c16" fill-opacity=".8"/><rect x="418" y="13" width="14" height="2.5" fill="#9fbcff"/><rect x="418" y="19" width="23" height="4" fill="#0b0c16" fill-opacity=".8"/><rect x="418" y="19" width="17" height="4" fill="#d59ac0"/><circle cx="429.5" cy="32" r="11.5" fill="#d59ac0" fill-opacity=".38"/><circle cx="429.5" cy="32" r="8.6" fill="none" stroke="#d59ac0" stroke-width="1.5"/><circle cx="429.5" cy="32" r="4.9" fill="#d59ac0"/>
+      <g><path d="M520 21 L531.3 27.5 L531.3 40.5 L520 47 L508.7 40.5 L508.7 27.5 Z" fill="#5f4148"/><path d="M520 21 L531.3 27.5 L520 34 Z" fill="#e3c3c9"/><path d="M531.3 27.5 L531.3 40.5 L520 34 Z" fill="#c9a6ae"/><path d="M531.3 40.5 L520 47 L520 34 Z" fill="#9d7d85"/><path d="M520 47 L508.7 40.5 L520 34 Z" fill="#7a5c63"/><path d="M508.7 40.5 L508.7 27.5 L520 34 Z" fill="#9d7d85"/><path d="M508.7 27.5 L520 21 L520 34 Z" fill="#c9a6ae"/><path d="M520 21 L531.3 27.5 L531.3 40.5 L520 47 L508.7 40.5 L508.7 27.5 Z" fill="none" stroke="#07080f" stroke-opacity=".55" stroke-width="1.4"/><circle cx="520" cy="34" r="2.4" fill="#3a262b"/></g>
+      <circle cx="600" cy="32" r="11" fill="#f472b6" fill-opacity=".42"/><circle cx="600" cy="32" r="5.6" fill="#f472b6"/><circle cx="600" cy="32" r="14" fill="none" stroke="#a5eefb" stroke-opacity=".16" stroke-width="3"/><path d="M600 18 A14 14 0 0 1 611.7 24.2" fill="none" stroke="#a5eefb" stroke-opacity=".85" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+  </div>
+</div>
+<div class="cap">The full roster at board scale, with a shielded Warden and a slowed Drifter in place — in colour and desaturated. All eight objects separate in both.</div>
+
+<div style="margin-top: 38px; padding-top: 16px; border-top: 1px solid #2a2d40; font: 400 11px/1.5 var(--font-body); color: #75798c">Deep Field · contact spec, final · read against <code>cbhead/deep-field-td@main</code>. Supersedes the option sets in <b>Contact Glyphs</b>, <b>Contact Palette</b> and <b>Contact Palette P2.1</b> — where this document and those disagree, this one wins. Where this document and the acceptance checklist disagree, the checklist wins.</div>
+
+</div>
+</doc-page>
+
+</x-dc>
+</body>
+</html>

@@ -80,6 +80,10 @@ export function fireTowers(w: World, dt: number): void {
       dead: false,
     });
 
+    // Presentation only — nothing in the sim reads it, and it draws no random
+    // numbers, so the seed still fixes the match completely.
+    w.events.push({ type: 'towerFired', defId: t.defId, x: t.x, y: t.y });
+
     // `+=`, not `=`. Assigning would round every tower's fire rate up to a
     // multiple of the tick, so a 0.5s interval would silently become 0.5167s
     // and every balance number would be quietly wrong.

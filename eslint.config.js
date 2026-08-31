@@ -58,8 +58,12 @@ export default tseslint.config(
   // The renderer is the one place unseeded randomness is REQUIRED: VFX jitter
   // must never draw from the sim's RNG stream, or a dropped frame on one
   // machine would diverge the other player's waves.
+  //
+  // src/audio is presentation on exactly the same terms and gets the same rule:
+  // it reads world state and drains the same events, and its per-shot pitch and
+  // gain jitter must never touch the seeded stream either.
   {
-    files: ['src/render/**/*.ts', 'src/ui/**/*.ts'],
+    files: ['src/render/**/*.ts', 'src/ui/**/*.ts', 'src/audio/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [

@@ -346,6 +346,22 @@ export type SimEvent =
       defId: TowerId | null;
     }
   /**
+   * A station took a shot.
+   *
+   * Added for audio, and it is the one combat event with no visual counterpart:
+   * tracers are *pulled* from `w.projectiles` every frame, which works for a
+   * thing that persists but not for a thing that happens. A muzzle report is an
+   * instant, and an instant the renderer misses is a sound that never plays.
+   *
+   * Carries no target and no damage on purpose. Everything downstream of a shot
+   * already has its own event — `blast` for the detonation, `creepDamaged` for
+   * the landing — so this one stays the cheapest possible record of the trigger
+   * being pulled. It is also the highest-frequency event the sim emits after
+   * `creepDamaged`, so consumers are expected to coalesce it rather than treat
+   * each one as worth a response.
+   */
+  | { type: 'towerFired'; defId: TowerId; x: number; y: number }
+  /**
    * A detonation, emitted whether or not it caught anything.
    *
    * Carries the radius so the ring drawn is the blast that actually happened —

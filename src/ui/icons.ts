@@ -2,7 +2,15 @@ import { ENEMIES, ENEMY_IDS, type EnemyId } from '../content/enemies.ts';
 import type { TowerId } from '../content/towers.ts';
 import { COLLAR_SECTORS, COLLAR_SPAN } from '../render/constants.ts';
 import { MARK_STROKE, STATION_MARKS } from '../render/stationShape.ts';
-import { THEME } from '../render/theme.ts';
+import { css, step, DEFAULT_FIELD, THEME } from '../render/theme.ts';
+import {
+  contactBounds,
+  contactShape,
+  polygon,
+  vertex,
+  type ContactShape,
+  type Part,
+} from '../render/contactShape.ts';
 
 /**
  * The station glyph, as inline SVG for the DOM half of the HUD.
@@ -38,15 +46,19 @@ export function stationIcon(id: TowerId, size: number): string {
  *
  * The wave preview used to describe the wave in words — "4 Warden" — which
  * forced the player to translate a name into the ringed pink circle they were
- * about to see. This is the same silhouette the bake makes: a disc, or a plated
- * hexagon with an inner seam when the contact carries armour.
+ * about to see. Now it is the same silhouette, from the same numbers.
  *
- * **Duplicated rather than shared, unlike the station marks, and the asymmetry
- * is the point.** A station's mark is five distinct shapes each asserting a
- * mechanic; a contact is two primitives and a seam ratio. The load-bearing
- * values — `radius`, `armor`, `shield`, `plateSeam` — are already shared data
- * read straight from `ENEMIES` and `THEME.shape`, so nothing here can drift
- * except two shape formulas that have no reason to change.
+ * **Shared, unlike the station hexagon.** It used to be a second
+ * implementation, defensibly so while a contact was two primitives and a seam
+ * ratio. Six distinct silhouettes made that indefensible: a Bulwark is a hull,
+ * six lit wedges and a core, and nobody is going to keep two copies of that
+ * agreeing by hand. Geometry comes from `contactShape`, colour from the same
+ * `step()` the bake calls, so a legend that disagreed with the board would now
+ * have to be a bug in one shared function rather than drift between two.
+ *
+ * **No `currentColor`.** One colour cannot express a six-wedge Bulwark, so the
+ * glyph resolves its own values and carries the token as an inline `color` for
+ * the CSS glow to pick up. That is what retires the generated `.c-<id>` rules.
  *
  * **Size is compressed, not proportional.** Radii run 0.17 to 0.46, a 2.7x
  * span: drawn literally at chip scale a Mote would be nine pixels against a
@@ -55,23 +67,18 @@ export function stationIcon(id: TowerId, size: number): string {
  */
 export function contactIcon(id: EnemyId, size: number): string {
   const def = ENEMIES[id];
-  const s = THEME.shape;
+  const spec = contactShape(id);
+  const token = THEME.enemies[id];
 
-  // Order-preserving compression across the live roster, so adding a contact
-  // rescales the set rather than falling off either end of a fixed table.
-  const radii = ENEMY_IDS.map((e) => ENEMIES[e].radius);
-  const lo = Math.min(...radii);
-  const hi = Math.max(...radii);
-  const t = hi === lo ? 1 : (def.radius - lo) / (hi - lo);
-  const r = (0.62 + t * 0.34) * (size / 2) * 0.86;
-  const c = size / 2;
+  const box = contactBounds(spec);
+  const r = contactGlyphRadius(id, size);
 
-  const body =
-    def.armor > 0
-      ? // Plated: a flat-top hexagon with an inner seam, as `drawCreep` bakes it.
-        `<path d="${hexPath(c, r)}" fill="currentColor" fill-opacity=".9"/>` +
-        `<path d="${hexPath(c, r * s.plateSeam)}" fill="none" stroke="var(--bg)" stroke-opacity=".55" stroke-width="${(size * 0.05).toFixed(1)}"/>`
-      : `<circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="currentColor"/>`;
+  // The drawn mass centred in the box, not the body's origin — see
+  // `contactBounds` for why those differ, and why only the glyph cares.
+  const cx = size / 2 - ((box.minX + box.maxX) / 2) * r;
+  const cy = size / 2 - ((box.minY + box.maxY) / 2) * r;
+
+  const body = spec.parts.map((p) => partSvg(p, token, cx, cy, r)).join('') + seamSvg(spec, cx, cy, r);
 
   // Shield is a BAND above the body, never a ring. `theme.ts` rejects a ring for
   // shield on purpose: the gravity slow already owns that shape on the board,
@@ -79,24 +86,112 @@ export function contactIcon(id: EnemyId, size: number): string {
   // would make the two unlearnable together.
   const band =
     def.shield > 0
-      ? `<rect x="${(c - r).toFixed(1)}" y="${(c - r - size * 0.16).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(size * 0.075).toFixed(1)}" rx="${(size * 0.037).toFixed(1)}" fill="var(--shield)"/>`
+      ? `<rect x="${(cx - r).toFixed(1)}" y="${Math.max(0, cy - r - size * 0.16).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(size * 0.075).toFixed(1)}" rx="${(size * 0.037).toFixed(1)}" fill="var(--shield)"/>`
       : '';
 
   return (
-    `<svg class="cg c-${id}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
+    `<svg class="cg" style="color:${css(token)}" width="${size}" height="${size}"` +
+    ` viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
     band +
     body +
     `</svg>`
   );
 }
 
-/** Flat-top hexagon, matching the plated silhouette the board bakes. */
-function hexPath(c: number, r: number): string {
-  const pts = Array.from({ length: 6 }, (_, i) => {
-    const a = (Math.PI / 3) * i - Math.PI / 2;
-    return `${(c + Math.cos(a) * r).toFixed(1)} ${(c + Math.sin(a) * r).toFixed(1)}`;
-  });
-  return `M${pts.join(' L')} Z`;
+/**
+ * The body radius a contact's glyph is drawn at, in px.
+ *
+ * Split out and exported because this is the whole of the size decision, and
+ * the gate that guards it should test the decision rather than scrape a number
+ * back out of the markup. It used to do exactly that — read `r="…"` off the
+ * one `<circle>` a contact was — which stopped being possible the moment four
+ * of the six stopped being a circle.
+ */
+export function contactGlyphRadius(id: EnemyId, size: number): number {
+  // Order-preserving compression across the live roster, so adding a contact
+  // rescales the set rather than falling off either end of a fixed table.
+  const radii = ENEMY_IDS.map((e) => ENEMIES[e].radius);
+  const lo = Math.min(...radii);
+  const hi = Math.max(...radii);
+  const t = hi === lo ? 1 : (ENEMIES[id].radius - lo) / (hi - lo);
+
+  // Whatever the band asks for, the shape still has to fit the box. Today no
+  // contact needs the clamp; it is here so that a future shape that grew past
+  // its body would get smaller rather than cropped, which is the failure that
+  // would otherwise reach the deck looking deliberate.
+  const box = contactBounds(contactShape(id));
+  const reach = Math.max(box.maxX - box.minX, box.maxY - box.minY);
+  return Math.min((0.62 + t * 0.34) * (size / 2) * 0.86, (size * 0.98) / reach);
+}
+
+/** `fill`/`stroke` plus its opacity, from the part's `k` or its `alpha`. */
+function paintAttrs(p: Part, token: number, key: 'fill' | 'stroke'): string {
+  const colour = css(p.k === undefined ? token : step(token, p.k));
+  const opacity = p.alpha === undefined ? '' : ` ${key}-opacity="${p.alpha}"`;
+  return `${key}="${colour}"${opacity}`;
+}
+
+/** One part, in the same order and the same colours the bake draws it. */
+function partSvg(p: Part, token: number, cx: number, cy: number, r: number): string {
+  const n = (v: number): string => v.toFixed(1);
+
+  switch (p.kind) {
+    case 'disc':
+      return `<circle cx="${n(cx + p.cx * r)}" cy="${n(cy + p.cy * r)}" r="${n(p.r * r)}" ${paintAttrs(p, token, 'fill')}/>`;
+
+    case 'ring':
+      return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(p.r * r)}" fill="none" ${paintAttrs(p, token, 'stroke')} stroke-width="${n(p.width * r)}"/>`;
+
+    case 'lens': {
+      // Two quadratics meeting at the tips, with the control at twice the half
+      // height because a quadratic only reaches half of it — the same
+      // construction `textures.ts` uses, for the same reason.
+      const x0 = cx + p.from * r;
+      const x1 = cx + p.to * r;
+      const xm = (x0 + x1) / 2;
+      const h = p.half * r * 2;
+      return (
+        `<path d="M${n(x0)} ${n(cy)} Q${n(xm)} ${n(cy + h)} ${n(x1)} ${n(cy)}` +
+        ` Q${n(xm)} ${n(cy - h)} ${n(x0)} ${n(cy)} Z" ${paintAttrs(p, token, 'fill')}/>`
+      );
+    }
+
+    case 'poly':
+      return `<path d="${polyPath(polygon(cx, cy, p.r * r, p.points, p.rotate))}" ${paintAttrs(p, token, 'fill')}/>`;
+
+    case 'wedge': {
+      const [ax, ay] = vertex(cx, cy, p.r * r, p.points, p.rotate, p.index);
+      const [bx, by] = vertex(cx, cy, p.r * r, p.points, p.rotate, p.index + 1);
+      return `<path d="${polyPath([cx, cy, ax, ay, bx, by])}" ${paintAttrs(p, token, 'fill')}/>`;
+    }
+  }
+}
+
+/**
+ * The seam, in the board's own background colour rather than the panel's.
+ *
+ * A plate line is a gap between plates, so it has to be the colour of what is
+ * behind the contact — which on the board is the field, wherever the glyph
+ * happens to be sitting in the DOM.
+ */
+function seamSvg(spec: ContactShape, cx: number, cy: number, r: number): string {
+  const outline = spec.parts.find((p) => p.kind === 'poly');
+  if (spec.seam === undefined || outline?.kind !== 'poly') return '';
+
+  return (
+    `<path d="${polyPath(polygon(cx, cy, outline.r * r, outline.points, outline.rotate))}"` +
+    ` fill="none" stroke="${css(THEME.fields[DEFAULT_FIELD].bg)}" stroke-opacity="${spec.seam.alpha}"` +
+    ` stroke-width="${(spec.seam.width * r).toFixed(1)}"/>`
+  );
+}
+
+/** A flat coordinate list as a closed SVG path. */
+function polyPath(pts: readonly number[]): string {
+  const out: string[] = [];
+  for (let i = 0; i < pts.length; i += 2) {
+    out.push(`${pts[i]!.toFixed(1)} ${pts[i + 1]!.toFixed(1)}`);
+  }
+  return `M${out.join(' L')} Z`;
 }
 
 /**

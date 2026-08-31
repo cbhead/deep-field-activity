@@ -23,6 +23,53 @@ export interface UiPrefs {
    * `prefers-reduced-motion` block cannot reach a Pixi sprite.
    */
   stream: boolean;
+  /**
+   * Master volume, 0–1.
+   *
+   * The one pref that **persists**, and the only one that needs to. The others
+   * are cheap to re-set and their wrong value is merely untidy; arriving at a
+   * game that is loud when you had told it not to be is a different class of
+   * mistake, and it happens in a shared room exactly once before someone stops
+   * playing. Read back by `loadAudioPrefs`.
+   */
+  volume: number;
+  muted: boolean;
+}
+
+const AUDIO_KEY = 'deep-field-audio';
+
+/**
+ * Volume and mute, read back from a previous session.
+ *
+ * Tolerant of every kind of garbage in the slot — a bad parse, a missing field,
+ * a number out of range — because a corrupt preference must never be the reason
+ * the game does not boot. Same posture as `progress.ts`.
+ */
+function loadAudioPrefs(): { volume: number; muted: boolean } {
+  const fallback = { volume: 0.6, muted: false };
+  try {
+    const raw = localStorage.getItem(AUDIO_KEY);
+    if (raw === null) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return fallback;
+    const rec = parsed as Record<string, unknown>;
+    const volume = typeof rec['volume'] === 'number' ? rec['volume'] : fallback.volume;
+    return {
+      volume: Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : fallback.volume,
+      muted: rec['muted'] === true,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/** Called on every change from the pause menu. Failure here is not worth a crash. */
+export function saveAudioPrefs(prefs: UiPrefs): void {
+  try {
+    localStorage.setItem(AUDIO_KEY, JSON.stringify({ volume: prefs.volume, muted: prefs.muted }));
+  } catch {
+    // Private browsing, or a full quota. The session still works.
+  }
 }
 
 /**
@@ -82,5 +129,10 @@ export const createUiState = (): UiState => ({
   touchPreview: false,
   deckOpen: !startsCompact(),
   paused: false,
-  prefs: { reachCircles: 'hover', damageNumbers: true, stream: wantsMotion() },
+  prefs: {
+    reachCircles: 'hover',
+    damageNumbers: true,
+    stream: wantsMotion(),
+    ...loadAudioPrefs(),
+  },
 });

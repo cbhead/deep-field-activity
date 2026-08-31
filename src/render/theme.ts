@@ -308,6 +308,46 @@ export interface Theme {
 export const BAKE_NEUTRAL = 0xffffff;
 
 /**
+ * How much of the way to white a highlight travels, per unit of `k` above 1.
+ *
+ * **Not a taste value — it reconciles two scales the design document mixes.**
+ * Its shade multipliers behave like a plain channel multiply (measured Δ 3–13
+ * against its own specimens), but its highlight multipliers do not: the quoted
+ * highlights are *desaturated toward white*, which multiplying cannot produce
+ * once a channel clips. `cluster ×1.22` is specified as `#ffc9c2`; a multiply
+ * gives `#ff584d`, off by 117.
+ *
+ * So highlights mix toward white instead, and this constant is fixed by the
+ * document's own arithmetic: it is the value that lands `mote ×1.35` on the
+ * specified `#fff1ec` to within 1/255. It takes total highlight error from 141
+ * to 47. `cluster ×1.22` remains the outlier at Δ 36 — recorded rather than
+ * tuned away, because bending this to chase one specimen would break the other
+ * two.
+ */
+const HIGHLIGHT_GAIN = 2.3;
+
+/**
+ * A contact's token at a lightness multiple: shade below 1, tint above it.
+ *
+ * Shared by the bake and by `contactIcon`, for the same reason the geometry is:
+ * two copies of a ramp are two ramps that drift, and the failure is a legend
+ * quietly disagreeing with the board.
+ *
+ * Two-sided because one operation cannot do both jobs. Multiplying darkens
+ * correctly but cannot lighten a saturated colour — `#f4483f × 1.22` just clips
+ * red and stays vivid. Mixing toward white lightens correctly but cannot
+ * darken. So: multiply down, mix up.
+ */
+export function step(token: number, k: number): number {
+  const ch = (shift: number): number => {
+    const c = (token >> shift) & 255;
+    const v = k <= 1 ? c * k : c + (255 - c) * (k - 1) * HIGHLIGHT_GAIN;
+    return Math.max(0, Math.min(255, Math.round(v)));
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/**
  * Switchback — the shipped baseline, and the shape every other field is a
  * variation on.
  *
@@ -474,22 +514,32 @@ export const DEEP_FIELD: Theme = {
   // is coming" does — they are the only warm thing on a blue-black board, and
   // that is the contrast hierarchy's whole job. Type is carried by variation
   // *within* the family, plus the size differences the defs already give them.
+  /**
+   * One token per contact — the **class hue**, and the only value a reskin
+   * touches. Every internal value of every silhouette is this colour through
+   * `step()`, so there is no second table of hexes to fall out of sync.
+   */
   enemies: {
+    /** Baseline. Unchanged, because everything else is read against it. */
     drifter: 0xf472b6,
-    /** Palest and smallest — a swarm should read as spray, not as individuals. */
-    mote: 0xfbcfe8,
-    /** Deepest, to sit with its bulk. */
-    monolith: 0xc2557f,
-    /** Coolest of the family, so the shield's cyan ring belongs to it. */
-    warden: 0xe879c9,
-    /** Pushed toward red: the one whose death makes things worse. */
-    cluster: 0xfb7185,
     /**
-     * Desaturated toward steel — the only contact that reads as *plated* rather
-     * than as flesh, which is the one thing a player needs to spot early enough
-     * to stop pouring chip damage into it.
+     * Swarm. Coral rather than the old pale pink, and deliberately the light
+     * end of the Cluster's red — Clusters are what *produce* Motes, and this is
+     * the only causal relationship between two contact types the game shows.
      */
-    bulwark: 0xd8a0b4,
+    mote: 0xffb0a3,
+    /** Mass. Deep wine, to sit with its bulk. */
+    monolith: 0x9e2f58,
+    /** Protected. Washed, so the blue shield band reads against it. */
+    warden: 0xd59ac0,
+    /** Punishes you: the one whose death makes things worse. */
+    cluster: 0xf4483f,
+    /**
+     * Protected, and the only non-round contact. Desaturated toward steel — it
+     * reads as *plated* rather than as flesh, which is the one thing a player
+     * needs to spot early enough to stop pouring chip damage into it.
+     */
+    bulwark: 0xc9a6ae,
   },
 
   feedback: {
@@ -586,16 +636,14 @@ export function applyHudTheme(theme: Theme = THEME): void {
     style.setProperty(`--tower-${id}`, css(theme.towers[id as keyof typeof theme.towers]));
   }
 
-  const contacts = Object.keys(theme.enemies);
-  for (const id of contacts) {
-    style.setProperty(`--contact-${id}`, css(theme.enemies[id as keyof typeof theme.enemies]));
-  }
-
-  // The deck draws contact glyphs now, and they take their tint the same way a
-  // station does. Emitted from the roster for the same reason: a hand-written
-  // list would go stale the moment a seventh contact arrived, and it would go
-  // stale *silently* — a grey blob in the wave preview looks like a styling
-  // choice, not like a missing rule.
+  // There is deliberately no `--contact-<id>` counterpart.
+  //
+  // There was, until a contact stopped being one colour. A Bulwark is a hull,
+  // six wedges at six lightnesses and a core, and a Mote's nucleus is *brighter*
+  // than its token — none of which a single CSS custom property can express. So
+  // `contactIcon` resolves its own values through `step()`, the same function
+  // the bake calls, and carries the token as an inline `color` for the glow to
+  // pick up. One source, and the deck cannot drift from the board by construction.
   style.setProperty('--shield', css(theme.fx.shield));
 
   /**
@@ -621,7 +669,5 @@ export function applyHudTheme(theme: Theme = THEME): void {
     // at equal specificity.
     document.head.appendChild(sheet);
   }
-  sheet.textContent =
-    ids.map((id) => `.t-${id}{color:var(--tower-${id})}`).join('') +
-    contacts.map((id) => `.c-${id}{color:var(--contact-${id})}`).join('');
+  sheet.textContent = ids.map((id) => `.t-${id}{color:var(--tower-${id})}`).join('');
 }

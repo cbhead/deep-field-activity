@@ -69,6 +69,31 @@ interface Shot {
 const PLACE = (defId: string, col: number, row: number): string =>
   `td.world.commands.push({ type: 'placeTower', defId: '${defId}', col: ${col}, row: ${row} });`;
 
+/**
+ * Hold the shot until the board is actually worth photographing.
+ *
+ * A fixed sleep used to do this and it drifted: six stations kill wave one in
+ * under four seconds, so a 5.2s settle landed in the gap *between* waves and
+ * photographed an empty board — the exact failure the `expect` selector exists
+ * to catch, except `expect` was watching the HUD, which was fine. Waiting on
+ * the thing the picture is of cannot drift when the balance moves.
+ *
+ * `leg >= 3` puts the leaders past the first corners, so the contacts are
+ * distributed along the road rather than bunched at the spawn.
+ */
+const AWAIT_CONTACTS = `
+  await new Promise((done) => {
+    const give_up = Date.now() + 40000;
+    const poll = setInterval(() => {
+      const live = td.world.creeps.filter((c) => !c.dead);
+      const ready = live.length >= 6 && live.some((c) => c.leg >= 3);
+      if (!ready && Date.now() < give_up) return;
+      clearInterval(poll);
+      done();
+    }, 120);
+  });
+`;
+
 const SHOTS: readonly Shot[] = [
   {
     file: 'home.png',
@@ -94,15 +119,19 @@ const SHOTS: readonly Shot[] = [
     file: 'gameplay.png',
     url: `${BASE}/?level=level01&difficulty=standard&seed=deepfield`,
     setup: `
+      // Funded first, or the last four placements silently fail for want of
+      // cash and the board is photographed two stations deep. The money is a
+      // prop for the photograph; the placements still go through the same
+      // command queue a click would.
+      td.world.money = 4000;
       td.loop.speed = 2;
       ${PLACE('lance', 6, 4)}${PLACE('lance', 9, 8)}${PLACE('nova', 14, 9)}
       ${PLACE('singularity', 12, 4)}${PLACE('lance', 20, 6)}${PLACE('nova', 21, 11)}
       td.world.commands.push({ type: 'startWave' });
+      ${AWAIT_CONTACTS}
     `,
     expect: '#hud .slot',
-    // Long enough for contacts to be mid-route and under fire, which is the
-    // frame worth showing — an empty board is what the old capture was.
-    settleMs: 5200,
+    settleMs: 900,
   },
   {
     file: 'inspector.png',

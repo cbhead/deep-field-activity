@@ -7,7 +7,10 @@ import { Effects } from './render/effects.ts';
 import { TowerChrome } from './render/towerChrome.ts';
 import { CreepChrome } from './render/creepChrome.ts';
 import { tilesToPx } from './render/constants.ts';
-import { applyHudTheme, fieldFor } from './render/theme.ts';
+import { applyHudTheme, fieldFor, DEFAULT_FIELD } from './render/theme.ts';
+import { AudioEngine } from './audio/engine.ts';
+import { Soundscape } from './audio/soundscape.ts';
+import { RACE_LEAD_CHANGE, RACE_OPPONENT_WAVE, RACE_START } from './audio/palette.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
 import { CAMPAIGN, levelById, levelIndex, type LevelDef } from './content/levels.ts';
 import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from './content/difficulty.ts';
@@ -30,7 +33,7 @@ import { serverUrl } from './net/NetClient.ts';
 import { relayHost } from './net/relay.ts';
 import { MatchController } from './net/MatchController.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
-import { createRaceHud, type RaceHud } from './ui/raceHud.ts';
+import { createRaceHud, type RaceCues, type RaceHud } from './ui/raceHud.ts';
 import { showResults } from './ui/resultsScreen.ts';
 import { getWebhook, matchReport, postToDiscord } from './ui/discord.ts';
 import { recordSeries, formatSeries } from './app/raceSeries.ts';
@@ -177,8 +180,9 @@ async function main(): Promise<void> {
             void startGame(mount, hudRoot, seed, {
               level,
               rules: resolveRules(level, difficulty),
-            }).then(({ world }) => {
-              raceHud = createRaceHud(mount, opponentName, currentRoom, world.map);
+            }).then(({ world, raceCues, startRaceTone }) => {
+              raceHud = createRaceHud(mount, opponentName, currentRoom, world.map, raceCues);
+              startRaceTone();
               const bootAt = performance.now();
               sentPins = '';
               const sample = (): Parameters<typeof controller.finish>[0] => {
@@ -362,7 +366,7 @@ async function startGame(
   hudRoot: HTMLElement,
   seed: number,
   opts: StartOptions = {},
-): Promise<{ world: World }> {
+): Promise<{ world: World; raceCues: RaceCues; startRaceTone: () => void }> {
   // Race mode passes neither, and gets the baseline game it has always played.
   const map = parseMap(opts.level?.map ?? LEVEL01);
   const rules = opts.rules ?? DEFAULT_RULES;
@@ -384,8 +388,12 @@ async function startGame(
   const view = new WorldView(layers, textures);
   const overlay = new Overlay(layers, textures);
   const effects = new Effects(layers, boardW, boardH);
+  const audio = new AudioEngine();
+  // The id, not the resolved `field` — the bed is keyed by which sector this is,
+  // and `SectorField` is a palette of colours with no identity of its own.
+  const soundscape = new Soundscape(audio, opts.level?.field ?? DEFAULT_FIELD);
   const towerChrome = new TowerChrome(layers, field);
-  const creepChrome = new CreepChrome(layers);
+  const creepChrome = new CreepChrome(layers, textures);
 
   function togglePause(): void {
     ui.paused = !ui.paused;
@@ -403,6 +411,12 @@ async function startGame(
       },
     },
     togglePause,
+    audio: {
+      apply: (prefs) => {
+        audio.setVolume(prefs.volume);
+        audio.setMuted(prefs.muted);
+      },
+    },
     // A full reload is the honest restart: it re-runs seed resolution, rebuilds
     // the world and resets every renderer pool, with no chance of a stale
     // reference surviving into the new run. Cheap, and impossible to get wrong.
@@ -428,9 +442,11 @@ async function startGame(
     // One drain, three consumers. Whichever ran first would otherwise starve
     // the others, which is exactly the bug that made the HUD miss wave clears.
     effects.beginFrame();
+    soundscape.beginFrame();
     for (const ev of world.events) {
-      view.onEvent(ev);
+      creepChrome.onEvent(ev);
       effects.onEvent(ev, ui.prefs);
+      soundscape.onEvent(ev);
       hud.onEvent(ev);
     }
     world.events.length = 0;
@@ -439,13 +455,14 @@ async function startGame(
     // property of the road, not of how fast the game is being run.
     if (ui.prefs.stream) mapLayer.step(1 / 60);
 
-    view.sync(world, dt);
+    view.sync(world);
     // Before the overlay reads it: if the player disarmed by any route, the
     // parked touch preview has nothing left to describe.
     input.reconcile();
     overlay.sync(world, ui.selected, ui.hover, ui.inspecting, ui.touchPreview);
     effects.update(world, dt);
-    creepChrome.sync(world);
+    soundscape.update(world, ui.selected, dt);
+    creepChrome.sync(world, dt);
     towerChrome.sync(world, ui.prefs);
 
     if (now >= hudDue) {
@@ -469,8 +486,16 @@ async function startGame(
   // Any gesture voids the 10Hz throttle: a hotkey arming a station or a click
   // opening the inspector shows on the next frame, not up to 100ms later. The
   // HUD's own buttons update synchronously in hud.ts; this covers the rest.
+  //
+  // It is also where the mixer comes to life. A browser refuses to start an
+  // AudioContext outside a user gesture, so the game is genuinely silent until
+  // the first click or keypress — correct behaviour, not a bug to route around.
+  // `unlock` returns immediately once the graph exists, so this stays cheap.
   const wake = (): void => {
     hudDue = 0;
+    audio.unlock();
+    audio.setVolume(ui.prefs.volume);
+    audio.setMuted(ui.prefs.muted);
   };
   window.addEventListener('keydown', wake);
   window.addEventListener('pointerdown', wake);
@@ -498,11 +523,27 @@ async function startGame(
       // Byte-identical or the race is not fair.
       dumpWaves: (n = 20) =>
         JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules))),
+      // Auditioning the mix without playing a match out. `td.soundscape.audition
+      // ('lance')` for one sound, and `td.soundscape.stress('lance', 120)` for
+      // the question that actually matters — what happens at a rate no board can
+      // reach — which is the one thing a real playthrough cannot be made to show
+      // on demand.
+      audio,
+      soundscape,
     };
   }
 
   // Race mode reads the world for the status pump; single player ignores this.
-  return { world };
+  // The cues ride along rather than being rebuilt at the call site, so the one
+  // place that owns the mixer is still the one place that reaches into it.
+  return {
+    world,
+    raceCues: {
+      opponentWave: () => void audio.play(RACE_OPPONENT_WAVE),
+      leadChange: () => void audio.play(RACE_LEAD_CHANGE),
+    },
+    startRaceTone: () => void audio.play(RACE_START),
+  };
 }
 
 main().catch((err: unknown) => {

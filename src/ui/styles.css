@@ -393,9 +393,10 @@ kbd {
    and the deck's height is fixed. */
 .chips { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: flex-end; }
 /* The glyph carries the identity and the numeral carries the count, stacked —
-   so the row reads as "these, that many" rather than as a sentence. The chip's
-   own `.c-<id>` class supplies the tint through currentColor, exactly as a
-   slot's `.t-<id>` does. */
+   so the row reads as "these, that many" rather than as a sentence. Unlike a
+   slot, the chip carries no tint class: a contact is now several colours, so
+   `contactIcon` resolves them itself and sets its own `color` for the glow
+   below to inherit. */
 .chip {
   display: flex;
   flex-direction: column;

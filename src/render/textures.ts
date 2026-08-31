@@ -4,7 +4,9 @@ import { TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { TILE_PX } from './constants.ts';
 import { strokeArc } from './draw.ts';
 import { MARK_STROKE, STATION_MARKS } from './stationShape.ts';
-import { BAKE_NEUTRAL, THEME } from './theme.ts';
+import { ENEMY_IDS, type EnemyId } from '../content/enemies.ts';
+import { contactShape, polygon, vertex, type Part } from './contactShape.ts';
+import { BAKE_NEUTRAL, DEFAULT_FIELD, THEME, step } from './theme.ts';
 
 /**
  * Every repeated visual is baked into a GPU texture once, then instanced as
@@ -53,19 +55,14 @@ export interface Textures {
    */
   stream: Texture;
   /**
-   * Baked neutral so it can be `tint`ed per enemy type — tinting is free on the
-   * GPU and keeps every unarmoured creep on one texture, hence one draw call.
-   */
-  creep: Texture;
-  /**
-   * The same contact with a plated hull, for any type carrying armour.
+   * One bake per contact type, each in its **own final colours**.
    *
-   * Two textures means at most two batches for the contact layer however many
-   * are alive — the property that mattered was never "exactly one texture" but
-   * "not one per entity", and this keeps that. The towers layer already made
-   * the same trade for tiers.
+   * This replaced a neutral bake plus a per-type `tint`. The property that
+   * mattered was never "one texture" or "tinted" — it was *not one per entity*,
+   * and six textures for 250 contacts keeps that completely. Do not add a
+   * seventh for a state: states are chrome, drawn by `creepChrome`.
    */
-  creepPlated: Texture;
+  contacts: Readonly<Record<EnemyId, Texture>>;
   /**
    * One bake per station per tier, indexed `[defId][tier - 1]`.
    *
@@ -337,74 +334,118 @@ function drawTierPips(g: Graphics, tier: number): void {
   }
 }
 
-/** A flat-top hexagon as the flat coordinate list `Graphics.poly` takes. */
-function hexagon(cx: number, cy: number, r: number): number[] {
-  const pts: number[] = [];
-  for (let i = 0; i < 6; i++) {
-    const a = (Math.PI / 3) * i;
-    pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-  }
-  return pts;
-}
 
 /**
- * A contact, plain or plated.
+ * One contact, in its own final colours.
  *
- * **Armour is a silhouette rather than an overlay, and that is a decision.**
- * The gravity slow already owns the ring and the overshield owns the band above
- * the health bar — `THEME.fx.shield` says why in as many words: two cool rings
+ * **Silhouette is the channel that carries type, and that is a decision.** The
+ * gravity slow already owns the ring and the overshield owns the band above the
+ * health bar — `THEME.fx.shield` says why in as many words: two cool rings
  * around one contact is a puzzle, not a readout. Shape was the one axis no
  * contact used, every type until now being the same circle at a different tint
- * and scale.
+ * and scale, which is why six of them bunched at 4x read as one pink mass.
  *
- * It is also right on the merits. Slow and shield are *states a contact is in*,
- * which come and go and so belong to transient decoration; armour is a
- * permanent property of the type. The player needs to read it before firing, in
- * a crowd, at 4x — and a silhouette survives all three where a third ring
- * would not.
+ * **Contacts are no longer baked neutral and tinted**, and that reversal is
+ * deliberate. Tinting bought one texture for the whole roster — genuinely worth
+ * it while every contact was a disc or a hexagon. Six distinct silhouettes
+ * already mean six bakes, so the tint now buys nothing, and paying for it costs
+ * the Mote's near-white core and the Cluster's nuclei: a `tint` *multiplies*,
+ * so no highlight can ever be brighter than its token.
  *
- * Both variants must bake to the same square frame: `worldView` scales every
- * contact by `def.radius / CREEP_BAKE_RADIUS` against one assumed frame, so a
- * plated texture that bounded differently would silently sit at the wrong size.
- * The halo circle is what fixes that frame, which is why it is drawn even when
- * a theme has turned it invisible — a hexagon's bounding box is not square, so
- * something else has to set the bounds.
+ * Every internal value is the type's token through `step()`, so the palette
+ * still has one number per contact and a reskin is still one line.
+ *
+ * The zero-alpha halo circle stays and is load-bearing: `generateTexture`
+ * measures geometry rather than visible pixels, so it is the only thing making
+ * all six bake to the same square. Without it a hexagon, a comet and a trefoil
+ * get three different bounding boxes, and `worldView`'s
+ * `def.radius / CREEP_BAKE_RADIUS` scaling would put sprite centres off their
+ * contacts.
  */
-function drawCreep(g: Graphics, plated: boolean): void {
+/** Six bakes, done once. Typed by `EnemyId` so a new contact is a compile error. */
+function bakeContacts(renderer: Renderer): Readonly<Record<EnemyId, Texture>> {
+  const out = {} as Record<EnemyId, Texture>;
+  for (const id of ENEMY_IDS) {
+    out[id] = bake(renderer, (g) => {
+      drawContact(g, id);
+    });
+  }
+  return out;
+}
+
+function drawContact(g: Graphics, id: EnemyId): void {
   const { shape } = THEME;
+  const token = THEME.enemies[id];
+  const spec = contactShape(id);
 
-  // The creep texture is baked larger than the creep so the halo has somewhere
-  // to live. The *core* stays at CREEP_BAKE_RADIUS, which is what worldView
-  // scales against, so the glow spills outside the hitbox without enlarging it.
-  const core = CREEP_BAKE_RADIUS * TILE_PX;
-  const outer = core * Math.max(1, shape.glowRatio);
-  const r = core - 1;
+  // R is the *bake* radius, so the sprite scale worldView applies lands the
+  // shape on the contact's real radius exactly.
+  const R = CREEP_BAKE_RADIUS * TILE_PX;
+  const outer = R * Math.max(1, shape.glowRatio);
+  const cx = outer;
+  const cy = outer;
 
-  // Drawn even when invisible: `generateTexture` measures geometry, not visible
-  // pixels, so a zero-alpha circle still fixes the frame.
   const halo = shape.glowAlpha > 0 && shape.glowRatio > 1;
-  g.circle(outer, outer, outer).fill({
-    color: BAKE_NEUTRAL,
+  g.circle(cx, cy, outer).fill({
+    color: halo ? step(token, 1) : BAKE_NEUTRAL,
     alpha: halo ? shape.glowAlpha : 0,
   });
 
-  if (!plated) {
-    g.circle(outer, outer, r)
-      .fill(BAKE_NEUTRAL)
-      .stroke({ width: 2, color: shape.outline, alpha: shape.outlineAlpha });
-    return;
+  const paint = (p: Part): { color: number; alpha: number } => ({
+    color: p.k === undefined ? token : step(token, p.k),
+    alpha: p.alpha ?? 1,
+  });
+
+  for (const p of spec.parts) {
+    switch (p.kind) {
+      case 'disc':
+        g.circle(cx + p.cx * R, cy + p.cy * R, p.r * R).fill(paint(p));
+        break;
+
+      case 'ring':
+        g.circle(cx, cy, p.r * R).stroke({ width: p.width * R, ...paint(p) });
+        break;
+
+      case 'lens': {
+        // Two quadratics meeting at the tips. A quadratic reaches half its
+        // control height at the midpoint, so the control sits at 2x to make the
+        // curve pass through `half`.
+        const x0 = cx + p.from * R;
+        const x1 = cx + p.to * R;
+        const xm = (x0 + x1) / 2;
+        const h = p.half * R * 2;
+        g.moveTo(x0, cy)
+          .quadraticCurveTo(xm, cy + h, x1, cy)
+          .quadraticCurveTo(xm, cy - h, x0, cy)
+          .fill(paint(p));
+        break;
+      }
+
+      case 'poly':
+        g.poly(polygon(cx, cy, p.r * R, p.points, p.rotate)).fill(paint(p));
+        break;
+
+      case 'wedge': {
+        const [ax, ay] = vertex(cx, cy, p.r * R, p.points, p.rotate, p.index);
+        const [bx, by] = vertex(cx, cy, p.r * R, p.points, p.rotate, p.index + 1);
+        g.poly([cx, cy, ax, ay, bx, by]).fill(paint(p));
+        break;
+      }
+    }
   }
 
-  g.poly(hexagon(outer, outer, r))
-    .fill(BAKE_NEUTRAL)
-    .stroke({ width: shape.plateWidth, color: shape.outline, alpha: shape.outlineAlpha });
-  // A seam inside the rim, so the hull reads as plate laid over something
-  // rather than as a flat token that happens to have six sides.
-  g.poly(hexagon(outer, outer, r * shape.plateSeam)).stroke({
-    width: 1,
-    color: shape.outline,
-    alpha: shape.outlineAlpha * 0.8,
-  });
+  // The seam last, over the plates it separates, in the board's own background
+  // so it reads as a gap rather than as a line drawn on top.
+  if (spec.seam !== undefined) {
+    const outline = spec.parts.find((p) => p.kind === 'poly');
+    if (outline !== undefined && outline.kind === 'poly') {
+      g.poly(polygon(cx, cy, outline.r * R, outline.points, outline.rotate)).stroke({
+        width: spec.seam.width * R,
+        color: THEME.fields[DEFAULT_FIELD].bg,
+        alpha: spec.seam.alpha,
+      });
+    }
+  }
 }
 
 /**
@@ -422,13 +463,8 @@ export function createTextures(renderer: Renderer): Textures {
   const { shape } = THEME;
 
   return {
-    creep: bake(renderer, (g) => {
-      drawCreep(g, false);
-    }),
+    contacts: bakeContacts(renderer),
 
-    creepPlated: bake(renderer, (g) => {
-      drawCreep(g, true);
-    }),
 
     towers: bakeTowers(renderer),
 

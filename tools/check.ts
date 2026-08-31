@@ -14,13 +14,15 @@ import { LEVEL02 } from '../src/content/maps/level02.ts';
 import { LEVEL03 } from '../src/content/maps/level03.ts';
 import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
 import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
-import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
+import { SECTOR_FIELDS, THEME, step } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
-import { deckKey, renderArmed, renderInspector, renderNextContact, renderSlots } from '../src/ui/hud.ts';
+import { deckKey, renderArmed, renderInspector, renderNextContact, renderPaused, renderSlots } from '../src/ui/hud.ts';
+import { createUiState } from '../src/app/uiState.ts';
 import { boardFacts, boardThumb } from '../src/ui/boardThumb.ts';
 import { CAMPAIGN } from '../src/content/levels.ts';
-import { contactIcon } from '../src/ui/icons.ts';
+import { contactGlyphRadius, contactIcon } from '../src/ui/icons.ts';
+import { contactExtent, contactShape } from '../src/render/contactShape.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
@@ -1766,13 +1768,15 @@ section('hud · wave preview');
   }
 
   // Order-preserving compression: a bigger contact must never draw smaller.
+  //
+  // Measured from the size decision itself rather than from the markup. This
+  // used to scrape `r="…"` off the single `<circle>` a contact was, which was
+  // fine while every contact was a circle and became meaningless the moment
+  // four of the six stopped being one — a Bulwark has no `r` at all, and a Mote
+  // has four, none of them the body.
   const sized = [...ENEMY_IDS]
     .sort((a, b) => ENEMIES[a].radius - ENEMIES[b].radius)
-    .map((id) => {
-      const m = /r="([\d.]+)"/.exec(contactIcon(id, 26));
-      return { id, drawn: m === null ? 0 : Number(m[1]) };
-    })
-    .filter((s) => s.drawn > 0);
+    .map((id) => ({ id, drawn: contactGlyphRadius(id, 26) }));
 
   let monotonic = true;
   for (let i = 1; i < sized.length; i++) {
@@ -1781,16 +1785,152 @@ section('hud · wave preview');
   check(
     monotonic,
     'a bigger contact never draws smaller',
-    sized.map((s) => `${s.id} ${s.drawn}`).join(' < '),
+    sized.map((s) => `${s.id} ${s.drawn.toFixed(2)}`).join(' < '),
+  );
+  check(
+    sized.every((s) => s.drawn >= 6),
+    'and the smallest is still legible at chip size',
+    sized.map((s) => `${s.id} ${s.drawn.toFixed(2)}`).join(' '),
   );
 
   // Shield is a band, never a ring: the slow already owns that shape on the
   // board, and two meanings for one shape is a puzzle rather than a readout.
+  //
+  // The negative half had to be re-aimed. It used to assert that the glyph
+  // contained no stroked circle at all — true when a contact was one filled
+  // disc, false now that the Warden's own silhouette *is* a ring. What the rule
+  // actually forbids is a ring in the shield's blue, so that is what is asserted:
+  // `fx.shield` may appear on the band and nowhere else.
   const shielded = ENEMY_IDS.find((id) => ENEMIES[id].shield > 0);
   if (shielded !== undefined) {
     const svg = contactIcon(shielded, 26);
-    check(svg.includes('<rect'), `${shielded}: shield is drawn as a band`);
-    check(!/<circle[^>]*stroke=/.test(svg), `${shielded}: shield is not a ring`);
+    check(
+      /<rect[^>]*fill="var\(--shield\)"/.test(svg),
+      `${shielded}: shield is drawn as a band`,
+    );
+    check(!/<circle[^>]*--shield/.test(svg), `${shielded}: shield is not a ring`);
+    check(!/stroke="var\(--shield\)"/.test(svg), `${shielded}: and is not a stroke of any shape`);
+  }
+
+  const plain = ENEMY_IDS.find((id) => ENEMIES[id].shield === 0);
+  if (plain !== undefined) {
+    check(
+      !contactIcon(plain, 26).includes('--shield'),
+      `${plain}: a contact with no shield spends no shield ink`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CAN'T-AFFORD AND LOCKED MUST NOT LOOK ALIKE.
+//
+// SIX CONTACTS, SIX SILHOUETTES.
+//
+// The contact spec reversed a rule this renderer had held since the first bake:
+// contacts stopped being baked neutral and GPU-tinted, because six distinct
+// shapes already mean six bakes and the tint was costing the only two highlights
+// in the roster that sit *above* their token.
+//
+// What can be gated headlessly is not whether they look right — that is the
+// acceptance strip, and it needs eyes — but the properties that stop them
+// looking wrong in ways nobody would notice until a screenshot: a shape that
+// overflows the shared bake frame and is silently cropped, a value the ramp
+// pushed cool, a lobe count that stopped matching what the contact splits into.
+// ---------------------------------------------------------------------------
+section('contacts · shape, ramp and the frame they share');
+{
+  // Every contact must fit the *one* square frame all six bake to. `worldView`
+  // scales each sprite by `def.radius / CREEP_BAKE_RADIUS` against that assumed
+  // frame, so a shape that reached further would not merely be cropped — every
+  // contact of that type would sit at the wrong size. The Mote's tail is the
+  // one that comes close, capped at 1.45R for exactly this reason.
+  const frame = Math.max(1, THEME.shape.glowRatio);
+  for (const id of ENEMY_IDS) {
+    const reach = contactExtent(contactShape(id));
+    check(
+      reach <= frame,
+      `${id}: the whole shape fits the bake frame`,
+      `reaches ${reach.toFixed(2)}R, frame is ${frame.toFixed(2)}R`,
+    );
+  }
+
+  // The deck and the board draw from one geometry, so the glyph has to spend an
+  // element on every part — a silently dropped wedge would leave the Bulwark
+  // five-plated in the legend and six-plated on the board, and nothing else
+  // would ever say so.
+  for (const id of ENEMY_IDS) {
+    const spec = contactShape(id);
+    const want = spec.parts.length + (spec.seam === undefined ? 0 : 1) + (ENEMIES[id].shield > 0 ? 1 : 0);
+    const drawn = contactIcon(id, 26).match(/<(circle|path|rect)\b/g)?.length ?? 0;
+    check(drawn === want, `${id}: the glyph draws every part the bake does`, `${drawn} of ${want}`);
+  }
+
+  // The two shapes that carry a number read it from content rather than
+  // restating it, so a Cluster that split into four would draw four lobes.
+  const lobes = ENEMIES.cluster.splitInto?.count ?? 0;
+  const discs = contactShape('cluster').parts.filter((p) => p.kind === 'disc').length;
+  check(discs === lobes * 2, 'cluster: one lobe and one nucleus per child', `${discs} discs, ${lobes} children`);
+
+  for (const id of ENEMY_IDS) {
+    const spec = contactShape(id);
+    if (spec.seam === undefined) continue;
+    check(ENEMIES[id].armor > 0, `${id}: a plate line means plates`);
+    check(
+      spec.seam.width >= 0.03 && spec.seam.width <= 0.1,
+      `${id}: the seam stays a line at any armour`,
+      `${spec.seam.width}`,
+    );
+  }
+
+  // --- The ramp. Gated on its properties, not on the doc's literal hexes: the
+  // spec quotes specimens that no single lightness multiplier can reproduce
+  // (its brightened values are desaturated toward white, which multiplying
+  // cannot do once a channel clips), so `step` is a two-sided ramp and the
+  // agreement with those specimens is close rather than exact.
+  const KS = [0.28, 0.47, 0.58, 0.62, 0.78, 1, 1.13, 1.22, 1.35];
+  const chan = (c: number, shift: number): number => (c >> shift) & 255;
+
+  for (const id of ENEMY_IDS) {
+    const token = THEME.enemies[id];
+
+    // Monotonic in k, per channel. A ramp that dipped anywhere would make a
+    // "brighter" wedge darker than the one beside it.
+    let rising = true;
+    for (let i = 1; i < KS.length; i++) {
+      const lo = step(token, KS[i - 1]!);
+      const hi = step(token, KS[i]!);
+      for (const s of [16, 8, 0]) if (chan(hi, s) < chan(lo, s)) rising = false;
+    }
+    check(rising, `${id}: the ramp never dips`, KS.map((k) => step(token, k).toString(16)).join(' '));
+
+    // Hue survives. Not "R > G > B" — the Drifter's pink is R > B > G — but
+    // that whatever order the token has, every value derived from it keeps.
+    const order = (c: number): string =>
+      [16, 8, 0]
+        .map((s) => ({ s, v: chan(c, s) }))
+        .sort((a, b) => b.v - a.v)
+        .map((e) => e.s)
+        .join(',');
+    for (const k of KS) {
+      const shaded = step(token, k);
+      // Ties are allowed at the top: two channels both clipped to 255 have no
+      // order left to preserve, and insisting on one would be insisting on a
+      // rounding artefact.
+      const same = order(shaded) === order(token) || chan(shaded, 16) === chan(shaded, 8);
+      check(same, `${id}: x${k} keeps the token's hue`, `${token.toString(16)} → ${shaded.toString(16)}`);
+    }
+
+    // No contact value is cool at any point on its ramp. The board's only cool
+    // tokens are `fx.shield` and `fx.slowRing`, both chrome, and a contact that
+    // drifted blue would read as a status rather than as a thing.
+    for (const k of KS) {
+      const v = step(token, k);
+      check(
+        chan(v, 16) > chan(v, 0),
+        `${id}: x${k} stays warm`,
+        `#${v.toString(16).padStart(6, '0')}`,
+      );
+    }
   }
 }
 
@@ -2142,6 +2282,37 @@ section('hud · the armed panel explains itself without hover');
   const preview = onScreen(renderNextContact(w));
   const named = ENEMY_IDS.filter((e) => preview.includes(ENEMIES[e].name));
   check(named.length > 0, 'the wave preview names its contacts', `${named.length} named`);
+}
+
+// ---------------------------------------------------------------------------
+// The volume control is the one preference that persists, so it is the one that
+// can be wrong across sessions rather than merely for a minute. Gated on the
+// rendered markup rather than on the helper behind it, because what matters is
+// which button is lit when the player opens the menu — a correct helper feeding
+// a mis-rendered row is exactly the bug this is here to catch.
+section('hud · the sound setting reads back what it is set to');
+{
+  const w = createWorld(map, 99);
+  const lit = (volume: number, muted: boolean): string | null => {
+    const ui = createUiState();
+    ui.prefs.volume = volume;
+    ui.prefs.muted = muted;
+    const m = /data-act="pref-sound" data-v="([a-z]+)" class="on"/.exec(renderPaused(w, ui));
+    return m?.[1] ?? null;
+  };
+
+  check(renderPaused(w, createUiState()).includes('pref-sound'), 'the pause menu has a sound row');
+
+  for (const [volume, want] of [[0, 'off'], [0.3, 'low'], [0.6, 'mid'], [1, 'high']] as const) {
+    check(lit(volume, false) === want, `volume ${volume} lights "${want}"`, `got ${lit(volume, false)}`);
+  }
+
+  // Mute wins over whatever the volume happens to be, and — the part worth
+  // gating — muting does not destroy it. Turning the sound off and back on has
+  // to return to the level it was at, or the control quietly resets itself
+  // every time it is used.
+  check(lit(0.85, true) === 'off', 'muting reads as off whatever the volume is', `got ${lit(0.85, true)}`);
+  check(lit(0.85, false) === 'high', 'and unmuting returns to the level it was at', `got ${lit(0.85, false)}`);
 }
 
 // ---------------------------------------------------------------------------

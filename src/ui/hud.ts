@@ -2,7 +2,7 @@ import { BALANCE } from '../content/balance.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import type { TowerStats } from '../content/types.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
-import type { UiState } from '../app/uiState.ts';
+import { saveAudioPrefs, type UiPrefs, type UiState } from '../app/uiState.ts';
 import {
   describeGaps,
   coverage,
@@ -69,6 +69,19 @@ export interface HudPorts {
    * one. When this is absent the cards render exactly as they always did.
    */
   campaign?: CampaignPorts;
+
+  /**
+   * The mixer, so the volume row takes effect while the menu is still open.
+   *
+   * Optional and behind `?.` at the call site: the HUD is rendered by the
+   * headless screenshot tool too, and a settings row that hard-required an
+   * AudioContext would take that tool down with it.
+   */
+  audio?: AudioPorts;
+}
+
+export interface AudioPorts {
+  apply(prefs: UiPrefs): void;
 }
 
 export interface CampaignPorts {
@@ -203,6 +216,19 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       case 'pref-stream':
         ui.prefs.stream = data['v'] === 'on';
         break;
+      case 'pref-sound': {
+        // Four steps, not a slider. A slider is a drag target the size of a
+        // fingertip on the compact layout, and "off / quiet / normal / loud" is
+        // the whole range anyone actually wants from a game's master volume.
+        const v = data['v'];
+        ui.prefs.muted = v === 'off';
+        if (v === 'low') ui.prefs.volume = 0.3;
+        else if (v === 'mid') ui.prefs.volume = 0.6;
+        else if (v === 'high') ui.prefs.volume = 1;
+        saveAudioPrefs(ui.prefs);
+        ports.audio?.apply(ui.prefs);
+        break;
+      }
     }
   }
 
@@ -886,7 +912,7 @@ export function renderNextContact(w: World): string {
   const chips = groups
     .map(
       (g) =>
-        `<span class="chip c-${g.enemy}">` +
+        `<span class="chip">` +
         `${contactIcon(g.enemy, 26)}<b>${g.n}</b>` +
         `<i class="cname">${ENEMIES[g.enemy].name}</i></span>`,
     )
@@ -964,6 +990,19 @@ function renderBreach(lives: number): string {
   );
 }
 
+/**
+ * Which of the four sound buttons is lit.
+ *
+ * Mute is checked before volume, so turning the sound off and back on returns
+ * to the level it was at rather than silently resetting it — the volume is kept
+ * across a mute, and this is the readout that has to agree with that.
+ */
+function soundStep(prefs: UiPrefs): string {
+  if (prefs.muted || prefs.volume <= 0.001) return 'off';
+  if (prefs.volume < 0.45) return 'low';
+  return prefs.volume < 0.8 ? 'mid' : 'high';
+}
+
 function renderClearToast(ev: Extract<SimEvent, { type: 'waveCleared' }>): string {
   const item = (v: string, label: string, cls = ''): string =>
     `<span class="item"><b class="${cls}">${v}</b><label>${label}</label></span>`;
@@ -978,7 +1017,7 @@ function renderClearToast(ev: Extract<SimEvent, { type: 'waveCleared' }>): strin
   );
 }
 
-function renderPaused(w: World, ui: UiState): string {
+export function renderPaused(w: World, ui: UiState): string {
   const toggle = (
     act: string,
     opts: readonly [string, string][],
@@ -1023,6 +1062,16 @@ function renderPaused(w: World, ui: UiState): string {
         ['off', 'Off'],
       ],
       ui.prefs.stream ? 'on' : 'off',
+    )}</div>` +
+    `<div class="row"><span>Sound</span>${toggle(
+      'pref-sound',
+      [
+        ['off', 'Off'],
+        ['low', 'Low'],
+        ['mid', 'Mid'],
+        ['high', 'High'],
+      ],
+      soundStep(ui.prefs),
     )}</div>` +
     `</div>` +
     `<div class="hr"></div>` +
