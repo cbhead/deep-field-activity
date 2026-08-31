@@ -98,6 +98,8 @@ export interface Hud {
   update(): void;
   /** Fed from the single event drain in main.ts. */
   onEvent(ev: SimEvent): void;
+  /** Unbind and empty the root. See `onClick` for why this is mandatory. */
+  destroy(): void;
 }
 
 const SPEEDS = [1, 2, 4];
@@ -145,14 +147,18 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
   let breachLives = 0;
   let breachUntil = 0;
 
-  root.addEventListener('click', (ev) => {
+  // Named, because `destroy` has to unbind it: #hud is a fixture of the page
+  // and outlives any one run, so a second HUD bound over the first would give
+  // every button two handlers, the older one dispatching into a dead world.
+  const onClick = (ev: MouseEvent): void => {
     const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]');
     if (el === null) return;
     act(el.dataset['act']!, el.dataset);
     // Reflect the press now, not at the next 10Hz tick: a button whose state
     // change shows up 100ms later reads as a button that didn't take.
     update();
-  });
+  };
+  root.addEventListener('click', onClick);
 
   function act(action: string, data: DOMStringMap): void {
     switch (action) {
@@ -254,6 +260,10 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
   }
 
   return {
+    destroy(): void {
+      root.removeEventListener('click', onClick);
+      root.innerHTML = '';
+    },
     onEvent(ev) {
       // On a landscape phone the open deck overlays the bottom of the board
       // (see .td-compact in styles.css), so it must not still be open when

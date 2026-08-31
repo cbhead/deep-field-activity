@@ -366,7 +366,13 @@ async function startGame(
   hudRoot: HTMLElement,
   seed: number,
   opts: StartOptions = {},
-): Promise<{ world: World; raceCues: RaceCues; startRaceTone: () => void }> {
+): Promise<{
+  world: World;
+  raceCues: RaceCues;
+  startRaceTone: () => void;
+  /** Tears the run down completely. Nothing calls this until the router does. */
+  dispose: () => void;
+}> {
   // Race mode passes neither, and gets the baseline game it has always played.
   const map = parseMap(opts.level?.map ?? LEVEL01);
   const rules = opts.rules ?? DEFAULT_RULES;
@@ -379,7 +385,8 @@ async function startGame(
   // Race passes no level, so it plays the baseline ground — the same one on both
   // clients, which is what keeps two screens comparable at a glance.
   const field = fieldFor(opts.level?.field);
-  const { app, layers } = await createRenderer(mount, boardW, boardH, field);
+  const renderer = await createRenderer(mount, boardW, boardH, field);
+  const { app, layers } = renderer;
 
   const textures = createTextures(app.renderer);
   const mapLayer = buildMapLayer(map, textures, field);
@@ -502,6 +509,30 @@ async function startGame(
 
   loop.start();
 
+  /**
+   * Undo everything above, in the reverse of the order it was built.
+   *
+   * The loop stops first because every other teardown pulls something out from
+   * under a frame that might otherwise still be in flight. The renderer goes
+   * last for the same reason: `view`, `overlay` and the chromes all hold
+   * containers that belong to the Application it destroys.
+   *
+   * The baked textures are deliberately not enumerated. They were allocated by
+   * this Application's WebGL context, and `renderer.dispose()` destroys that
+   * context — the GPU memory goes with it. Walking the Textures record here
+   * would be more code making the same thing happen.
+   */
+  const dispose = (): void => {
+    loop.stop();
+    window.removeEventListener('keydown', wake);
+    window.removeEventListener('pointerdown', wake);
+    input.dispose();
+    hud.destroy();
+    audio.dispose();
+    renderer.dispose();
+    if (import.meta.env.DEV) delete (globalThis as Record<string, unknown>)['td'];
+  };
+
   console.info(
     `[td] "${map.name}" ${map.cols}x${map.rows}, ` +
       `${map.waypoints.length} waypoints, ${map.pathLength} tiles of path — ` +
@@ -515,6 +546,10 @@ async function startGame(
   if (import.meta.env.DEV) {
     (globalThis as Record<string, unknown>)['td'] = {
       world, loop, view, overlay, effects, ui, map, app, layers,
+      // Exposed so teardown is testable from outside the app: `td.dispose()`
+      // in devtools should leave no canvas, no listeners and no <html> classes
+      // behind. tools/teardown.ts asserts exactly that.
+      dispose,
       // `td.input.tapMs = 200` on the device itself: how long a press must last
       // before releasing it buys the station. The one number here that can only
       // really be judged with a thumb.
@@ -538,6 +573,7 @@ async function startGame(
   // place that owns the mixer is still the one place that reaches into it.
   return {
     world,
+    dispose,
     raceCues: {
       opponentWave: () => void audio.play(RACE_OPPONENT_WAVE),
       leadChange: () => void audio.play(RACE_LEAD_CHANGE),

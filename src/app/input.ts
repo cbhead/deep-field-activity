@@ -71,6 +71,12 @@ export interface InputHandle {
   reconcile(): void;
   /** Press-to-commit threshold, in ms. Live-tunable from the dev handle. */
   tapMs: number;
+  /**
+   * Unbind everything. Required, not hygiene: most of these listeners live on
+   * `window` and `document`, which outlive the run they were bound for. A
+   * surviving handler pushes commands into a world nobody is ticking any more.
+   */
+  dispose(): void;
 }
 
 /**
@@ -94,6 +100,27 @@ export function attachInput(
 ): InputHandle {
   const { cols, rows } = world.map;
   const canvas = app.canvas;
+
+  /**
+   * Bind through `on`, never through `addEventListener` directly, so `dispose`
+   * can unbind. The union of the three event maps is what lets a call site keep
+   * a properly typed event — `on(canvas, 'pointerdown', (ev) => …)` gives a
+   * PointerEvent — which is why the handlers below no longer cast.
+   */
+  const bound: Array<() => void> = [];
+  type AnyEventMap = WindowEventMap & DocumentEventMap & HTMLElementEventMap;
+  const on = <K extends keyof AnyEventMap>(
+    target: EventTarget,
+    type: K,
+    fn: (ev: AnyEventMap[K]) => void,
+    opts?: AddEventListenerOptions,
+  ): void => {
+    const handler = fn as EventListener;
+    target.addEventListener(type, handler, opts);
+    bound.push(() => {
+      target.removeEventListener(type, handler, opts);
+    });
+  };
 
   let gesture: Gesture = idleGesture();
   /** Canvas rect, cached for the duration of one gesture. */
@@ -211,23 +238,21 @@ export function attachInput(
     }
   };
 
-  canvas.addEventListener('pointermove', (raw) => {
-    const ev = raw as PointerEvent;
+  on(canvas, 'pointermove', (ev) => {
     if (ev.pointerType === 'mouse') mouseMove(ev);
     // Touch moves during a gesture arrive on the window listener below, which
     // keeps delivering once the finger leaves the canvas. A touch pointermove
     // with no gesture in flight is a stylus hovering: nothing to do.
   });
 
-  canvas.addEventListener('pointerleave', (raw) => {
+  on(canvas, 'pointerleave', (ev) => {
     // Touch fires pointerleave on lift. Honouring it there would wipe the very
     // preview a quick tap just parked, one frame after parking it.
-    if ((raw as PointerEvent).pointerType !== 'mouse') return;
+    if (ev.pointerType !== 'mouse') return;
     ui.hover = null;
   });
 
-  canvas.addEventListener('pointerdown', (raw) => {
-    const ev = raw as PointerEvent;
+  on(canvas, 'pointerdown', (ev) => {
     if (ev.pointerType === 'mouse') {
       mouseDown(ev);
       return;
@@ -245,8 +270,7 @@ export function attachInput(
   // Pressing a build slot and dragging onto the board arms and aims in one
   // gesture. Bound on the HUD root rather than per-slot because the deck is
   // re-rendered constantly and per-slot listeners would not survive it.
-  hudRoot.addEventListener('pointerdown', (raw) => {
-    const ev = raw as PointerEvent;
+  on(hudRoot, 'pointerdown', (ev) => {
     if (ev.pointerType === 'mouse') return;
     const slot = (ev.target as HTMLElement).closest<HTMLElement>('[data-act="arm"]');
     const id = slot?.dataset['id'] as TowerId | undefined;
@@ -267,20 +291,17 @@ export function attachInput(
 
   // On window, so a drag that leaves the canvas — or the slot it started on —
   // keeps being delivered. Filtered by pointerId inside the reducer.
-  window.addEventListener('pointermove', (raw) => {
-    const ev = raw as PointerEvent;
+  on(window, 'pointermove', (ev) => {
     if (ev.pointerType === 'mouse' || gesture.state.k === 'idle') return;
     send({ k: 'move', id: ev.pointerId, tile: tileAt(ev), x: ev.clientX, y: ev.clientY });
   });
 
-  window.addEventListener('pointerup', (raw) => {
-    const ev = raw as PointerEvent;
+  on(window, 'pointerup', (ev) => {
     if (ev.pointerType === 'mouse' || gesture.state.k === 'idle') return;
     send({ k: 'up', id: ev.pointerId, tile: tileAt(ev), at: ev.timeStamp });
   });
 
-  window.addEventListener('pointercancel', (raw) => {
-    const ev = raw as PointerEvent;
+  on(window, 'pointercancel', (ev) => {
     if (gesture.state.k === 'idle') return;
     send({ k: 'cancel', id: ev.pointerId });
   });
@@ -288,20 +309,20 @@ export function attachInput(
   // A tab hidden mid-drag must not be able to resolve into a purchase. This
   // matters most in Race, where "I was charged for a station I never placed" is
   // a fairness complaint rather than a papercut.
-  document.addEventListener('visibilitychange', () => {
+  on(document, 'visibilitychange', () => {
     if (document.hidden && gesture.state.k !== 'idle') {
       send({ k: 'cancel', id: gesture.state.id });
     }
   });
 
   // The cached rect is stale the moment the board is re-letterboxed.
-  window.addEventListener('resize', () => {
+  on(window, 'resize', () => {
     if (gesture.state.k !== 'idle') send({ k: 'cancel', id: gesture.state.id });
   });
 
   // Right-click to disarm is the genre convention, and cheaper than moving the
   // pointer back to the build bar to click the same button again.
-  canvas.addEventListener('contextmenu', (ev) => {
+  on(canvas, 'contextmenu', (ev) => {
     ev.preventDefault();
     // iOS raises contextmenu from a long press at ~500ms, which is squarely
     // inside a deliberate press-and-hold — disarming there would cancel the
@@ -310,7 +331,7 @@ export function attachInput(
     ui.selected = null;
   });
 
-  window.addEventListener('keydown', (ev) => {
+  on(window, 'keydown', (ev) => {
     if (ev.key === 'Escape') {
       // Escape unwinds one layer at a time: disarm, then close the inspector,
       // then pause. Jumping straight to the pause menu from an armed state
@@ -355,6 +376,16 @@ export function attachInput(
       // ghost simply re-tints.
       if (gesture.pinned !== null) gesture = { ...gesture, pinned: null };
       if (ui.touchPreview) ui.touchPreview = false;
+    },
+    dispose(): void {
+      for (const off of bound) off();
+      bound.length = 0;
+      // A gesture in flight has an outstanding pointer capture, but the element
+      // holding it is about to be destroyed along with the canvas, so there is
+      // nothing to release. The one listener not tracked here is the 350ms
+      // click-swallower, which is `once` and stop-propagates into a dead world
+      // harmlessly.
+      gesture = idleGesture();
     },
   };
 }

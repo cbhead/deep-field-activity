@@ -49,6 +49,7 @@ export interface GameLoop {
   /** Explicit player pause, distinct from the automatic tab-hidden pause. */
   paused: boolean;
   start(): void;
+  /** Halts the rAF chain *and* unbinds; a stopped loop holds nothing. */
   stop(): void;
 }
 
@@ -87,31 +88,37 @@ export function createLoop(world: World, onRender: () => void): GameLoop {
     onRender();
   }
 
-  function start(): void {
-    if (rafId !== 0) return;
-    last = performance.now();
-    acc.debt = 0;
-    rafId = requestAnimationFrame(frame);
-  }
-
-  function stop(): void {
-    if (rafId === 0) return;
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  }
-
   // Auto-pause when the tab is hidden. Correct tower defense behaviour on its
   // own, and in Race mode it is free fairness: ranking is waves cleared first
   // and elapsed time only third, so a hidden tab simply resumes later against
   // an identical board rather than being punished.
-  document.addEventListener('visibilitychange', () => {
+  function onVisibility(): void {
     hidden = document.hidden;
     if (!hidden) {
       // Returning from hidden: discard the debt accrued while away.
       last = performance.now();
       acc.debt = 0;
     }
-  });
+  }
+
+  // Bound in start rather than at creation, so start/stop is symmetric.
+  // Navigating out of a run stops its loop; a listener that outlived it would
+  // go on writing into an accumulator nothing reads.
+  function start(): void {
+    if (rafId !== 0) return;
+    document.addEventListener('visibilitychange', onVisibility);
+    hidden = document.hidden;
+    last = performance.now();
+    acc.debt = 0;
+    rafId = requestAnimationFrame(frame);
+  }
+
+  function stop(): void {
+    document.removeEventListener('visibilitychange', onVisibility);
+    if (rafId === 0) return;
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
 
   return loop;
 }

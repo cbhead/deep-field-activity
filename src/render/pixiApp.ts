@@ -25,6 +25,13 @@ export interface Layers {
 export interface Renderer {
   app: Application;
   layers: Layers;
+  /**
+   * Destroy the Application, drop its canvas, unbind the viewport watchers and
+   * surrender the layout classes this renderer put on <html>. `td-ingame` in
+   * particular gates the portrait "rotate to play" wall, which must not be left
+   * armed over a menu the player navigated back to.
+   */
+  dispose(): void;
 }
 
 /** Canvas size is dictated by the map, so it is passed in rather than assumed. */
@@ -61,8 +68,10 @@ export async function createRenderer(
   // v8: `app.canvas`, not `app.view`.
   mount.appendChild(app.canvas);
 
+  // This canvas has never been sized, whatever the last one measured.
+  resetFit();
   fitCanvas(app);
-  watchViewport(() => {
+  const unwatch = watchViewport(() => {
     fitCanvas(app);
   });
 
@@ -84,7 +93,19 @@ export async function createRenderer(
     layers.overlay,
   );
 
-  return { app, layers };
+  return {
+    app,
+    layers,
+    dispose(): void {
+      unwatch();
+      resetFit();
+      document.documentElement.classList.remove('td-touch', 'td-compact', 'td-ingame');
+      // `true` also destroys the canvas element and the WebGL context behind
+      // it. Leaving those to GC is how a few navigations become a browser's
+      // context limit and a black board.
+      app.destroy(true, { children: true, texture: true });
+    },
+  };
 }
 
 /**
@@ -163,32 +184,58 @@ function chromeFor(
  *   move the layout viewport in step.
  * - orientationchange, plus a deferred second pass, covers the stale read.
  */
-function watchViewport(refit: () => void): void {
+function watchViewport(refit: () => void): () => void {
   let queued = false;
+  // Every path back into `refit` goes through this flag. A refit after the
+  // renderer is gone reads `app.screen` off a destroyed Application and throws,
+  // and the rotation timeout below can land a full 300ms after a navigation.
+  let disposed = false;
   const schedule = (): void => {
-    if (queued) return;
+    if (queued || disposed) return;
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      refit();
+      if (!disposed) refit();
     });
   };
 
-  window.addEventListener('resize', schedule);
-  window.visualViewport?.addEventListener('resize', schedule);
-  new ResizeObserver(schedule).observe(document.documentElement);
-
-  // The dimensions are not settled when this fires. Measuring now *and* after
-  // the rotation animation is cheaper and more reliable than guessing which of
-  // the two is the correct moment.
-  window.addEventListener('orientationchange', () => {
+  const onOrientation = (): void => {
+    // The dimensions are not settled when this fires. Measuring now *and* after
+    // the rotation animation is cheaper and more reliable than guessing which
+    // of the two is the correct moment.
     schedule();
     setTimeout(schedule, 300);
-  });
+  };
+
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener('resize', schedule);
+  window.visualViewport?.addEventListener('resize', schedule);
+  observer.observe(document.documentElement);
+  window.addEventListener('orientationchange', onOrientation);
+
+  return () => {
+    disposed = true;
+    window.removeEventListener('resize', schedule);
+    window.visualViewport?.removeEventListener('resize', schedule);
+    observer.disconnect();
+    window.removeEventListener('orientationchange', onOrientation);
+  };
 }
 
-/** Last (viewport, tier) actually fitted, so repeat triggers cost nothing. */
+/**
+ * Last (viewport, board, tier) actually fitted, so repeat triggers cost nothing.
+ *
+ * The board's logical size is part of the key because it is part of the answer:
+ * two sectors of different dimensions fit differently at the same viewport, and
+ * keying on the viewport alone made switching between them a no-op. `resetFit`
+ * covers the remaining case — a *new* canvas at the same viewport and the same
+ * board, which is a genuinely different element that has never been sized.
+ */
 let lastFit = '';
+
+const resetFit = (): void => {
+  lastFit = '';
+};
 
 function fitCanvas(app: Application): void {
   const viewport = document.documentElement;
@@ -202,7 +249,7 @@ function fitCanvas(app: Application): void {
   // this has to be cheap when nothing meaningful changed. It is also the
   // backstop that turns any accidental write-measure loop into a no-op rather
   // than a spin.
-  const sig = `${vw}x${vh}|${chrome.tier}`;
+  const sig = `${vw}x${vh}|${app.screen.width}x${app.screen.height}|${chrome.tier}`;
   if (sig === lastFit) return;
   lastFit = sig;
 

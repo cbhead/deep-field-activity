@@ -8,10 +8,11 @@
  * landing a visual change rather than as an act of discipline afterwards.
  *
  * **No new dependency.** It drives a real Chrome over the DevTools protocol
- * using `ws`, which the relay server already needs. Chrome runs
- * `requestAnimationFrame` normally, which matters: the sim only advances on
- * animation frames, so a capture tool that cannot produce them can only ever
- * photograph an empty board.
+ * (the client lives in tools/cdp.ts, shared with the teardown gate) using `ws`,
+ * which the relay server already needs. Chrome runs `requestAnimationFrame`
+ * normally, which matters: the sim only advances on animation frames, so a
+ * capture tool that cannot produce them can only ever photograph an empty
+ * board.
  *
  * Scenes are set up through the dev-only `td` handle — the same one used from
  * devtools — so the shots show the real simulation rather than a mock.
@@ -20,11 +21,10 @@
  * a room with a relay between them, and faking that would produce a picture of
  * something the game does not do.
  */
-import { spawn } from 'node:child_process';
+import { type ChildProcess } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { WebSocket } from 'ws';
+import { launch, sleep } from './cdp.ts';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DEBUG_PORT = 9333;
 const BASE = process.env['SHOTS_BASE'] ?? 'http://localhost:5173';
 const OUT = 'docs/media';
@@ -33,8 +33,6 @@ const OUT = 'docs/media';
 const SCALE = 2;
 const WIDTH = 1280;
 const HEIGHT = 800;
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 interface Shot {
   readonly file: string;
@@ -155,96 +153,23 @@ const SHOTS: readonly Shot[] = [
   },
 ];
 
-interface Pending {
-  resolve(v: Record<string, unknown>): void;
-  reject(e: Error): void;
-}
-
-class Cdp {
-  private id = 0;
-  private readonly pending = new Map<number, Pending>();
-  private readonly ws: WebSocket;
-
-  // Longhand rather than a parameter property: Node's type-stripping loader
-  // rejects those, and the whole harness runs under it.
-  private constructor(ws: WebSocket) {
-    this.ws = ws;
-    ws.on('message', (raw: Buffer) => {
-      const msg = JSON.parse(raw.toString()) as {
-        id?: number;
-        error?: { message: string };
-        result?: Record<string, unknown>;
-      };
-      if (msg.id === undefined) return;
-      const p = this.pending.get(msg.id);
-      if (p === undefined) return;
-      this.pending.delete(msg.id);
-      if (msg.error) p.reject(new Error(msg.error.message));
-      else p.resolve(msg.result ?? {});
-    });
-  }
-
-  static async open(url: string): Promise<Cdp> {
-    const ws = new WebSocket(url, { maxPayload: 256 * 1024 * 1024 });
-    await new Promise<void>((resolve, reject) => {
-      ws.once('open', () => resolve());
-      ws.once('error', reject);
-    });
-    return new Cdp(ws);
-  }
-
-  send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    const id = ++this.id;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close(): void {
-    this.ws.close();
-  }
-}
-
 /** Killed in the `finally` below, so a failure cannot leak the debug port. */
-const processes: ReturnType<typeof spawn>[] = [];
+const processes: ChildProcess[] = [];
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
 
-  const chrome = spawn(CHROME, [
-    '--headless=new',
-    `--remote-debugging-port=${DEBUG_PORT}`,
-    `--window-size=${WIDTH},${HEIGHT}`,
-    '--hide-scrollbars',
-    '--no-first-run',
-    '--user-data-dir=/tmp/td-shots-profile',
+  const { cdp, chrome } = await launch({
+    port: DEBUG_PORT,
+    width: WIDTH,
+    height: HEIGHT,
+    profileDir: '/tmp/td-shots-profile',
     // Software rendering would produce a board with no glow at all; the whole
     // point of these captures is the rendering.
-    '--use-gl=angle',
-    '--enable-unsafe-swiftshader',
-    'about:blank',
-  ]);
-  processes.push(chrome);
-  chrome.on('error', (e) => {
-    console.error('could not start Chrome:', e.message);
+    args: ['--use-gl=angle', '--enable-unsafe-swiftshader'],
   });
+  processes.push(chrome);
 
-  // Chrome takes a moment to open the debug port.
-  let target: { webSocketDebuggerUrl: string } | undefined;
-  for (let i = 0; i < 40 && target === undefined; i++) {
-    await sleep(250);
-    try {
-      const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
-      const list = (await res.json()) as { type: string; webSocketDebuggerUrl: string }[];
-      target = list.find((t) => t.type === 'page');
-    } catch {
-      // not up yet
-    }
-  }
-  if (target === undefined) throw new Error('Chrome debug port never opened');
-
-  const cdp = await Cdp.open(target.webSocketDebuggerUrl);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Emulation.setDeviceMetricsOverride', {
