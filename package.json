@@ -20,6 +20,7 @@
     "play": "zsh scripts/play.sh",
     "sweep": "zsh scripts/sweep.sh",
     "campaign": "zsh scripts/campaign.sh",
+    "bankfloor": "zsh scripts/bankfloor.sh",
     "shots": "zsh scripts/shots.sh"
   },
   "dependencies": {

@@ -94,7 +94,11 @@ export const DIFFICULTIES = {
  * is still entirely the player's doing, and the floor is *below* every tier's
  * normal start, so arriving poor still costs you.
  *
- * That last clause is the load-bearing one, and it was silently false for a
+ * **That last clause does not survive measurement — see the re-sweep below.**
+ * The value is knowingly left at 0.6 pending play-testing of the restored
+ * opening; it is not evidence-backed and should not be treated as though it is.
+ *
+ * That clause is also the load-bearing one, and it was silently false for a
  * while. `main.ts` parsed an absent `?bank` with `Number(params.get('bank'))`,
  * which is `0` — finite and non-negative, so it read as a real carried bank of
  * nothing and every *fresh* run opened on the floor instead of the tier's own
@@ -122,6 +126,47 @@ export const DIFFICULTIES = {
  * was re-applying, to all three tiers at once, the one dial this file documents
  * as the wrong one. Fixing the parse restores the intent this comment always
  * claimed: the floor catches a poor arrival, it does not set the opening.
+ *
+ * ---
+ *
+ * **Re-swept once it was only a floor** — `npm run bankfloor`, 16 seeds. 0.6
+ * was chosen while it was also the opening budget of every fresh run, so it was
+ * picked for being a playable *start*. That is not the question it answers now,
+ * and on the question it does answer it is not a good number.
+ *
+ * A floor fails in two directions. Too low strands: below the cheapest station
+ * the sector cannot be played. Too high is a subsidy: if arriving broke hands
+ * you a normal opening anyway, spending to zero costs nothing and the carry
+ * stops being a decision. Each tier's usable band sits between them:
+ *
+ *                 Recon ($320)          Standard ($250)
+ *   0.45          alive, -3.5 lives     strands
+ *   0.55          alive, -2.7 lives     strands
+ *   0.60  <--     DEAD, -0.1 lives      STRANDS, 38/48 sectors
+ *   0.70          dead,  -0.0 lives     alive, -5.9 lives
+ *   0.75          dead,  -0.0 lives     alive, -4.0 lives
+ *
+ * Recon's band is 0.40–0.55 and Standard's is 0.65–0.80. They do not overlap,
+ * and 0.6 is in neither — it is simultaneously too high for Recon, where
+ * arriving broke costs a tenth of a life and banking is therefore decorative,
+ * and too low for Standard, where a spend-everything run still loses a fifth of
+ * its sectors outright.
+ *
+ * The bands are disjoint because a *fraction* ties the safety net to the tier's
+ * generosity, and generosity runs opposite to need: Recon starts richest at
+ * $320 and needs the least help, because its contacts are softer and its bounty
+ * richer. So the fraction hands the most to the tier that wants the least. In
+ * absolute dollars the bands do overlap — Recon $128–$176, Standard $163–$200 —
+ * and a flat $170 sits inside both (Recon 0.53, -2.7 lives; Standard 0.68, -6.4
+ * lives; full 48/48 arc on each). If this is revisited, that is the candidate,
+ * and the shape is the finding rather than the number.
+ *
+ * Two caveats on the table. The arc column is chaotic — an opening change moves
+ * every placement after it — so it carries a noise band of about ±4 sectors in
+ * 48; only clear drops like Standard's 38 mean anything. And Blackout is absent
+ * because it cannot clear sector one under the probe's builder at any money, so
+ * a continuous run never reaches a hand-off and never exercises the floor at
+ * all. That is a gap in the evidence, not a verdict that Blackout is fine.
  */
 export const BANK_FLOOR = 0.6;
 

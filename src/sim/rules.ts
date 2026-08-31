@@ -82,7 +82,20 @@ export const DEFAULT_RULES: Rules = {
  * deliberate choice rather than an oversight: the run is the player's to make
  * lopsided if they want to.
  */
-export function resolveRules(level: LevelDef, difficulty: DifficultyId, bank?: number): Rules {
+/**
+ * `floor` exists so `tools/bankfloor.ts` can sweep it. `BALANCE` is a mutable
+ * object that the probes patch in place, but `BANK_FLOOR` is a primitive and
+ * cannot be, so without a seam the sweep would have to re-implement the line
+ * below — and a sweep of a *copy* of the rule is exactly the thing the header
+ * of `tools/sweep.ts` warns against. Defaulting it keeps every production
+ * caller on the real constant and unchanged.
+ */
+export function resolveRules(
+  level: LevelDef,
+  difficulty: DifficultyId,
+  bank?: number,
+  floor: number = BANK_FLOOR,
+): Rules {
   const d = DIFFICULTIES[difficulty];
   return {
     levelId: level.id,
@@ -90,7 +103,7 @@ export function resolveRules(level: LevelDef, difficulty: DifficultyId, bank?: n
     waves: level.waves,
     startingLives: d.startingLives,
     startingMoney:
-      bank === undefined ? d.startingMoney : Math.max(bank, Math.round(d.startingMoney * BANK_FLOOR)),
+      bank === undefined ? d.startingMoney : Math.max(bank, Math.round(d.startingMoney * floor)),
     hpFactor: d.hpFactor,
     bountyFactor: d.bountyFactor,
   };
