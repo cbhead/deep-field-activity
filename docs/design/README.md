@@ -1,6 +1,6 @@
 # Deep Field — the source designs
 
-Four documents from Claude Design sessions, kept here because they are the
+Six documents from Claude Design sessions, kept here because they are the
 *reasoning* behind a lot of the current code and that reasoning is not
 recoverable from the code itself. Each one carries short rationales explaining
 why a surface looks the way it does — those paragraphs are the valuable part,
@@ -17,12 +17,19 @@ and is generic (a React-based template compiler), not design content.
 | **Race Lobby** | The head-to-head lobby — room codes, the roster, the countdown. |
 | **Deep Field - Build Spec** | Sixteen surfaces as before/after: the board layer, the deck, and the status-effect channels. |
 | **Deep Field - Front Door** | The home screen, sector cards on real board thumbnails, and the Race entry. |
+| **Deep Field - Contact Spec Final** | Six contacts that read as six silhouettes, and the status channels that ride on them. |
+| **Deep Field - Map Spec** | Sectors 04–08, and the one model change they need: a map carries routes, plural. |
 
-All four are **built**. What is not built is tracked in the plan at
+The first five are **built**. The map spec is **not** — it is the only one here
+describing a game that does not exist yet, so it reads as a proposal rather than
+a record. What is not built is tracked in the plan at
 `~/.claude/plans/i-want-to-start-effervescent-dolphin.md`, which also records
 the execution order and the decisions taken along the way.
 
 ## Read them with three caveats
+
+These caveats are about the five built specs. The map spec is exempt from all
+three, and deliberately so — see below.
 
 **The numbers are stale, in all of them.** They were authored against earlier
 balance passes: the HUD spec shows Arrow $60 / Cannon $110 / Frost $85 and the
@@ -53,6 +60,36 @@ rather than by reading:
 > The build spec says so itself, and that rule is what makes the stale panels
 > harmless: build against the checklist, and check the "before" against the
 > code rather than against the picture.
+
+## The map spec's numbers were measured, and they hold
+
+The standing caveat above is that the numbers in these documents are stale or
+wrong. The map spec is the exception, and it is worth recording *that it was
+checked* rather than trusting it twice.
+
+Every one of its five boards was run through the same rules `parseMap` enforces
+— right angles, no duplicate waypoints, never off-board, never off-path, union
+coverage with no orphaned road — plus its own printed figures for road tiles,
+buildable tiles, per-route length and merge runway. All 25 routes and all 25
+figures are exact. Two of the three earlier specs shipped arithmetic that was
+wrong on contact with a real board; this one does not, so the ASCII rows and
+route tables in §3 can be transcribed into `src/content/maps/` as authoritative
+rather than as a starting point.
+
+What it does **not** carry, and what therefore has to be decided in code:
+
+- **No palettes.** It names five `SectorFieldId`s and says lanes are "value
+  steps of the route accent — no new hues", but authors none of the ~40 values
+  a `SectorField` needs. The five new fields are derived from the existing
+  three under that rule.
+- **No wave tables.** §5 says "five wave tables" and stops. Roughly sixty waves
+  of composition are authoring work, and `tools/sweep.ts` re-baselines them.
+- **No ordering rule for `first`/`last` targeting.** `targeting.ts` ranks by
+  `Creep.progress`, which stops being comparable the moment two lanes have
+  different lengths — on Sluice, deliberately 2.5 : 1, a contact two tiles from
+  the goal down the chute loses "first" to one thirty tiles out on the coil.
+  Remaining distance to the goal is the rule that survives the change; distance
+  travelled is not.
 
 ## Deliberate departures
 

@@ -504,7 +504,7 @@ async function startGame(
 
   console.info(
     `[td] "${map.name}" ${map.cols}x${map.rows}, ` +
-      `${map.waypoints.length} waypoints, ${map.pathLength} tiles of path — ` +
+      `${map.routes.length} route(s) — ${map.routes.map((r) => `${r.id} ${r.length}t`).join(', ')} — ` +
       `seed ${formatSeed(seed)} (${seed})`,
   );
 
@@ -522,7 +522,9 @@ async function startGame(
       // The N2 fairness gate: run this in two tabs of the same room and diff.
       // Byte-identical or the race is not fair.
       dumpWaves: (n = 20) =>
-        JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules))),
+        JSON.stringify(
+          Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules, world.map.routes)),
+        ),
       // Auditioning the mix without playing a match out. `td.soundscape.audition
       // ('lance')` for one sound, and `td.soundscape.stress('lance', 120)` for
       // the question that actually matters — what happens at a rate no board can

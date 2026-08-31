@@ -187,10 +187,50 @@ export interface WaveGroup {
   readonly every: number;
   /** Seconds into the wave before this group starts. */
   readonly after: number;
+
+  /**
+   * Which lane this group walks. A `RouteSource.id` pins it to one; `'split'`
+   * deals it round-robin across every route in index order.
+   *
+   * Optional, and absent means route 0 — which is what makes a one-route board
+   * read exactly as it did before this field existed, and why the three shipped
+   * wave tables needed no edit.
+   *
+   * Round-robin rather than random, and that is load-bearing rather than
+   * merely simple: a race replays the same wave plan on two clients, so lane
+   * assignment has to be reproducible from the seed alone. Dealing in index
+   * order needs no RNG stream at all, which is one fewer thing that can drift
+   * — and it means `'split'` on a count of 12 across two lanes is always 6 and
+   * 6, which a designer can reason about.
+   */
+  readonly route?: string | 'split';
 }
 
 export interface WaveDef {
   readonly groups: readonly WaveGroup[];
+}
+
+/**
+ * One lane. An id and a waypoint chain, and deliberately nothing else.
+ *
+ * No per-route speed, no weighting, no priority. Those would all be reasonable
+ * and all be premature: on a multi-lane board the *geometry* is doing the work,
+ * and a second knob on top of it would only hide which one mattered.
+ */
+export interface RouteSource {
+  /** Unique within the map. The authoring handle, and what a wave group names. */
+  readonly id: string;
+
+  /**
+   * The lane as corner tile coords, first = a spawn, last = the goal.
+   *
+   * Authored explicitly rather than traced out of the ASCII: a trace is ambiguous
+   * wherever the path touches itself, and the order of travel isn't recoverable
+   * from painted tiles at all. The cost of a second representation is drift, so
+   * `parseMap()` cross-checks the two — every route tile must be painted path,
+   * and every painted path tile must be on *some* route.
+   */
+  readonly waypoints: readonly TileCoord[];
 }
 
 export interface MapSource {
@@ -202,17 +242,20 @@ export interface MapSource {
    *
    *   `.` buildable ground    `#` path
    *   `x` blocked scenery     `S` spawn (path)    `E` goal (path)
+   *
+   * More than one `S` is legal — a board may have several spawns. More than one
+   * `E` is not: one goal keeps a board about coverage, where two goals with
+   * different life costs would be a different game, about triage.
    */
   readonly rows: readonly string[];
 
   /**
-   * The creep route as corner tile coords, first = spawn, last = goal.
+   * The lanes contacts walk. At least one.
    *
-   * Authored explicitly rather than traced out of the ASCII: a trace is ambiguous
-   * wherever the path touches itself, and the order of travel isn't recoverable
-   * from painted tiles at all. The cost of a second representation is drift, so
-   * `parseMap()` cross-checks the two — every route tile must be painted path,
-   * and every painted path tile must be on the route.
+   * A single-route map is the old shape and reads identically — which is the
+   * whole reason this is a list rather than a `waypoints` field beside an
+   * optional `extraLanes`. Lanes that share tiles are legal and expected: a
+   * merge *is* two routes covering the same road.
    */
-  readonly waypoints: readonly TileCoord[];
+  readonly routes: readonly RouteSource[];
 }

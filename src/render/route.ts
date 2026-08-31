@@ -18,46 +18,77 @@ import type { MapDef } from '../sim/types.ts';
 export const OFF_ROUTE = -1;
 
 /**
- * Normalised distance along the route for every tile, `OFF_ROUTE` elsewhere.
+ * How close to the pulsar every tile is, 0 at the furthest entry and 1 at the
+ * goal. `OFF_ROUTE` for tiles no lane walks.
  *
- * Walks the waypoint list a tile at a time, exactly as `parseMap` built it, so
- * the two cannot disagree about what the road is. `map.pathLength` counts the
- * same steps, so the value at the goal lands on 1 with no fudge factor.
+ * Walks each lane a tile at a time, exactly as `parseMap` built it, so the two
+ * cannot disagree about what the road is.
  *
- * **First visit wins.** None of the three shipped boards crosses itself, but a
- * future one might, and keeping the minimum stops a crossing tile from being
- * brighter than both of its neighbours — which would read as a landmark that
- * is not there.
+ * **Measured backwards from the goal, not forwards from a spawn.** On one lane
+ * the two are the same number — `1 - remaining/length` is `travelled/length`
+ * exactly — but a merge breaks the forward reading and does not break this one.
+ * Sluice's trunk is 35% of the way along the chute and 88% of the way along the
+ * coil; there is no honest answer to "how far along is this tile", and picking
+ * one would have lit the last approach as if it were near the spawn. Distance
+ * *remaining* is unambiguous on shared road, because every lane ends at the
+ * same goal.
+ *
+ * One normaliser for the whole board — the longest lane — rather than one per
+ * lane, so brightness means the same thing everywhere on the board. A short
+ * lane therefore starts part-lit, which is not a bug: Sluice's chute entry
+ * genuinely is closer to the core than the coil's, and that is the board's
+ * whole mechanism.
+ *
+ * **Nearest wins** where lanes disagree — Braid's rungs cross at tiles that are
+ * 25 tiles from the goal one way and 31 the other. Taking the minimum keeps the
+ * ramp monotone along each lane, which is what the design sentence claims.
  */
 export function routeDistance(map: MapDef): Float32Array {
   const out = new Float32Array(map.cols * map.rows).fill(OFF_ROUTE);
-  const wp = map.waypoints;
-  if (wp.length === 0) return out;
+  if (map.routes.length === 0) return out;
 
-  let travelled = 0;
-  let x = Math.floor(wp[0]!.x);
-  let y = Math.floor(wp[0]!.y);
+  const longest = Math.max(...map.routes.map((r) => r.length));
+  if (longest === 0) return out;
 
-  const mark = (): void => {
-    if (x < 0 || y < 0 || x >= map.cols || y >= map.rows) return;
-    const i = y * map.cols + x;
-    if (out[i] === OFF_ROUTE) out[i] = travelled / map.pathLength;
-  };
+  // Distance still to walk, per tile, minimised across every lane that covers
+  // it. Kept separate from `out` so the minimum is taken in tiles rather than
+  // in an already-normalised fraction.
+  const remaining = new Float32Array(map.cols * map.rows).fill(Infinity);
 
-  mark();
-  for (let i = 1; i < wp.length; i++) {
-    const tx = Math.floor(wp[i]!.x);
-    const ty = Math.floor(wp[i]!.y);
-    const dx = Math.sign(tx - x);
-    const dy = Math.sign(ty - y);
-    const steps = Math.abs(tx - x) + Math.abs(ty - y);
+  for (const route of map.routes) {
+    const wp = route.waypoints;
+    if (wp.length === 0) continue;
 
-    for (let s = 0; s < steps; s++) {
-      x += dx;
-      y += dy;
-      travelled++;
-      mark();
+    let travelled = 0;
+    let x = Math.floor(wp[0]!.x);
+    let y = Math.floor(wp[0]!.y);
+
+    const mark = (): void => {
+      if (x < 0 || y < 0 || x >= map.cols || y >= map.rows) return;
+      const i = y * map.cols + x;
+      const left = route.length - travelled;
+      if (left < remaining[i]!) remaining[i] = left;
+    };
+
+    mark();
+    for (let i = 1; i < wp.length; i++) {
+      const tx = Math.floor(wp[i]!.x);
+      const ty = Math.floor(wp[i]!.y);
+      const dx = Math.sign(tx - x);
+      const dy = Math.sign(ty - y);
+      const steps = Math.abs(tx - x) + Math.abs(ty - y);
+
+      for (let s = 0; s < steps; s++) {
+        x += dx;
+        y += dy;
+        travelled++;
+        mark();
+      }
     }
+  }
+
+  for (let i = 0; i < remaining.length; i++) {
+    if (remaining[i] !== Infinity) out[i] = 1 - remaining[i]! / longest;
   }
 
   return out;

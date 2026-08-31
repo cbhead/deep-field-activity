@@ -32,7 +32,7 @@ export function beginWave(w: World): void {
   // strictly payment for time the player chose to give up.
   const secondsSaved = Math.max(0, s.timer);
 
-  s.plan = planWave(w.seed, s.index, w.rules);
+  s.plan = planWave(w.seed, s.index, w.rules, w.map.routes);
   s.spawned = 0;
   s.timer = 0;
   s.phase = 'spawning';
@@ -65,6 +65,7 @@ export function updateWaves(w: World, dt: number): void {
           bounty: next.bounty,
           shield: next.shield,
           wave: s.index,
+          route: next.route,
         });
         s.spawned++;
       }

@@ -1,6 +1,7 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
 import { DEFAULT_RULES, type Rules } from './rules.ts';
+import type { MapRoute } from './types.ts';
 import { randRange, streamFor, STREAM } from './util/rng.ts';
 
 export interface PlannedSpawn {
@@ -10,6 +11,8 @@ export interface PlannedSpawn {
   hp: number;
   bounty: number;
   shield: number;
+  /** Which lane this one walks, as an index into `MapDef.routes`. */
+  route: number;
 }
 
 /**
@@ -57,6 +60,7 @@ export function planWave(
   seed: number,
   waveIndex: number,
   rules: Rules = DEFAULT_RULES,
+  routes: readonly MapRoute[] = SINGLE_ROUTE,
 ): PlannedSpawn[] {
   const def = rules.waves[waveIndex];
   if (def === undefined) return [];
@@ -68,6 +72,7 @@ export function planWave(
     const enemy = group.enemy as EnemyId;
     const stats = scaledStats(enemy, waveIndex, rules);
     const jitter = group.every * BALANCE.spawnJitter;
+    const lane = laneDealer(group.route, routes, waveIndex);
 
     for (let i = 0; i < group.count; i++) {
       plan.push({
@@ -76,6 +81,9 @@ export function planWave(
         at: Math.max(0, group.after + i * group.every + randRange(rng, -jitter, jitter)),
         enemy,
         ...stats,
+        // Dealt by position *within the group*, before the sort below. Sort is
+        // stable, so jitter reordering neighbours cannot reshuffle lanes.
+        route: lane(i),
       });
     }
   }
@@ -86,3 +94,46 @@ export function planWave(
   plan.sort((a, b) => a.at - b.at);
   return plan;
 }
+
+/**
+ * What lane the i-th contact of a group walks.
+ *
+ * `'split'` deals round-robin in index order, and that is the whole rule —
+ * no RNG stream is drawn, so there is nothing here that can drift between two
+ * clients replaying the same seed. It also means 12 across two lanes is always
+ * 6 and 6 rather than *approximately* half each, which is what lets a designer
+ * reason about a wave table instead of measuring it.
+ *
+ * A named lane that the map does not have is a throw, not a fallback to 0. A
+ * wave table naming 'rim' on a board whose lanes are 'over' and 'under' is an
+ * authoring mistake, and silently walking everything up the first lane would
+ * hide it behind a board that merely plays oddly.
+ */
+function laneDealer(
+  route: string | undefined,
+  routes: readonly MapRoute[],
+  waveIndex: number,
+): (i: number) => number {
+  if (route === undefined) return () => 0;
+  if (route === 'split') {
+    const n = routes.length;
+    return (i) => i % n;
+  }
+
+  const idx = routes.findIndex((r) => r.id === route);
+  if (idx < 0) {
+    const known = routes.map((r) => r.id).join(', ');
+    throw new Error(`wave ${waveIndex + 1} names route "${route}", which this map does not have (${known})`);
+  }
+  return () => idx;
+}
+
+/**
+ * The default lane list: one unnamed lane.
+ *
+ * Not a guess. Every group on a one-route board resolves to index 0 whatever
+ * it says, so this is the correct answer for the callers that pass no map —
+ * the wave-determinism gates, which are measuring composition and timing and
+ * have no board in hand at all.
+ */
+const SINGLE_ROUTE: readonly MapRoute[] = [{ id: 'main', waypoints: [], length: 0 }];

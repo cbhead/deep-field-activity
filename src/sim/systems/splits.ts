@@ -40,6 +40,10 @@ export function resolveSplits(w: World): void {
         at: {
           x: parent.x,
           y: parent.y,
+          // The parent's lane, not the map's first. A Cluster dying on the
+          // coil must not hand its Motes the chute — they would teleport
+          // across the board and walk a route they never entered.
+          route: parent.route,
           leg: parent.leg,
           // Never negative: a child pushed behind the start would walk the
           // route's first leg twice.

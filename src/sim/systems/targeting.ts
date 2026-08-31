@@ -143,19 +143,30 @@ function aimPoint(t: Tower, target: Creep, piercing: boolean): { x: number; y: n
  *
  * `close` negates the squared distance rather than taking a root — ordering is
  * all that matters and the root would be pure cost in the hot loop.
+ *
+ * **`first` means closest to the goal, not furthest travelled.** Those are the
+ * same ordering only while every lane is the same length. The moment they are
+ * not — Sluice runs a 20-tile chute against a 50-tile coil on purpose — raw
+ * progress ranks a contact two tiles from the pulsar *below* one thirty tiles
+ * out, and the station shoots the wrong one at exactly the moment it matters.
+ * Distance remaining is the quantity a player means, and it is comparable
+ * across lanes because every lane ends at the same goal.
  */
-function score(mode: TargetMode, c: Creep, d2: number): number {
+function score(w: World, mode: TargetMode, c: Creep, d2: number): number {
   switch (mode) {
     case 'first':
-      return c.progress;
+      return -remaining(w, c);
     case 'last':
-      return -c.progress;
+      return remaining(w, c);
     case 'strong':
       return c.hp;
     case 'close':
       return -d2;
   }
 }
+
+/** Tiles left between a contact and the goal, along its own lane. */
+const remaining = (w: World, c: Creep): number => w.map.routes[c.route]!.length - c.progress;
 
 function pickTarget(w: World, t: Tower): Creep | undefined {
   const r2 = t.stats.range * t.stats.range;
@@ -194,7 +205,7 @@ function pickTarget(w: World, t: Tower): Creep | undefined {
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
 
-    const s = score(t.targeting, c, d2);
+    const s = score(w, t.targeting, c, d2);
     // Strictly greater, so ties go to the creep found first. That keeps the
     // choice deterministic given a deterministic creep array, which is what
     // Race-mode fairness rests on.

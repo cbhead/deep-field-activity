@@ -115,7 +115,7 @@ for (const level of CAMPAIGN) {
   const map = parseMap(level.map);
   console.log(
     `\n  \x1b[1m${level.name}\x1b[0m \x1b[2m${map.cols}x${map.rows}, ` +
-      `${map.pathLength} tiles of road, ${level.waves.length} waves\x1b[0m`,
+      `${map.routes.map((r) => `${r.id} ${r.length}t`).join(' / ')}, ${level.waves.length} waves\x1b[0m`,
   );
 
   for (const id of DIFFICULTY_ORDER) {

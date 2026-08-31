@@ -877,7 +877,7 @@ export function renderNextContact(w: World): string {
     return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
   }
 
-  const plan = planWave(w.seed, s.index, w.rules);
+  const plan = planWave(w.seed, s.index, w.rules, w.map.routes);
   if (plan.length === 0) {
     return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
   }

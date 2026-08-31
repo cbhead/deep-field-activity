@@ -1,7 +1,7 @@
 import { waveStats, type World } from '../world.ts';
 
 /**
- * Walk every creep along the waypoint route.
+ * Walk every creep along its own lane.
  *
  * The loop spends a per-tick distance *budget* rather than lerping by a time
  * fraction, so a creep can cross several short legs in one tick without
@@ -12,10 +12,12 @@ import { waveStats, type World } from '../world.ts';
  * stays the base it was spawned with — see `Creep.slowTimer`.
  */
 export function moveCreeps(w: World, dt: number): void {
-  const route = w.map.waypoints;
-
   for (const c of w.creeps) {
     if (c.dead) continue;
+
+    // Per creep, not once for the whole loop: contacts on a multi-lane board
+    // are walking different chains.
+    const route = w.map.routes[c.route]!.waypoints;
 
     // Sampled once per creep, not once per leg: the budget below can cross
     // several legs in a tick, and charging the timer inside that loop would

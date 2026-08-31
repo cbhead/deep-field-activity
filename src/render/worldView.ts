@@ -211,7 +211,7 @@ export class WorldView {
  * which here would ship a comet flying tail-first.
  */
 export function routeHeading(w: World, c: Creep): number | undefined {
-  const target = w.map.waypoints[c.leg];
+  const target = w.map.routes[c.route]?.waypoints[c.leg];
   if (target === undefined) return undefined;
 
   const dx = target.x - c.x;

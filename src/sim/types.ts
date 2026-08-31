@@ -35,22 +35,35 @@ export interface MapDef {
   readonly tiles: readonly TileKind[];
 
   /**
-   * The route in sim space — tile *centres*, so tile (0,2) is (0.5, 2.5).
-   * Creeps interpolate between consecutive entries.
+   * The lanes, in authoring order. `Creep.route` indexes this.
+   *
+   * At least one. Lanes may share tiles — that is what a merge is — so the
+   * union of them is the road, and no single one of them is.
    */
-  readonly waypoints: readonly Vec2[];
-
-  /**
-   * Where creeps enter, one tile outside the board, so they walk on-screen
-   * rather than popping into existence on the edge tile.
-   */
-  readonly spawn: Vec2;
+  readonly routes: readonly MapRoute[];
 
   /** Centre of the goal tile. A creep reaching it costs a life. */
   readonly goal: Vec2;
+}
 
-  /** Total route length in tiles. Used for progress and for pacing waves. */
-  readonly pathLength: number;
+/** One parsed lane. */
+export interface MapRoute {
+  /** The authoring id, carried through so errors and tools can name a lane. */
+  readonly id: string;
+
+  /**
+   * The lane in sim space — tile *centres*, so tile (0,2) is (0.5, 2.5).
+   * Creeps interpolate between consecutive entries.
+   *
+   * `waypoints[0]` is the off-board entry, one tile outside the board, so
+   * contacts walk on-screen rather than popping into existence on the edge
+   * tile. Every lane carries its own, because lanes may enter from different
+   * spawns.
+   */
+  readonly waypoints: readonly Vec2[];
+
+  /** Length in tiles, entry included. Used for progress and for pacing waves. */
+  readonly length: number;
 }
 
 export type EntityId = number;
@@ -63,12 +76,26 @@ export interface Creep {
   x: number;
   y: number;
 
-  /** Index of the waypoint currently being walked *toward*. */
+  /**
+   * Which lane this contact walks — an index into `MapDef.routes`, never an id.
+   *
+   * An index because the sim is on the hot path and should not be hashing
+   * strings once per creep per tick. The id lives on `MapRoute` for anything
+   * that has to *name* a lane, which is authoring and tooling, not movement.
+   */
+  readonly route: number;
+
+  /** Index of the waypoint currently being walked *toward*, within its lane. */
   leg: number;
 
   /**
-   * Tiles travelled along the route. Targeting defaults to "furthest along"
-   * later, and comparing this is exact where comparing positions is not.
+   * Tiles travelled along its own lane. Targeting compares this, and comparing
+   * it is exact where comparing positions is not.
+   *
+   * Only comparable *across* lanes once it is turned into distance remaining —
+   * see `score()` in `systems/targeting.ts`. Two lanes of different lengths
+   * make raw progress mean different things, and Sluice makes them differ by
+   * 2.5 : 1 on purpose.
    */
   progress: number;
 

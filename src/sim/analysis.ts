@@ -28,16 +28,22 @@ export interface Coverage {
   meanPosition: number | null;
 }
 
-/** Every path tile, in route order, so gap positions mean something. */
-function routeTiles(map: MapDef): { col: number; row: number }[] {
+/** One lane's coverage, named, so a board with four of them can be read. */
+export interface LaneCoverage extends Coverage {
+  readonly id: string;
+}
+
+/** Every path tile on one lane, in walking order, so gap positions mean something. */
+function routeTiles(map: MapDef, route: number): { col: number; row: number }[] {
   const out: { col: number; row: number }[] = [];
   const seen = new Set<number>();
+  const waypoints = map.routes[route]!.waypoints;
 
-  // Walked from the waypoint list rather than scanned row-major: the route's
+  // Walked from the waypoint list rather than scanned row-major: the lane's
   // own order is what makes "the last approach" expressible at all.
-  for (let leg = 1; leg < map.waypoints.length; leg++) {
-    const a = map.waypoints[leg - 1]!;
-    const b = map.waypoints[leg]!;
+  for (let leg = 1; leg < waypoints.length; leg++) {
+    const a = waypoints[leg - 1]!;
+    const b = waypoints[leg]!;
     const steps = Math.round(Math.abs(b.x - a.x) + Math.abs(b.y - a.y));
     const sx = Math.sign(b.x - a.x);
     const sy = Math.sign(b.y - a.y);
@@ -55,8 +61,8 @@ function routeTiles(map: MapDef): { col: number; row: number }[] {
   return out;
 }
 
-export function coverage(w: World): Coverage {
-  const tiles = routeTiles(w.map);
+function coverLane(w: World, route: number): LaneCoverage {
+  const tiles = routeTiles(w.map, route);
   const gaps: { col: number; row: number }[] = [];
   let positionSum = 0;
 
@@ -72,8 +78,66 @@ export function coverage(w: World): Coverage {
   });
 
   return {
+    id: w.map.routes[route]!.id,
     covered: tiles.length - gaps.length,
     total: tiles.length,
+    gaps,
+    meanPosition: gaps.length > 0 ? positionSum / gaps.length : null,
+  };
+}
+
+/**
+ * Coverage per lane.
+ *
+ * Per lane rather than averaged, because a single figure across four lanes is
+ * worse than useless: three lanes sealed and one wide open averages to
+ * "mostly covered", which is the exact opposite of what happened.
+ */
+export const laneCoverage = (w: World): LaneCoverage[] =>
+  w.map.routes.map((_, i) => coverLane(w, i));
+
+/**
+ * Whole-board coverage, counting each tile once however many lanes cross it.
+ *
+ * The union, not the sum. A merge tile guarded by one station is one tile
+ * guarded, and adding it up per lane would let a board with a long shared
+ * trunk report more road than it has.
+ */
+export function coverage(w: World): Coverage {
+  const seen = new Set<number>();
+  const gapKeys = new Set<number>();
+  const gaps: { col: number; row: number }[] = [];
+  let total = 0;
+  let positionSum = 0;
+
+  for (let route = 0; route < w.map.routes.length; route++) {
+    const tiles = routeTiles(w.map, route);
+    tiles.forEach((tile, i) => {
+      const key = tile.row * w.map.cols + tile.col;
+      const fresh = !seen.has(key);
+      if (fresh) {
+        seen.add(key);
+        total++;
+      }
+
+      const c = tileCentre(tile.col, tile.row);
+      for (const t of w.towers) {
+        const dx = c.x - t.x;
+        const dy = c.y - t.y;
+        if (dx * dx + dy * dy <= t.stats.range * t.stats.range) return;
+      }
+      if (gapKeys.has(key)) return;
+      gapKeys.add(key);
+      gaps.push(tile);
+      // Position is taken from the first lane that walks the tile, which is the
+      // only reading available for a tile two lanes reach at different points.
+      positionSum += tiles.length > 1 ? i / (tiles.length - 1) : 0;
+    });
+  }
+
+  return {
+    covered: total - gaps.length,
+    total,
     gaps,
     meanPosition: gaps.length > 0 ? positionSum / gaps.length : null,
   };
@@ -91,6 +155,18 @@ export function describeGaps(c: Coverage): string {
           ? ' — most of them near the entry'
           : ' — most of them through the middle';
   return `${c.gaps.length} of ${c.total} route tiles had no station in reach${where}.`;
+}
+
+/**
+ * The per-lane breakdown, for boards that have more than one lane.
+ *
+ * Empty string on a single-lane board: `describeGaps` has already said
+ * everything there is to say, and "main: 4 of 44" beneath it would be the same
+ * sentence twice.
+ */
+export function describeLanes(lanes: readonly LaneCoverage[]): string {
+  if (lanes.length < 2) return '';
+  return lanes.map((l) => `${l.id} ${l.covered}/${l.total}`).join(' · ');
 }
 
 export interface ArmourReference {
@@ -124,7 +200,7 @@ export function toughestArmour(w: World): ArmourReference | null {
   }
   if (best !== null) return best;
 
-  for (const spawn of planWave(w.seed, w.wave.index, w.rules)) {
+  for (const spawn of planWave(w.seed, w.wave.index, w.rules, w.map.routes)) {
     const armor = ENEMIES[spawn.enemy].armor;
     if (armor > 0 && (best === null || armor > best.armor)) {
       best = { defId: spawn.enemy, armor, inbound: true };

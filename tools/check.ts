@@ -29,13 +29,14 @@ import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
 import { damageAtTier, placementError, upgradeCost, visualTier } from '../src/sim/build.ts';
-import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
+import { coverage, formatDamage, laneCoverage, toughestArmour } from '../src/sim/analysis.ts';
 import { UPGRADE_PATHS, type TargetMode } from '../src/sim/types.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
 import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
+import { DEFAULT_RULES } from '../src/sim/rules.ts';
 import { advance, DT, TICK_HZ, type Accumulator } from '../src/app/loop.ts';
 import {
   idleGesture,
@@ -62,7 +63,12 @@ const map = parseMap(LEVEL01);
 section('map — parsing');
 
 check(map.tiles.length === map.cols * map.rows, 'tile count matches dimensions', `${map.cols}x${map.rows}`);
-check(map.pathLength > 0, 'route has length', `${map.pathLength} tiles, ${map.waypoints.length} waypoints`);
+check(map.routes.length > 0, 'the map has at least one route', `${map.routes.length}`);
+check(
+  map.routes.every((r) => r.length > 0 && r.waypoints.length >= 2),
+  'every route has length and waypoints',
+  map.routes.map((r) => `${r.id} ${r.length}t`).join(', '),
+);
 check(!isBuildableTile(map, 0, 2), 'spawn tile is not buildable');
 check(!isBuildableTile(map, 3, 5), 'scenery is not buildable', `kind=${tileAt(map, 3, 5)}`);
 check(isBuildableTile(map, 0, 0), 'open ground is buildable');
@@ -74,24 +80,298 @@ check(tileAt(map, -1, 0) === undefined, 'off-board lookups return undefined');
 // load rather than produce creeps gliding over grass.
 section('map — drift detection');
 
-function expectReject(label: string, mutate: (rows: string[], waypoints: number[][]) => void): void {
+interface MutantRoute {
+  id: string;
+  waypoints: number[][];
+}
+
+function expectReject(label: string, mutate: (rows: string[], routes: MutantRoute[]) => void): void {
   const rows = [...LEVEL01.rows];
-  const waypoints = LEVEL01.waypoints.map((w) => [...w]);
-  mutate(rows, waypoints);
+  const routes: MutantRoute[] = LEVEL01.routes.map((r) => ({
+    id: r.id,
+    waypoints: r.waypoints.map((w) => [...w]),
+  }));
+  mutate(rows, routes);
   try {
-    parseMap({ id: 'mutant', name: 'mutant', rows, waypoints } as unknown as MapSource);
+    parseMap({ id: 'mutant', name: 'mutant', rows, routes } as unknown as MapSource);
     check(false, label, 'accepted — should have thrown');
   } catch (e) {
     check(true, label, (e as Error).message.replace('map "mutant": ', ''));
   }
 }
 
+const wps = (routes: MutantRoute[]): number[][] => routes[0]!.waypoints;
+
 expectReject('route over an erased path tile', (rows) => { rows[7] = rows[7]!.replace('#######', '#.#####'); });
 expectReject('path art nothing walks on', (rows) => { rows[0] = rows[0]!.replace('..', '##'); });
-expectReject('waypoint moved off the road', (_r, wps) => { wps[3] = [14, 8]; });
+expectReject('waypoint moved off the road', (_r, rs) => { wps(rs)[3] = [14, 8]; });
 expectReject('ragged row length', (rows) => { rows[4] = rows[4]! + '.'; });
 expectReject('missing spawn', (rows) => { rows[2] = rows[2]!.replace('S', '.'); });
 expectReject('unknown legend character', (rows) => { rows[0] = 'Z' + rows[0]!.slice(1); });
+
+// The three rules multiple lanes added. Each is a way a multi-route board can
+// be wrong that a single-route board could not be, so none of them was reachable
+// before and all three are reachable now.
+expectReject('a map with no routes at all', (_r, rs) => { rs.length = 0; });
+expectReject('two routes sharing an id', (_r, rs) => { rs.push({ id: rs[0]!.id, waypoints: wps(rs).map((w) => [...w]) }); });
+expectReject('a route starting somewhere that is not a spawn', (_r, rs) => { wps(rs)[0] = [7, 2]; });
+expectReject('a route stopping short of the goal', (_r, rs) => { wps(rs).pop(); });
+expectReject('a painted spawn no route leaves', (rows) => { rows[0] = 'S' + rows[0]!.slice(1); });
+expectReject('a second goal', (rows) => { rows[0] = 'E' + rows[0]!.slice(1); });
+
+// ---------------------------------------------------------------------------
+// LANES.
+//
+// Every gate above runs on a board with one route, where a lane index is always
+// 0 and "furthest along" and "closest to the goal" are the same ordering. None
+// of them can fail the way a multi-lane board fails.
+//
+// So this fixture, rather than a shipped map: two spawns, two lanes of
+// deliberately unequal length — 8 tiles against 13 — merging onto a shared
+// trunk. It is the smallest board that makes every multi-lane rule reachable,
+// and the length ratio is what makes the targeting gate below able to fail.
+//
+//   ........S....      chute:  [8,0] → [8,3] → [12,3]
+//   ........#....      coil:   [0,3] → [12,3]
+//   ........#....
+//   S###########E      the last four tiles are walked by both
+// ---------------------------------------------------------------------------
+section('map — lanes');
+
+const FORKED = {
+  id: 'forked',
+  name: 'Forked',
+  rows: [
+    '........S....',
+    '........#....',
+    '........#....',
+    'S###########E',
+    '.............',
+    '.............',
+    '.............',
+  ],
+  routes: [
+    { id: 'chute', waypoints: [[8, 0], [8, 3], [12, 3]] },
+    { id: 'coil', waypoints: [[0, 3], [12, 3]] },
+  ],
+} as unknown as MapSource;
+
+const forked = parseMap(FORKED);
+
+{
+  check(forked.routes.length === 2, 'a board may carry more than one lane', `${forked.routes.length}`);
+  check(
+    forked.routes[0]!.length === 8 && forked.routes[1]!.length === 13,
+    'each lane measures its own length, lead-in included',
+    forked.routes.map((r) => `${r.id} ${r.length}t`).join(', '),
+  );
+  // The merge is the thing that had to stop being an error. Four tiles of road
+  // carry both lanes, and the old "every tile once" rule rejected exactly this.
+  const painted = forked.tiles.filter((t) => t === 'path').length;
+  check(painted === 16, 'shared tiles are road once, not twice', `${painted} painted`);
+  check(
+    forked.routes[0]!.waypoints[0]!.y === -0.5 && forked.routes[1]!.waypoints[0]!.x === -0.5,
+    'each lane gets its own off-board lead-in',
+    forked.routes.map((r) => `${r.id} enters ${r.waypoints[0]!.x},${r.waypoints[0]!.y}`).join(' · '),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 'split' has to be reproducible from the seed alone, because a race replays
+// the same plan on two machines and a lane that differs is a desync.
+section('waves — lane dealing');
+
+{
+  const laneRules = (route: string, count: number): never =>
+    ({ ...DEFAULT_RULES, waves: [{ groups: [{ enemy: 'drifter', count, every: 0.5, after: 0, route }] }] }) as never;
+
+  const rules = laneRules('split', 12);
+  const plan = planWave(1234, 0, rules, forked.routes);
+  const perLane = [0, 1].map((r) => plan.filter((p) => p.route === r).length);
+  check(perLane[0] === 6 && perLane[1] === 6, "'split' deals 12 across two lanes as 6 and 6", perLane.join(' / '));
+
+  const again = planWave(1234, 0, rules, forked.routes);
+  check(
+    JSON.stringify(plan) === JSON.stringify(again),
+    'and deals the same lanes on a replay of the same seed',
+  );
+
+  const named = planWave(1234, 0, laneRules('coil', 4), forked.routes);
+  check(named.every((p) => p.route === 1), 'a group naming a lane walks only that lane', `${named.length} on coil`);
+
+  let threw = false;
+  try {
+    planWave(1, 0, laneRules('rim', 1), forked.routes);
+  } catch {
+    threw = true;
+  }
+  check(threw, 'a group naming a lane the board does not have is a crash, not lane 0');
+}
+
+// ---------------------------------------------------------------------------
+section('sim — walking two lanes');
+
+{
+  const w = createWorld(forked, 99);
+  w.wave.phase = 'done';
+
+  const chute = spawnCreep(w, 'drifter', { route: 0 });
+  const coil = spawnCreep(w, 'drifter', { route: 1 });
+  check(
+    chute.route === 0 && coil.route === 1 && chute.x !== coil.x,
+    'contacts enter at their own lane, not the first one',
+    `chute ${chute.x},${chute.y} · coil ${coil.x},${coil.y}`,
+  );
+
+  for (let i = 0; i < 60 * 20 && w.creeps.some((c) => !c.dead); i++) stepWorld(w, DT);
+  check(w.lives === BALANCE.startingLives - 2, 'both lanes reach the same goal', `${w.lives} lives`);
+
+  // The shorter lane must arrive first, and by roughly the length difference.
+  const w2 = createWorld(forked, 99);
+  w2.wave.phase = 'done';
+  spawnCreep(w2, 'drifter', { route: 1 });
+  let coilTime = 0;
+  for (let i = 0; i < 60 * 30 && w2.lives === BALANCE.startingLives; i++) {
+    stepWorld(w2, DT);
+    coilTime = w2.time;
+  }
+  const w3 = createWorld(forked, 99);
+  w3.wave.phase = 'done';
+  spawnCreep(w3, 'drifter', { route: 0 });
+  let chuteTime = 0;
+  for (let i = 0; i < 60 * 30 && w3.lives === BALANCE.startingLives; i++) {
+    stepWorld(w3, DT);
+    chuteTime = w3.time;
+  }
+  check(
+    chuteTime < coilTime,
+    'the short lane arrives first, as its geometry says it must',
+    `chute ${chuteTime.toFixed(2)}s vs coil ${coilTime.toFixed(2)}s`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE ORDERING BUG UNEQUAL LANES INTRODUCE.
+//
+// `first` used to rank by distance *travelled*, which is the same ordering as
+// "closest to the goal" only while every lane is the same length. Here the coil
+// is 13 tiles and the chute is 8, so a contact one tile from the pulsar down the
+// chute has *less* progress than one still six tiles out on the coil — and the
+// old rule shot the wrong one at exactly the moment it mattered.
+// ---------------------------------------------------------------------------
+section('targeting — first means closest to the goal');
+
+{
+  const w = createWorld(forked, 7);
+  w.wave.phase = 'done';
+
+  const nearGoal = spawnCreep(w, 'drifter', { route: 0 });
+  nearGoal.x = 11.5;
+  nearGoal.y = 3.5;
+  nearGoal.leg = 3;
+  nearGoal.progress = 7; //          8-tile lane: 1 tile left
+
+  const farOut = spawnCreep(w, 'drifter', { route: 1 });
+  farOut.x = 7.5;
+  farOut.y = 3.5;
+  farOut.leg = 2;
+  farOut.progress = 9; //            13-tile lane: 4 tiles left
+
+  check(
+    farOut.progress > nearGoal.progress,
+    'the setup is the trap: the further contact has the higher progress',
+    `coil ${farOut.progress} vs chute ${nearGoal.progress}`,
+  );
+
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 9, row: 4 });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+  t.targeting = 'first' as TargetMode;
+  t.cooldown = 0;
+  stepWorld(w, DT);
+
+  const shot = w.projectiles[0];
+  check(
+    shot !== undefined && Math.abs(shot.tx - nearGoal.x) < 0.6,
+    "'first' shoots the contact nearest the goal, across lanes of different length",
+    shot === undefined ? 'nothing fired' : `aimed at ${shot.tx.toFixed(1)},${shot.ty.toFixed(1)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+section('lanes — coverage and the brightness ramp');
+
+{
+  const w = createWorld(forked, 3);
+  const cov = coverage(w);
+  check(
+    cov.total === forked.tiles.filter((t) => t === 'path').length,
+    'union coverage counts the shared trunk once',
+    `${cov.total} tiles for two lanes of 8 and 13`,
+  );
+  const lanes = laneCoverage(w);
+  check(
+    lanes.length === 2 && lanes[0]!.id === 'chute' && lanes[1]!.id === 'coil',
+    'per-lane coverage names its lanes',
+    lanes.map((l) => `${l.id} ${l.total}`).join(' · '),
+  );
+
+  // The ramp is measured back from the goal, so the goal is 1 on every board
+  // and a *short* lane starts part-lit rather than at 0 — which is the truth:
+  // the chute's entry really is closer to the core than the coil's.
+  const dist = routeDistance(forked);
+  const at = (col: number, row: number): number => dist[row * forked.cols + col]!;
+  check(Math.abs(at(12, 3) - 1) < 1e-6, 'the goal tile sits at exactly 1', at(12, 3).toFixed(4));
+  check(
+    at(8, 0) > at(0, 3) && at(0, 3) >= 0,
+    'the short lane enters part-lit, the long one at the floor',
+    `chute entry ${at(8, 0).toFixed(2)} vs coil entry ${at(0, 3).toFixed(2)}`,
+  );
+  // Monotone *along each lane* — the claim the design actually makes. A single
+  // global ordering is not available once lanes merge, and asserting one would
+  // be asserting something untrue.
+  let monotone = true;
+  for (const route of forked.routes) {
+    let prev = -Infinity;
+    for (let i = 1; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i - 1]!;
+      const b = route.waypoints[i]!;
+      const steps = Math.round(Math.abs(b.x - a.x) + Math.abs(b.y - a.y));
+      const sx = Math.sign(b.x - a.x);
+      const sy = Math.sign(b.y - a.y);
+      for (let s = 0; s <= steps; s++) {
+        const col = Math.floor(a.x + sx * s);
+        const row = Math.floor(a.y + sy * s);
+        if (col < 0 || row < 0 || col >= forked.cols || row >= forked.rows) continue;
+        const v = at(col, row);
+        if (v === OFF_ROUTE || v < prev - 1e-6) monotone = false;
+        prev = Math.max(prev, v);
+      }
+    }
+  }
+  check(monotone, 'brightness rises toward the goal along every lane');
+}
+
+// ---------------------------------------------------------------------------
+section('lanes — splits stay on their parent’s lane');
+
+{
+  const w = createWorld(forked, 5);
+  w.wave.phase = 'done';
+  const parent = spawnCreep(w, 'cluster', { route: 1 });
+  for (let i = 0; i < 120; i++) stepWorld(w, DT);
+  parent.hp = 1;
+  damageCreep(w, parent, 999, undefined);
+  stepWorld(w, DT);
+
+  const kids = w.creeps.filter((c) => !c.dead && c.defId === 'mote');
+  check(kids.length > 0, 'the parent split', `${kids.length} children`);
+  check(
+    kids.every((k) => k.route === 1),
+    'children inherit the lane their parent died on, never lane 0',
+    kids.map((k) => k.route).join(','),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Race mode rests entirely on this: both players must face identical waves.
@@ -147,7 +427,7 @@ function soloWorld(): ReturnType<typeof createWorld> {
   const w = soloWorld();
   const c = spawnCreep(w, 'drifter');
   const acc: Accumulator = { debt: 0 };
-  const expected = map.pathLength / c.speed;
+  const expected = map.routes[c.route]!.length / c.speed;
 
   while (w.lives === BALANCE.startingLives && w.time < 60) advance(w, acc, 1000 / TICK_HZ, 1);
 
@@ -155,7 +435,7 @@ function soloWorld(): ReturnType<typeof createWorld> {
   check(w.creeps.length === 0, 'the leaked creep is swept up', `creeps=${w.creeps.length}`);
   check(
     Math.abs(w.time - expected) < DT * 2,
-    'traversal takes pathLength / speed seconds',
+    'traversal takes route length / speed seconds',
     `sim=${w.time.toFixed(4)}s expected=${expected.toFixed(4)}s`,
   );
 }
@@ -1032,10 +1312,20 @@ section('stations — upgrade, sell, targeting');
     'coverage partitions the route',
     `${cov.total} tiles`,
   );
+  // The union of the lanes, which on a one-lane board is the lane. Counted
+  // against painted road rather than against a route length, so a board whose
+  // lanes share a trunk cannot report more road than it has.
+  const painted = map.tiles.filter((t) => t === 'path').length;
   check(
-    cov.total === map.pathLength,
-    'and counts every route tile exactly once',
-    `${cov.total} vs ${map.pathLength}`,
+    cov.total === painted,
+    'and counts every painted road tile exactly once',
+    `${cov.total} vs ${painted} painted`,
+  );
+  const lanes = laneCoverage(w);
+  check(
+    lanes.length === map.routes.length && lanes.every((l) => l.covered + l.gaps.length === l.total),
+    'per-lane coverage partitions each lane',
+    lanes.map((l) => `${l.id} ${l.covered}/${l.total}`).join(' · '),
   );
 }
 
@@ -1602,6 +1892,20 @@ section('balance probe (informational)');
 // ---------------------------------------------------------------------------
 section('front door · derived board facts');
 {
+  /** An independent second implementation, so the gate is a check and not an echo. */
+  const headingChanges = (route: { waypoints: readonly { x: number; y: number }[] }): number => {
+    const w = route.waypoints;
+    let n = 0;
+    for (let i = 1; i < w.length - 1; i++) {
+      const ax = Math.sign(w[i]!.x - w[i - 1]!.x);
+      const ay = Math.sign(w[i]!.y - w[i - 1]!.y);
+      const bx = Math.sign(w[i + 1]!.x - w[i]!.x);
+      const by = Math.sign(w[i + 1]!.y - w[i]!.y);
+      if (ax !== bx || ay !== by) n++;
+    }
+    return n;
+  };
+
   for (const level of CAMPAIGN) {
     const facts = boardFacts(level.map);
     const m = parseMap(level.map);
@@ -1611,10 +1915,16 @@ section('front door · derived board facts');
       `${level.name}: road length is counted, not written`,
       `${facts.road} tiles`,
     );
+    const interior = Math.max(...m.routes.map((r) => r.waypoints.length - 2));
     check(
-      facts.turns < m.waypoints.length - 2,
+      facts.turns < interior,
       `${level.name}: turns are heading changes, not waypoints`,
-      `${facts.turns} turns vs ${m.waypoints.length - 2} interior waypoints`,
+      `${facts.turns} turns vs ${interior} interior waypoints`,
+    );
+    check(
+      facts.lanes === m.routes.length && facts.turns === Math.max(...m.routes.map(headingChanges)),
+      `${level.name}: turns come from the twistiest lane, never summed`,
+      `${facts.lanes} lane(s), ${facts.turns} turns`,
     );
 
     // The thumbnail has to cover the board and draw every road tile, or the

@@ -178,18 +178,30 @@ export interface SpawnOptions {
   shield?: number;
   wave?: number;
   /**
-   * Start partway along the route instead of at the entry.
+   * Which lane to walk, as an index into `map.routes`. Defaults to the first,
+   * which on a one-route board is the only one.
+   *
+   * Ignored when `at` is given: a split inherits its parent's lane, and the
+   * lane is part of where the parent was standing.
+   */
+  route?: number;
+  /**
+   * Start partway along a lane instead of at its entry.
    *
    * Used by splits: children appear where the parent died, not back at the
    * spawn. Without this a Cluster killed at the goal would hand the player
    * three fresh Motes with the whole route to walk, which is a reward.
    */
-  at?: { x: number; y: number; leg: number; progress: number };
+  at?: { x: number; y: number; route: number; leg: number; progress: number };
 }
 
 export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): Creep {
   const def = ENEMIES[defId];
-  const start = opts.at ?? { ...w.map.spawn, leg: 1, progress: 0 };
+  const route = opts.at?.route ?? opts.route ?? 0;
+  const lane = w.map.routes[route];
+  if (lane === undefined) throw new Error(`spawn on route ${route}, which this map does not have`);
+
+  const start = opts.at ?? { ...lane.waypoints[0]!, leg: 1, progress: 0 };
   const health = opts.hp ?? def.hp;
   const shield = opts.shield ?? def.shield;
 
@@ -198,6 +210,7 @@ export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): C
     defId,
     x: start.x,
     y: start.y,
+    route,
     // waypoints[0] is the off-board entry the creep is standing on, so the
     // first leg is walking toward waypoints[1].
     leg: start.leg,
