@@ -64,7 +64,6 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   const el = document.createElement('div');
   el.id = 'lobby-screen';
   el.className = 'race-screen';
-  parent.style.position = 'relative';
   parent.appendChild(el);
 
   // The header chip names the port we really dial, not the compiled-in default.
@@ -142,7 +141,11 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     `<button id="race-discord" class="lb-btn dim" style="height:40px;font-size:13px">Send to Discord</button>` +
     `<button class="lb-leave" onclick="const c=document.getElementById('race-discord-cfg');c.style.display=c.style.display==='none'?'flex':'none'">webhook…</button></div>` +
     `<div id="race-discord-cfg" style="display:none;flex-direction:column;gap:8px">` +
-    `<input id="race-webhook" class="lb-field" style="height:40px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace" ` +
+    // The size lives in .lb-webhook rather than a style= attribute so the
+    // coarse-pointer 16px rule can reach it — an inline declaration wins over
+    // any stylesheet, and a sub-16px field makes iOS zoom the page on focus.
+    `<input id="race-webhook" class="lb-field lb-webhook" ` +
+    `inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" ` +
     `placeholder="https://discord.com/api/webhooks/…" value="${localStorage.getItem('discord-webhook') ?? ''}">` +
     `<div style="display:flex;align-items:center;gap:12px">` +
     `<button id="race-webhook-save" class="lb-btn dim" style="height:36px;font-size:12px">Save & send</button>` +
@@ -154,7 +157,9 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
 
   function nameField(): string {
     return `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Callsign</span>` +
-      `<input id="race-name" class="lb-field" placeholder="your name" value="${savedName}" maxlength="24">` +
+      `<input id="race-name" class="lb-field" placeholder="your name" value="${savedName}" maxlength="24"` +
+      ` autocapitalize="words" autocomplete="nickname" autocorrect="off" enterkeyhint="go"` +
+      ` aria-label="Callsign">` +
       `</div>`;
   }
 
@@ -192,7 +197,13 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       `<button id="race-create" class="lb-btn">Create a room</button>` +
       `<div class="lb-or"><span></span><b>or join one</b><span></span></div>` +
       `<div style="display:flex;gap:10px">` +
-      `<input id="race-code" class="lb-field lb-code-in" placeholder="CODE" maxlength="4">` +
+      // inputmode is `text`, NOT `numeric`: CODE_ALPHABET in server/index.ts is
+      // alphanumeric. autocapitalize matches the field's own uppercase
+      // transform; the value is case-safe either way, since the server
+      // upper-cases what it receives.
+      `<input id="race-code" class="lb-field lb-code-in" placeholder="CODE" maxlength="4"` +
+      ` inputmode="text" autocapitalize="characters" autocorrect="off" autocomplete="off"` +
+      ` spellcheck="false" enterkeyhint="go" aria-label="Room code">` +
       `<button id="race-join" class="lb-btn dim" style="flex:1">Join</button>` +
       `</div></div></div>` +
       `<div class="lb-how"><span class="lb-label" style="letter-spacing:.18em">How a race works</span>` +
@@ -232,6 +243,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     el.querySelector('#race-join')!.addEventListener('click', joinNow);
     el.querySelector('#race-code')!.addEventListener('keydown', (ev) => {
       if ((ev as KeyboardEvent).key === 'Enter') joinNow();
+    });
+    // Return on the callsign creates the room. showDeepLink already did this;
+    // this form did not, so Return simply did nothing — and the on-screen
+    // keyboard's "go" key now promises otherwise.
+    el.querySelector('#race-name')!.addEventListener('keydown', (ev) => {
+      if ((ev as KeyboardEvent).key === 'Enter') submit();
     });
   }
 
@@ -279,9 +296,14 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       el.innerHTML = bar(lv.name, 'Race relay', 'connected') + `<div class="lb-glow"></div>` +
         `<div class="lb-body"><div class="lb-col" style="width:min(560px,90vw)">` +
         `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
-        `<input class="lb-bigcode" readonly value="${room}" onclick="this.select()">` +
+        // inputmode=none on both: they are readonly select-on-click handles, and
+        // without it iOS raises the on-screen keyboard for a field nothing can
+        // be typed into — covering the very code you tapped to read.
+        `<input class="lb-bigcode" readonly inputmode="none" value="${room}" onclick="this.select()" ` +
+        `aria-label="Room code — tap to select">` +
         `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">or send the link</span>` +
-        `<input class="lb-field lb-link" readonly value="${inviteLink(room)}" onclick="this.select()"></div>` +
+        `<input class="lb-field lb-link" readonly inputmode="none" value="${inviteLink(room)}" ` +
+        `onclick="this.select()" aria-label="Invite link — tap to select"></div>` +
         discordRow() +
         `<span class="lb-fine" style="max-width:440px">Both fields select on click — the relay runs over plain http on your tailnet, where the browser refuses clipboard access.</span>` +
         `</div><div class="lb-how" style="gap:16px;padding-top:8px">` +

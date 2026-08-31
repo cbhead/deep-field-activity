@@ -6,7 +6,17 @@
  */
 
 const STYLE = `
-.race-screen{position:absolute;inset:0;z-index:10;overflow:hidden;background:#0b0c16;
+/* Scrolls rather than clips. At 1024x600 — an ordinary landscape tablet — the
+   lobby form is taller than the viewport, and with overflow:hidden and no
+   scrollable ancestor the Join button was simply unreachable. This is also the
+   precondition for iOS scrolling a focused field out from behind the on-screen
+   keyboard: given nothing to scroll, Safari leaves the field covered. --kb is
+   the keyboard's height, published by ui/viewport.ts. */
+.race-screen{position:absolute;inset:0;z-index:10;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding-bottom:calc(env(safe-area-inset-bottom, 0px) + var(--kb, 0px));
+  background:#0b0c16;
   color:#e9e9ed;font:400 14px/1.5 Inter,system-ui,sans-serif}
 .race-screen .lb-glow{position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(circle at 50% 46%,rgba(145,132,217,.14),rgba(6,7,13,.6) 62%)}
@@ -85,6 +95,27 @@ const STYLE = `
 .race-screen .lb-pick{padding:9px 13px;border-radius:7px;border:1px solid rgba(233,233,237,.16);
   background:none;cursor:pointer;font:600 12px/1 Inter,sans-serif;color:#9397ab}
 .race-screen .lb-pick.on{border-color:#9184d9;color:#d2cefd;box-shadow:0 0 14px rgba(145,132,217,.18)}
+.race-screen .lb-webhook{height:40px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace}
+
+/* Touch. Scoped so desktop rendering is untouched.
+
+   The 16px floor is not a taste call: iOS Safari zooms the page whenever a
+   field under 16px takes focus, and it does not zoom back out. Every field on
+   this screen was under it except the room code.
+
+   The rest is reclaiming vertical space — at 1024x600 this form is ~1150px
+   tall, and the padding and display type are where that goes. */
+@media (pointer: coarse) {
+  .race-screen .lb-field{font-size:16px}
+  .race-screen .lb-webhook{font-size:16px}
+  .race-screen .lb-link{font-size:16px;height:48px}
+  .race-screen .lb-body{padding:32px 24px;gap:32px}
+  .race-screen .lb-how{padding-top:8px}
+  .race-screen .lb-title{font-size:clamp(32px,7vw,56px)}
+  .race-screen .lb-count{font-size:clamp(64px,16vw,108px)}
+  .race-screen .lb-bigcode{height:88px;font-size:clamp(38px,11vw,64px)}
+  .race-screen .lb-center{padding-top:24px}
+}
 `;
 
 export function ensureRaceStyle(): void {

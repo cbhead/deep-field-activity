@@ -48,7 +48,12 @@ export interface HomeScreen {
 }
 
 const STYLE = `
-#home-screen{position:absolute;inset:0;overflow:hidden;background:#06070d;
+/* Scrolls rather than clips — see the note on .race-screen in raceTheme.ts.
+   A short landscape phone cannot show this screen in one go. */
+#home-screen{position:absolute;inset:0;background:#06070d;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding-bottom:calc(env(safe-area-inset-bottom, 0px) + var(--kb, 0px));
   font:400 14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;color:#c3c5d3}
 #home-screen .hm-board{position:absolute;inset:0;display:grid;place-items:center;opacity:.5}
 #home-screen .hm-board svg{width:118%;height:auto}
@@ -56,8 +61,11 @@ const STYLE = `
    as a pattern competing with it. The design's one hard rule for this screen. */
 #home-screen .hm-scrim{position:absolute;inset:0;
   background:linear-gradient(105deg,rgba(6,7,13,.97) 34%,rgba(6,7,13,.72) 68%,rgba(6,7,13,.9))}
-#home-screen .hm-wrap{position:relative;height:100%;display:flex;flex-direction:column;
-  justify-content:center;gap:26px;max-width:960px;margin:0 auto;padding:0 32px}
+/* min-height, not height: with a fixed 100% the centred column overflows its
+   own box on a short viewport and the parent scrolls past empty space instead
+   of past the content. */
+#home-screen .hm-wrap{position:relative;min-height:100%;display:flex;flex-direction:column;
+  justify-content:center;gap:26px;max-width:960px;margin:0 auto;padding:26px 32px}
 #home-screen .hm-bar{position:absolute;left:32px;right:32px;top:22px;display:flex;
   align-items:center;justify-content:space-between}
 #home-screen .hm-mark{font:600 10px/1 Inter,sans-serif;letter-spacing:.22em;
@@ -149,7 +157,6 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
 
   const el = document.createElement('div');
   el.id = 'home-screen';
-  parent.style.position = 'relative';
   parent.appendChild(el);
 
   const progress = loadProgress();
@@ -195,6 +202,16 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
   };
   raceCard?.addEventListener('pointerenter', checkRelay);
   raceCard?.addEventListener('focus', checkRelay);
+  // There is no hover on a touch screen, and the tap that would focus the card
+  // also navigates away from it — so the probe never resolved and the dot
+  // stayed grey forever. Probe on idle instead. The objection the hover trigger
+  // was written for (a solo player meeting a red dot on every boot) is about
+  // *showing* the dot, and the dot is only shown once probed.
+  if (matchMedia('(pointer: coarse)').matches) {
+    const idle = window.requestIdleCallback?.bind(window);
+    if (idle !== undefined) idle(() => checkRelay());
+    else setTimeout(checkRelay, 400);
+  }
 
   const sheet = el.querySelector<HTMLElement>('#hm-sheet');
   const sheetIn = el.querySelector<HTMLElement>('#hm-sheet-in');
@@ -345,7 +362,8 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
     `<span class="hm-score">${cleared} held${best === null ? '' : ` <em>· best ${best}</em>`}</span>` +
     `</button>` +
     `<button class="hm-card hm-race" data-act="race" id="hm-race">` +
-    `<h2>Race <i class="hm-relay" id="hm-relay" title="Checking the relay">·</i></h2>` +
+    `<h2>Race <i class="hm-relay" id="hm-relay" title="Checking the relay" ` +
+    `aria-label="Relay status">·</i></h2>` +
     // With no history the card shows the mode's pitch rather than an empty
     // 0–0 — the same rule as first-run Continue: never open on a zero.
     (top === undefined

@@ -41,7 +41,6 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
   el.id = 'results-screen';
   el.className = 'race-screen';
   el.style.zIndex = '20';
-  parent.style.position = 'relative';
   parent.appendChild(el);
 
   const won = opts.winnerId === opts.myId;

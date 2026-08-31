@@ -5,7 +5,7 @@ import type { EntityId, PlacementError } from '../sim/types.ts';
 import { towerById, type World } from '../sim/world.ts';
 import { TILE_PX } from './constants.ts';
 import { BAKE_NEUTRAL, THEME } from './theme.ts';
-import type { Layers } from './pixiApp.ts';
+import { boardScale, type Layers } from './pixiApp.ts';
 import type { Textures } from './textures.ts';
 
 /**
@@ -35,10 +35,22 @@ const REJECTION: Record<Exclude<PlacementError, 'offBoard'>, string> = {
   locked: 'Locked',
 };
 
+/**
+ * How much room to leave between the pressed tile and the callout plate, in CSS
+ * pixels — roughly the pad of a finger. Converted into board space against the
+ * live board scale, because that is the only place the two disagree.
+ */
+const FINGER_CLEARANCE_CSS = 46;
+
 export class Overlay {
   private readonly ghost: Sprite;
   private readonly gfx = new Graphics();
   private readonly label: Text;
+
+  /** The magnified repeat of the ghost and verdict, shown above a finger. */
+  private readonly calloutGfx = new Graphics();
+  private readonly calloutGhost: Sprite;
+  private readonly calloutText: Text;
 
   /** Last drawn state, so a stationary pointer costs nothing. */
   private lastKey = '';
@@ -67,14 +79,44 @@ export class Overlay {
       },
     });
     this.label.visible = false;
-    layers.overlay.addChild(this.gfx, this.ghost, this.label);
+
+    this.calloutGhost = new Sprite(textures.towers[TOWER_IDS[0]!]![0]!);
+    this.calloutGhost.visible = false;
+    this.calloutGhost.anchor.set(0.5);
+    this.calloutGhost.scale.set(1.6);
+    this.calloutText = new Text({
+      text: '',
+      style: {
+        fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+        fontSize: 22,
+        fontWeight: '700',
+        fill: BAKE_NEUTRAL,
+        stroke: { color: THEME.fx.textOutline, width: 4, join: 'round' },
+      },
+    });
+    this.calloutText.visible = false;
+    this.calloutText.anchor.set(0.5);
+
+    layers.overlay.addChild(
+      this.gfx,
+      this.ghost,
+      this.label,
+      this.calloutGfx,
+      this.calloutGhost,
+      this.calloutText,
+    );
   }
 
+  /**
+   * @param callout Show the magnified plate above the tile. Defaults off, so
+   *   the mouse path through here is byte-identical to what it always was.
+   */
   sync(
     w: World,
     selected: TowerId | null,
     hover: readonly [number, number] | null,
     inspecting: EntityId | null = null,
+    callout = false,
   ): void {
     const reason =
       selected === null || hover === null
@@ -86,10 +128,15 @@ export class Overlay {
     // on the placement *verdict* rather than on money: once kills pay bounty
     // every few ticks, a money-keyed cache would never hit.
     const inspected = inspecting === null ? undefined : towerById(w, inspecting);
+    // The callout's geometry depends on the board scale, so a resize has to be
+    // able to invalidate this cache. Bucketed, because the scale is a float and
+    // a raw value would miss the cache on every rounding wobble.
+    const scaleBucket = Math.round(boardScale() * 20);
     const key =
       `${selected}:${hover === null ? '' : `${hover[0]},${hover[1]}`}:${reason}` +
       // Range is in the key so buying the range path redraws the circle live.
-      `:${inspected ? `${inspected.id}.${inspected.stats.range}` : ''}`;
+      `:${inspected ? `${inspected.id}.${inspected.stats.range}` : ''}` +
+      `:${callout ? scaleBucket : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -122,6 +169,7 @@ export class Overlay {
     if (selected === null || hover === null) {
       this.ghost.visible = false;
       this.label.visible = false;
+      this.hideCallout();
       return;
     }
 
@@ -129,17 +177,25 @@ export class Overlay {
     if (reason === 'offBoard') {
       this.ghost.visible = false;
       this.label.visible = false;
+      this.hideCallout();
       return;
     }
 
     const ok = reason === null;
 
-    // The verdict, in words, beside the cursor. A legal tile shows the price
-    // rather than a bare "yes" — the number is the part worth confirming when
-    // cash is tight.
-    this.label.visible = true;
-    this.label.text = ok ? `Deploy · −$${TOWERS[selected].cost}` : REJECTION[reason];
-    this.label.tint = ok ? THEME.towers[selected] : THEME.feedback.invalid;
+    // The verdict, in words. A legal tile shows the price rather than a bare
+    // "yes" — the number is the part worth confirming when cash is tight.
+    // Computed once and read by both the inline label and the callout, so the
+    // two can never describe the same tile differently.
+    const verdict = ok ? `Deploy · −$${TOWERS[selected].cost}` : REJECTION[reason];
+    const verdictTint = ok ? THEME.towers[selected] : THEME.feedback.invalid;
+
+    // Under a finger the inline label is not merely occluded, it is illegible:
+    // 12px of board space at phone scale is about 5 CSS px. The callout
+    // replaces it rather than joining it.
+    this.label.visible = !callout;
+    this.label.text = verdict;
+    this.label.tint = verdictTint;
 
     // Sit to the right of the tile normally, but flip to the left rather than
     // run off the board. Hovering the last few columns used to push the label
@@ -153,9 +209,12 @@ export class Overlay {
     this.label.y = Math.min(row * TILE_PX + 8, w.map.rows * TILE_PX - this.label.height - 2);
     // A legal ghost wears the tower's own colour, which answers "which tower"
     // as well as "yes"; only rejection needs a dedicated red.
-    const tint = ok ? THEME.towers[selected] : THEME.feedback.invalid;
+    const tint = verdictTint;
     const cx = (col + 0.5) * TILE_PX;
     const cy = (row + 0.5) * TILE_PX;
+
+    if (callout) this.drawCallout(w, selected, col, row, verdict, tint);
+    else this.hideCallout();
 
     this.ghost.visible = true;
     this.ghost.tint = tint;
@@ -173,5 +232,76 @@ export class Overlay {
     this.gfx
       .rect(col * TILE_PX, row * TILE_PX, TILE_PX, TILE_PX)
       .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: tileOutlineAlpha });
+  }
+
+  private hideCallout(): void {
+    this.calloutGfx.clear();
+    this.calloutGhost.visible = false;
+    this.calloutText.visible = false;
+  }
+
+  /**
+   * Repeat the ghost and the verdict clear of the finger.
+   *
+   * The target stays 1:1 under the contact point — deliberately. An offset
+   * target has to flip near the top edge or row 0 becomes unreachable, and a
+   * flipping offset is unlearnable: the same finger position would mean two
+   * different tiles with nothing on screen to say which regime you were in. So
+   * the tile is where you put it, and what the finger hides is reprinted above
+   * instead.
+   *
+   * Anchored to the tile rather than the raw contact point, so the plate does
+   * not jitter as the finger rolls, and so it shares the caller's cache key.
+   */
+  private drawCallout(
+    w: World,
+    selected: TowerId,
+    col: number,
+    row: number,
+    verdict: string,
+    tint: number,
+  ): void {
+    this.calloutGhost.texture = this.textures.towers[selected]![0]!;
+    this.calloutText.text = verdict;
+
+    const padX = 14;
+    const padY = 10;
+    const iconW = TILE_PX * 1.6;
+    const plateW = iconW + this.calloutText.width + padX * 3;
+    const plateH = Math.max(iconW, this.calloutText.height) + padY * 2;
+
+    // A fingertip is ~46 CSS px on every device, which is a wildly different
+    // number of board pixels depending on how hard the board is letterboxed.
+    // Clamped low, because dividing by a very small scale would push the plate
+    // right off the board.
+    const gap = FINGER_CLEARANCE_CSS / Math.max(0.4, Math.min(1, boardScale()));
+
+    const boardW = w.map.cols * TILE_PX;
+    const boardH = w.map.rows * TILE_PX;
+    const cx = (col + 0.5) * TILE_PX;
+
+    // Above the tile by default; below it when there is no room, which is the
+    // top row or two rather than a routine case.
+    let top = row * TILE_PX - gap - plateH;
+    if (top < 2) top = Math.min((row + 1) * TILE_PX + gap, boardH - plateH - 2);
+
+    const left = Math.max(2, Math.min(cx - plateW / 2, boardW - plateW - 2));
+
+    this.calloutGfx
+      .clear()
+      .roundRect(left, top, plateW, plateH, 10)
+      .fill({ color: THEME.fx.textOutline, alpha: 0.92 })
+      .stroke({ width: 2, color: tint, alpha: 0.85 });
+
+    this.calloutGhost.visible = true;
+    this.calloutGhost.tint = tint;
+    this.calloutGhost.position.set(left + padX + iconW / 2, top + plateH / 2);
+
+    this.calloutText.visible = true;
+    this.calloutText.tint = tint;
+    this.calloutText.position.set(
+      left + padX * 2 + iconW + this.calloutText.width / 2,
+      top + plateH / 2,
+    );
   }
 }

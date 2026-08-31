@@ -229,6 +229,17 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
 
   return {
     onEvent(ev) {
+      // On a landscape phone the open deck overlays the bottom of the board
+      // (see .td-compact in styles.css), so it must not still be open when
+      // something is walking the route. Compact only — everywhere else the deck
+      // reserves its own space and covers nothing.
+      if (
+        ev.type === 'waveStarted' &&
+        ui.deckOpen &&
+        document.documentElement.classList.contains('td-compact')
+      ) {
+        ui.deckOpen = false;
+      }
       if (ev.type === 'waveCleared') {
         clearToast = ev;
         clearToastUntil = performance.now() + CLEAR_TOAST_MS;
@@ -369,7 +380,10 @@ function renderTop(w: World, speed: number, paused: boolean): string {
     `<div class="ribbon${crit ? ' crit' : ''}"><span>${label}</span>` +
     `<i style="width:${(clamp01(fill) * 100).toFixed(1)}%"></i></div>` +
     `<div class="seg speeds">${speeds}</div>` +
-    `<button class="icon" data-act="pause" title="Pause (Esc)">${paused ? '▶' : '❚❚'}</button>`
+    // aria-label rather than title: the glyph is universal, Esc means nothing
+    // on a touch device, and a tooltip that never fires there is dead weight.
+    `<button class="icon" data-act="pause" aria-label="${paused ? 'Resume' : 'Pause'}">` +
+    `${paused ? '▶' : '❚❚'}</button>`
   );
 }
 
@@ -537,38 +551,64 @@ function renderDetail(w: World, ui: UiState, inspected: Tower | undefined): stri
  * Station-specific first and in tint, shared axes after and in neutral — so the
  * thing that distinguishes this station from the other four leads.
  */
-function mechanicChips(d: TowerStats): string {
-  const chips: string[] = [];
-  const chip = (v: string, hint: string): string => `<b class="mc" title="${hint}">${v}</b>`;
+/**
+ * The glyph and its meaning, together, so the two renderings below cannot
+ * describe the same mechanic differently.
+ */
+function mechanics(d: TowerStats): { glyph: string; words: string }[] {
+  const out: { glyph: string; words: string }[] = [];
 
-  if (d.pierce > 0) chips.push(chip(`↷${d.pierce}`, `Passes through ${d.pierce} more`));
+  if (d.pierce > 0) out.push({ glyph: `↷${d.pierce}`, words: `Passes through ${d.pierce} more` });
   if (d.splashRadius > 0) {
-    chips.push(chip(`◎${d.splashRadius.toFixed(1)}`, `Blast ${d.splashRadius.toFixed(1)} tiles`));
+    out.push({ glyph: `◎${d.splashRadius.toFixed(1)}`, words: `Blast ${d.splashRadius.toFixed(1)} tiles` });
   }
   if (d.slowFactor < 1) {
-    chips.push(chip(`↓${Math.round(d.slowFactor * 100)}%`, `Slows to ${Math.round(d.slowFactor * 100)}%`));
-    chips.push(chip(`${d.slowSeconds.toFixed(1)}s`, `for ${d.slowSeconds.toFixed(1)} seconds`));
+    out.push({ glyph: `↓${Math.round(d.slowFactor * 100)}%`, words: `Slows to ${Math.round(d.slowFactor * 100)}%` });
+    out.push({ glyph: `${d.slowSeconds.toFixed(1)}s`, words: `for ${d.slowSeconds.toFixed(1)} seconds` });
   }
   if (d.chainJumps > 0) {
-    chips.push(chip(`⤳${d.chainJumps}`, `Jumps to ${d.chainJumps} more`));
-    chips.push(chip(`${d.chainRange.toFixed(1)}tl`, `within ${d.chainRange.toFixed(1)} tiles`));
+    out.push({ glyph: `⤳${d.chainJumps}`, words: `Jumps to ${d.chainJumps} more` });
+    out.push({ glyph: `${d.chainRange.toFixed(1)}tl`, words: `within ${d.chainRange.toFixed(1)} tiles` });
   }
   if (d.rampPerSecond > 0) {
     const seconds = (d.rampMax - 1) / d.rampPerSecond;
-    chips.push(chip(`×${Number(d.rampMax.toFixed(2))}`, `Ramps to x${d.rampMax} on one target`));
-    chips.push(chip(`${seconds.toFixed(1)}s`, `over ${seconds.toFixed(1)} seconds`));
+    out.push({ glyph: `×${Number(d.rampMax.toFixed(2))}`, words: `Ramps to x${d.rampMax} on one target` });
+    out.push({ glyph: `${seconds.toFixed(1)}s`, words: `over ${seconds.toFixed(1)} seconds` });
   }
+  return out;
+}
 
+function mechanicChips(d: TowerStats): string {
+  const chips = mechanics(d).map((m) => `<b class="mc" title="${m.words}">${m.glyph}</b>`);
   return `<span class="mech">${chips.join('')}</span>`;
 }
 
+/**
+ * The same mechanics as a sentence, for the armed panel.
+ *
+ * `title` never fires on touch, so on a tablet the glyph row above is a line of
+ * unexplained symbols. The armed panel is where a station is being *chosen*, so
+ * it is where the words are worth their space; the inspector, consulted
+ * mid-wave, keeps the terse form.
+ */
+function mechanicWords(d: TowerStats): string {
+  const m = mechanics(d);
+  if (m.length === 0) return '';
+  return `<span class="mech-words">${m.map((x) => x.words).join(' · ')}</span>`;
+}
+
 /** Damage, rate and range — the three every station has, so always neutral. */
-function axisChips(d: TowerStats): string {
+function axisChips(d: TowerStats, verbose = false): string {
+  // Named in the armed panel, bare in the inspector. A lone "8" is ambiguous
+  // the first time you meet it and obvious the twentieth, and only one of those
+  // two audiences is looking at this panel.
+  const chip = (hint: string, label: string, v: string): string =>
+    verbose ? `<b><i class="ax">${label}</i>${v}</b>` : `<b title="${hint}">${v}</b>`;
   return (
     `<span class="axes">` +
-    `<b title="Damage per shot">${formatDamage(d.damage)}</b>` +
-    `<b title="Shots per second">${(1 / d.fireInterval).toFixed(1)}/s</b>` +
-    `<b title="Reach in tiles">${d.range.toFixed(1)}tl</b>` +
+    chip('Damage per shot', 'dmg', formatDamage(d.damage)) +
+    chip('Shots per second', 'rate', `${(1 / d.fireInterval).toFixed(1)}/s`) +
+    chip('Reach in tiles', 'reach', `${d.range.toFixed(1)}tl`) +
     `</span>`
   );
 }
@@ -592,10 +632,21 @@ export function renderArmed(id: TowerId): string {
   return (
     `<div class="head t-${id}">${stationIcon(id, 48)}` +
     `<div class="lede"><b>${d.name}</b>` +
-    `<span class="blurb" title="${d.blurb}">placing · ${d.cost}</span></div>` +
-    `<kbd>Esc</kbd></div>` +
+    `<span class="blurb">placing · ${d.cost}</span></div>` +
+    // A real button, not the bare keycap this used to be. Touch has neither
+    // right-click nor Escape, so cancelling a placement had no affordance at
+    // all there. `arm` is already a toggle and this station is already armed,
+    // so pressing it disarms — no new action, no new listener, no new port —
+    // and the keycap survives inside it as the desktop hint.
+    `<button class="armed-cancel" data-act="arm" data-id="${id}" ` +
+    `aria-label="Cancel placement">Cancel <kbd>Esc</kbd></button></div>` +
+    // The blurb was a `title` on the line above, i.e. invisible on every touch
+    // device — and this is the one screen whose entire job is explaining the
+    // station you just picked. It is now text.
+    `<span class="armed-blurb">${d.blurb}</span>` +
     `<div class="t-${id}">${mechanicChips(d)}</div>` +
-    axisChips(d)
+    mechanicWords(d) +
+    axisChips(d, true)
   );
 }
 
@@ -615,7 +666,10 @@ export function renderInspector(w: World, t: Tower): string {
     const on = t.targeting === m;
     return (
       `<button data-act="target" data-mode="${m}" class="${on ? 'on' : ''}"` +
-      ` aria-label="${TARGET_LABEL[m]}" title="${TARGET_LABEL[m]}">${TARGET_GLYPH[m]}` +
+      // No `title`: it duplicates the aria-label, and the active mode is
+      // already spelled out beside its glyph — which is the affordance that
+      // works without a pointer.
+      ` aria-label="${TARGET_LABEL[m]}">${TARGET_GLYPH[m]}` +
       (on ? `<span>${TARGET_LABEL[m]}</span>` : '') +
       `</button>`
     );
@@ -631,7 +685,11 @@ export function renderInspector(w: World, t: Tower): string {
     `<span class="mk">Mk ${'I'.repeat(visualTier(t))}</span></div>` +
     `<div class="body">` +
     `<div class="head t-${t.defId}"><b>${d.name}</b>` +
-    `<span class="blurb" title="tile ${t.col},${t.row} · ${Math.round(t.damageDealt)} damage dealt">` +
+    // Tile coordinates dropped — the one fact here nobody has ever needed.
+    // Damage dealt stays in the `title` rather than becoming text: this is the
+    // inspector, read mid-wave, and it is held to a hard ten-word budget that
+    // tools/check.ts enforces. The words go to the armed panel instead.
+    `<span class="blurb" title="${Math.round(t.damageDealt)} damage dealt">` +
     `${t.kills} ${t.kills === 1 ? 'kill' : 'kills'}</span></div>` +
     // Live stats, not the def: this is where an effect purchase becomes visible
     // in numbers, including the secondary dial the upgrade card omits. One row
@@ -766,8 +824,14 @@ function renderArmourLine(w: World, t: Tower, next: number | null): string {
     `${formatDamage(now)} of ${formatDamage(t.stats.damage)} per hit · ` +
     `armour eats ${Math.round((1 - kept) * 100)}%`;
 
+  // The contact stays a glyph here, deliberately. Naming it would read better
+  // in isolation but this is the inspector, under a ten-word budget, and the
+  // glyph→name mapping is taught one panel over: renderNextContact now labels
+  // every mark in the wave preview, which is the surface you read *before* the
+  // wave rather than during it. aria-label carries the full sentence for screen
+  // readers and costs nothing on screen.
   return (
-    `<div class="line armour" title="${label}">` +
+    `<div class="line armour" title="${label}" aria-label="${label}">` +
     `${contactIcon(ref.defId, 18)}` +
     `<span class="bar"><i style="width:${(kept * 100).toFixed(1)}%"></i></span>` +
     `<b${cls}>${formatDamage(now)}${after === null ? '' : ` → ${formatDamage(after)}`}</b>` +
@@ -816,11 +880,15 @@ export function renderNextContact(w: World): string {
   // circle they were about to see. Armour and shield are visible *before* the
   // wave rather than only during it, which is the point at which they are still
   // actionable.
+  // The name rides along under the glyph rather than living in a `title` that
+  // never fires on touch. Learning which mark is a Warden is exactly what this
+  // panel is for, and the glyph alone cannot teach it.
   const chips = groups
     .map(
       (g) =>
-        `<span class="chip c-${g.enemy}" title="${g.n} × ${ENEMIES[g.enemy].name}">` +
-        `${contactIcon(g.enemy, 26)}<b>${g.n}</b></span>`,
+        `<span class="chip c-${g.enemy}">` +
+        `${contactIcon(g.enemy, 26)}<b>${g.n}</b>` +
+        `<i class="cname">${ENEMIES[g.enemy].name}</i></span>`,
     )
     .join('');
 

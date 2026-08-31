@@ -31,6 +31,56 @@ export const DECK_PX = 150;
  */
 export const TOP_PX = 46;
 
+/**
+ * The touch target floor, in board-space px.
+ *
+ * The stage is scaled as one unit, so a control's *real* size is this times
+ * `--board-scale`. 56 is the smallest value that clears the conventional 44 CSS
+ * px at both iPad orientations — 56 x 0.789 = 44.2 in portrait, where the fit
+ * is width-bound, and 56 x 0.850 = 47.6 in landscape under the chrome below.
+ * Anything larger buys nothing and costs board.
+ */
+export const TAP_PX = 56;
+
+/**
+ * Chrome heights on a touch device, where every control has to grow.
+ *
+ * Growing the chrome shrinks the board: the stack is what gets letterboxed, so
+ * 66 + 212 rather than 46 + 150 takes an iPad landscape from 0.937 to 0.850,
+ * and a tile from 37.5 to 34 CSS px. That trade is worth making once — a tile
+ * is aimed at with a preview and a confirm step, whereas a 24px pause button is
+ * simply missed. iPad portrait is width-bound and pays nothing for this at all.
+ */
+export const TOP_PX_TOUCH = 66;
+export const DECK_PX_TOUCH = 212;
+
+/**
+ * What a short viewport reserves for the deck: the collapsed strip only.
+ *
+ * On a landscape phone the fit is height-bound, so reserved chrome is the one
+ * lever that changes the board size at all. Dropping the deck's reservation
+ * from 150 to 48 takes an iPhone 15 Pro from 0.416 to 0.477 — a third more
+ * board area. See the `.td-compact` rules in styles.css for what the open deck
+ * does instead.
+ */
+export const STRIP_PX_TOUCH = 48;
+
+/**
+ * Below this on either axis, a touch device is a phone rather than a tablet.
+ *
+ * The width bound is an iPad mini in portrait (744) staying on the roomy side;
+ * the height bound is what the roomy chrome needs to keep the scale above
+ * 44/56 = 0.786, which is what makes the touch targets clear 44 CSS px.
+ *
+ * Exported as one predicate because two callers depend on it — the chrome tier
+ * in `fitCanvas` and the deck's initial state in `uiState` — and a disagreement
+ * between them would open the deck into a layout sized for it being shut.
+ */
+export const COMPACT_MIN_W = 700;
+export const COMPACT_MIN_H = 620;
+export const isCompactViewport = (touch: boolean, vw: number, vh: number): boolean =>
+  touch && (vw < COMPACT_MIN_W || vh < COMPACT_MIN_H);
+
 /** Colours live in `theme.ts`, so that a reskin is one file rather than five. */
 
 /**

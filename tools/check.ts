@@ -17,7 +17,7 @@ import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render
 import { SECTOR_FIELDS, THEME } from '../src/render/theme.ts';
 import { SECTOR_FIELD_IDS } from '../src/content/sectors.ts';
 import { STATION_MARKS } from '../src/render/stationShape.ts';
-import { deckKey, renderInspector, renderNextContact, renderSlots } from '../src/ui/hud.ts';
+import { deckKey, renderArmed, renderInspector, renderNextContact, renderSlots } from '../src/ui/hud.ts';
 import { boardFacts, boardThumb } from '../src/ui/boardThumb.ts';
 import { CAMPAIGN } from '../src/content/levels.ts';
 import { contactIcon } from '../src/ui/icons.ts';
@@ -35,6 +35,14 @@ import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
 import { createWorld, spawnCreep } from '../src/sim/world.ts';
 import { advance, DT, TICK_HZ, type Accumulator } from '../src/app/loop.ts';
+import {
+  idleGesture,
+  reduce,
+  type Effect,
+  type Gesture,
+  type GestureInput,
+  type Tile,
+} from '../src/app/gesture.ts';
 import type { MapSource } from '../src/content/types.ts';
 
 let failures = 0;
@@ -2104,6 +2112,154 @@ section('board · grid legibility');
   const centre = gridMaskAt(w / 2, h / 2, w, h);
   const corner = gridMaskAt(0, 0, w, h);
   check(centre === 1 && corner < 0.6, 'the fade is visible', `centre ${centre.toFixed(2)} · corner ${corner.toFixed(2)}`);
+}
+
+// ---------------------------------------------------------------------------
+// `title` does not exist on a touch screen. Anything a player has to read in
+// order to choose has to be text, and the armed panel is where choosing
+// happens. The counterpart budget — the inspector staying near-wordless — is
+// gated above; these two pull in opposite directions on purpose, so both need
+// to be held or one will quietly eat the other.
+section('hud · the armed panel explains itself without hover');
+{
+  // Same stripper as the word budget: tags and their attributes go, so anything
+  // still standing is genuinely on screen.
+  const onScreen = (html: string): string => html.replace(/<[^>]*>/g, ' ');
+
+  for (const id of TOWER_IDS) {
+    const armed = onScreen(renderArmed(id));
+    check(
+      armed.includes(TOWERS[id].blurb),
+      `${id}: the armed panel states its blurb as text`,
+      'not as a title=',
+    );
+  }
+
+  // The wave preview is where the glyph→name mapping is taught, now that the
+  // inspector's armour line deliberately does not repeat it.
+  const w = createWorld(map, 99);
+  w.wave.index = 6;
+  const preview = onScreen(renderNextContact(w));
+  const named = ENEMY_IDS.filter((e) => preview.includes(ENEMIES[e].name));
+  check(named.length > 0, 'the wave preview names its contacts', `${named.length} named`);
+}
+
+// ---------------------------------------------------------------------------
+// The touch placement machine. Gateable at all because gesture.ts is a pure
+// reducer with no DOM, no Pixi and no sim — which is most of the reason it is
+// written that way. The property under test is the one that costs real money if
+// it breaks: nothing may buy a station except a gesture the player could have
+// read the verdict from first.
+section('input — touch placement');
+{
+  const TAP = 260;
+  const t = (col: number, row: number): Tile => [col, row];
+  const run = (evs: GestureInput[]): { g: Gesture; fx: Effect[] } => {
+    let g = idleGesture();
+    const fx: Effect[] = [];
+    for (const ev of evs) {
+      const out = reduce(g, ev, TAP);
+      g = out.next;
+      fx.push(...out.effects);
+    }
+    return { g, fx };
+  };
+  const placed = (fx: Effect[]): Effect[] => fx.filter((f) => f.k === 'place');
+  const down = (at: number, tile: Tile | null): GestureInput =>
+    ({ k: 'boardDown', id: 1, tile, armed: 'lance' as TowerId, at });
+  const up = (at: number, tile: Tile | null): GestureInput => ({ k: 'up', id: 1, tile, at });
+
+  // A press long enough to have shown the verdict commits on release.
+  check(
+    placed(run([down(0, t(3, 4)), up(TAP + 40, t(3, 4))]).fx).length === 1,
+    'a deliberate press-and-hold places',
+  );
+
+  // A flick too brief to read only parks the preview. This is the whole guard:
+  // a board tile is smaller than a fingertip, so a stray tap must not buy.
+  const flick = run([down(0, t(3, 4)), up(80, t(3, 4))]);
+  check(placed(flick.fx).length === 0, 'a quick tap does not place', 'it pins instead');
+  check(
+    flick.g.pinned !== null && flick.g.pinned[0] === 3 && flick.g.pinned[1] === 4,
+    'a quick tap pins the previewed tile',
+  );
+
+  // ...and the second tap on that same tile is the confirmation.
+  const confirmDown = reduce(flick.g, down(160, t(3, 4)), TAP);
+  check(
+    placed(reduce(confirmDown.next, up(200, t(3, 4)), TAP).effects).length === 1,
+    'a second quick tap on the pinned tile places',
+  );
+
+  // A second tap somewhere else re-pins rather than placing — otherwise the
+  // guard would only protect the first tile you touched.
+  const elsewhere = run([down(0, t(3, 4)), up(80, t(3, 4)), down(160, t(9, 2)), up(200, t(9, 2))]);
+  check(placed(elsewhere.fx).length === 0, 'a quick tap on a different tile re-pins, never places');
+
+  // Sliding off the board and letting go must cost nothing. This is the abort.
+  const off = run([down(0, t(3, 4)), { k: 'move', id: 1, tile: null, x: 0, y: 0 }, up(500, null)]);
+  check(placed(off.fx).length === 0, 'releasing off the board buys nothing');
+
+  // The system taking the pointer mid-press is not a purchase either.
+  const cancelled = run([down(0, t(3, 4)), { k: 'cancel', id: 1 }]);
+  check(placed(cancelled.fx).length === 0, 'a cancelled gesture buys nothing');
+
+  // A drag that moved is deliberate however brief — the finger did the reading.
+  const dragged = run([
+    down(0, t(3, 4)),
+    { k: 'move', id: 1, tile: t(5, 4), x: 0, y: 0 },
+    up(60, t(5, 4)),
+  ]);
+  check(placed(dragged.fx).length === 1, 'a short but moving drag places', 'movement is intent');
+
+  // A palm landing mid-gesture must not hijack or cancel the live one.
+  const palm = run([
+    down(0, t(3, 4)),
+    { k: 'boardDown', id: 2, tile: t(1, 1), armed: 'lance' as TowerId, at: 10 },
+    up(TAP + 40, t(3, 4)),
+  ]);
+  const palmPlaces = placed(palm.fx);
+  check(
+    palmPlaces.length === 1 && palmPlaces[0]!.k === 'place' && palmPlaces[0]!.tile[0] === 3,
+    'a second finger is ignored, not obeyed',
+  );
+
+  // Nothing armed: a tap inspects, and only if it stayed on the tile it began
+  // on. Deferring to lift is what stops a scrub opening the inspector.
+  const inspect = run([
+    { k: 'boardDown', id: 1, tile: t(2, 2), armed: null, at: 0 },
+    up(50, t(2, 2)),
+  ]);
+  check(inspect.fx.some((f) => f.k === 'inspect'), 'an unarmed tap inspects');
+  const scrub = run([
+    { k: 'boardDown', id: 1, tile: t(2, 2), armed: null, at: 0 },
+    { k: 'move', id: 1, tile: t(6, 6), x: 0, y: 0 },
+    up(50, t(6, 6)),
+  ]);
+  check(!scrub.fx.some((f) => f.k === 'inspect'), 'an unarmed scrub does not inspect');
+
+  // Dragging out of a slot arms, then aims. Releasing off-board keeps the arm
+  // but buys nothing, and the synthesised click must be eaten either way or
+  // the slot's own toggle disarms what the drag just armed.
+  const slot = { left: 0, top: 0, right: 40, bottom: 40 };
+  const deck = run([
+    { k: 'deckDown', id: 1, towerId: 'lance' as TowerId, rect: slot },
+    { k: 'move', id: 1, tile: t(7, 3), x: 300, y: 300 },
+    up(90, t(7, 3)),
+  ]);
+  check(deck.fx.some((f) => f.k === 'arm'), 'dragging off a slot arms it');
+  check(placed(deck.fx).length === 1, 'dragging from a slot onto the board places');
+  check(deck.fx.some((f) => f.k === 'swallowClick'), 'the synthesised click is swallowed');
+
+  const deckStay = run([
+    { k: 'deckDown', id: 1, towerId: 'lance' as TowerId, rect: slot },
+    { k: 'move', id: 1, tile: null, x: 20, y: 20 },
+    up(90, null),
+  ]);
+  check(
+    !deckStay.fx.some((f) => f.k === 'arm') && placed(deckStay.fx).length === 0,
+    'a press that never leaves the slot defers to the DOM click',
+  );
 }
 
 // ---------------------------------------------------------------------------

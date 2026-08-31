@@ -8,7 +8,16 @@
 
 * { box-sizing: border-box; }
 
-html { color-scheme: dark; }
+html {
+  color-scheme: dark;
+
+  /* Safari inflates font sizes in narrow and rotated layouts. The deck is a
+     fixed composition measured in px against 1040x600 — a browser silently
+     bumping its 9.5px labels to 12px does not make it responsive, it makes it
+     overflow. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 html, body {
   margin: 0;
@@ -17,9 +26,22 @@ html, body {
   color: var(--text);
   font: 14px/1.4 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
+
+  /* No rubber-band, no pull-to-refresh, no scroll chaining out of an inner
+     scroller. `overflow: hidden` alone does not stop iOS bouncing the
+     document itself. */
+  overscroll-behavior: none;
 }
 
-#app { position: relative; width: 100%; height: 100%; }
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* dvh tracks the visible height as Safari's toolbar slides away; the 100%
+     above stays as the fallback. fitCanvas measures documentElement itself and
+     deliberately does not read this. */
+  height: 100dvh;
+}
 
 /* Board and chrome are one letterboxed unit: the stage is the board plus the
    deck's reserved strip beneath it, laid out at logical size and scaled once by
@@ -34,7 +56,38 @@ html, body {
   width: var(--board-w, 100%);
   height: calc(var(--top-h, 0px) + var(--board-h, 100%) + var(--deck-h, 0px));
   transform: translate(-50%, -50%) scale(var(--board-scale, 1));
+
+  /* The board and its chrome are a control surface, not a document: no pan, no
+     pinch, no double-tap zoom, no long-press callout, no tap flash.
+
+     `touch-action` is not inherited, but the browser intersects it with every
+     ancestor up to the nearest scroll container — so declaring it here covers
+     the canvas and the deck together, which is what the placement gesture
+     needs. Without it the browser claims the pointer to pan and fires
+     pointercancel mid-drag, and the gesture layer silently does nothing.
+
+     Scoped to #stage rather than <html> because the pre-game screens under
+     #screens ARE documents and must keep scrolling and pinch-zoom. That is why
+     they had to move out of here first. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Home, campaign picker, race lobby and race results. A sibling of #stage, so
+   they get the real viewport at 1:1 instead of the board's scaled box. Above
+   the stage, because the live HUD keeps rendering behind the results screen.
+   Transparent to the pointer while empty so board input is untouched; each
+   screen re-arms it for itself. */
+#screens {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+#screens > * { pointer-events: auto; }
 
 /* The board occupies the top of the stage; the reserved strip below it is the
    deck's, so no route tile is ever behind the deck. */
@@ -316,6 +369,24 @@ kbd {
 .detail .head { display: flex; align-items: center; gap: 9px; }
 .detail .head b { font-size: 13px; color: var(--text); }
 .detail .head .blurb { font-size: 10.5px; color: var(--dim); }
+
+/* Was a bare <kbd>Esc</kbd>. Now the control it was only ever hinting at, so
+   that cancelling a placement is reachable without a keyboard or a right
+   button. Pushed to the end of the row, where the keycap already sat. */
+.armed-cancel {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.armed-cancel:hover { color: var(--text); border-color: var(--dim); }
 .detail .line { font-size: 11.5px; line-height: 1.6; color: var(--muted); }
 
 /* Wave preview: one chip per contact type. Wraps, because a late wave has six
@@ -696,3 +767,183 @@ button.path:hover { border-color: var(--accent); }
 
 /* The armed state: identity as a picture, not a paragraph. */
 .detail .lede { display: flex; flex-direction: column; gap: 1px; }
+
+/* ---------------------------------------------------------------------------
+   Touch.
+
+   Every rule below is behind `(pointer: coarse)`, and --tap is 0px otherwise —
+   `min-height: 0` is a no-op, so not one desktop pixel moves.
+
+   The floor has to be expressed in LOGICAL px because the stage is scaled as a
+   unit: a control's real size is its authored size times --board-scale. 56
+   clears 44 CSS px at both iPad orientations (56 x 0.789 = 44.2 portrait,
+   56 x 0.850 = 47.6 landscape). See TAP_PX in render/constants.ts.
+
+   What was under 44 CSS px before this, measured at the old 0.937 landscape
+   scale: the deck handle at 17 (the worst, and the only way to reopen a
+   collapsed deck), pause at 24, the speed buttons at 24, the targeting glyphs
+   at 23, sell at 28, the upgrade paths at 38, send at 39. The build slots were
+   the one control anybody would have thought to check, and the only one that
+   already passed. */
+:root { --tap: 0px; }
+@media (pointer: coarse) { :root { --tap: 56px; } }
+
+@media (pointer: coarse) {
+  /* One block, because these are all the same fact. */
+  .top .icon,
+  .seg button,
+  .path,
+  .actions .targeting button,
+  .btn,
+  .handle { min-height: var(--tap); }
+
+  .top .icon,
+  .seg button { min-width: var(--tap); }
+
+  /* The handle is a bare inline-flex run of text: without side padding, a 56px
+     min-height makes a tall thin sliver rather than a bigger target. */
+  .handle { padding: 0 14px; border-radius: 8px; }
+
+  /* .path is a two-row grid; centre its rows in the taller box instead of
+     letting them sit against the top edge. */
+  .path { align-content: center; }
+
+  /* The collapsed strip has to contain a 56px handle plus its own padding. */
+  .deck .strip { padding: 8px 16px; }
+
+  /* Hover styling is a lie on a touch screen: a tap leaves :hover stuck until
+     the next tap elsewhere, so the last-pressed slot reads as armed and the
+     last-pressed speed button reads as selected. This is the same problem the
+     targeting control already solved by labelling its active mode rather than
+     relying on hover. */
+  .slot:hover,
+  .seg button:hover,
+  .top .icon:hover,
+  button.path:hover,
+  .btn:hover,
+  .handle:hover,
+  .armed-cancel:hover {
+    border-color: inherit;
+    color: inherit;
+    background: inherit;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Compact: a landscape phone. Best-effort, and the arithmetic says so — at this
+   scale a 56px control renders at 27 CSS px and no amount of reserved chrome
+   changes that. What CAN be changed is how much board you get, and here the
+   deck's reservation is the only lever: 150px of a 331px viewport is a quarter
+   of the screen given to a panel you open between waves.
+
+   So on compact only, the open deck OVERLAYS the bottom of the board instead of
+   reserving space for itself. That is a deliberate, scoped break with the rule
+   stated in constants.ts (DECK_PX) and at .deck below — no route tile may hide
+   behind the deck — and those comments read like they were written after the
+   bug bit someone. It is survivable here only because the deck starts closed on
+   compact and closes itself when a wave starts, so the panel is never over the
+   final approach while anything is walking it. */
+.td-compact .deck .panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: auto;
+  max-height: 150px;
+  overflow-x: auto;
+}
+/* What actually fits, rather than what the guideline asks for. */
+.td-compact { --tap: 44px; }
+
+/* The pause / victory / defeat cards are a fixed 420px, which at compact scale
+   is 200 CSS px of card with ~12px toggles inside it. */
+@media (pointer: coarse) {
+  .card { width: min(420px, 92vw); }
+  .card .seg button,
+  .card .btn,
+  .card .btn.wide { min-height: var(--tap); }
+}
+
+/* ---------------------------------------------------------------------------
+   Portrait phone: rotate to play.
+
+   Pure CSS, deliberately — no JS, no resize handler, nothing that can fall out
+   of sync with the actual orientation. When the device turns, the query stops
+   matching and the ResizeObserver in pixiApp refits the board; the two need no
+   knowledge of each other.
+
+   - (pointer: coarse) keeps it off a narrow DESKTOP window. A resized browser
+     is still a mouse, and that user should get a letterboxed board, not a wall.
+   - max-width: 700px keeps it off an iPad in portrait, which is a supported
+     orientation at 0.79 scale.
+   - .td-ingame is written by fitCanvas, so this never covers the home screen,
+     the campaign picker or the race lobby. You should be able to accept an
+     invite and join a room in portrait; the wall lands when a board appears,
+     not at the front door.
+
+   display:none keeps it out of the accessibility tree, so nothing has to
+   toggle aria-hidden. */
+#rotate { display: none; }
+
+@media (pointer: coarse) and (orientation: portrait) and (max-width: 700px) {
+  .td-ingame #rotate {
+    display: grid;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    place-content: center;
+    justify-items: center;
+    gap: 14px;
+    padding: 32px;
+    text-align: center;
+    background: var(--bg);
+  }
+  .td-ingame #rotate b { font-size: 19px; color: var(--text); font-weight: 600; }
+  .td-ingame #rotate span { font-size: 13.5px; color: var(--muted); max-width: 30ch; line-height: 1.6; }
+  .td-ingame #rotate svg { width: 46px; height: 46px; color: var(--accent); }
+}
+
+/* ---------------------------------------------------------------------------
+   Words where there used to be a `title`.
+
+   `title` never fires on touch, so on a tablet every one of these was simply
+   absent — including each station's blurb, which is the single thing the armed
+   panel exists to tell you. The rule applied: the ARMED and PLANNING surfaces
+   get words, because that is where a choice is being made; the inspector keeps
+   numerals, because it is read mid-wave where brevity is the feature. */
+.armed-blurb {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* The mechanic glyphs spelled out. Only in the armed panel — the inspector
+   shows the same chips bare, and has no room for this. */
+.mech-words {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+/* Axis labels: "dmg 8" rather than a bare 8, again armed-panel only. */
+.axes i.ax {
+  font-style: normal;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-right: 3px;
+}
+
+/* The contact's name under its mark in the wave preview. This is the mapping
+   the panel is trying to teach, and a glyph cannot teach it alone. */
+.chip .cname {
+  font-style: normal;
+  font-size: 8.5px;
+  line-height: 1;
+  color: var(--dim);
+  max-width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

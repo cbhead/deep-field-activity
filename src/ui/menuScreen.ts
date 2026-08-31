@@ -35,7 +35,10 @@ export interface MenuScreen {
 }
 
 const STYLE = `
-#menu-screen{position:absolute;inset:0;z-index:10;overflow-y:auto;background:#0b0c16;
+#menu-screen{position:absolute;inset:0;z-index:10;background:#0b0c16;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding-bottom:calc(env(safe-area-inset-bottom, 0px) + var(--kb, 0px));
   color:#e9e9ed;font:400 14px/1.5 Inter,system-ui,sans-serif}
 #menu-screen .mn-glow{position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(circle at 50% 40%,rgba(145,132,217,.14),rgba(6,7,13,.6) 62%)}
@@ -61,7 +64,15 @@ const STYLE = `
 #menu-screen .mn-card.locked:hover{box-shadow:inset 0 0 0 1px rgba(233,233,237,.1)}
 #menu-screen .mn-card-top{display:flex;align-items:flex-start;gap:10px}
 #menu-screen .mn-card-name{font:500 22px/1.15 Inter,sans-serif;letter-spacing:-.01em;margin:0}
-#menu-screen .mn-card-blurb{font:400 12.5px/1.65 Inter,sans-serif;color:#9397ab;margin:0;min-height:62px}
+/* Hidden on desktop, where the card's blurb lives in the name's tooltip and
+   the 62px it used to occupy was deliberately reclaimed. Shown on touch, which
+   has no tooltip to read it from. Same for the difficulty blurb. */
+#menu-screen .mn-card-blurb,
+#menu-screen .mn-diff-blurb{display:none;margin:0}
+@media (pointer: coarse){
+  #menu-screen .mn-card-blurb{display:block;font:400 12.5px/1.65 Inter,sans-serif;color:#9397ab}
+  #menu-screen .mn-diff-blurb{display:block;font:400 12px/1.6 Inter,sans-serif;color:#75798c}
+}
 #menu-screen .mn-facts{display:flex;gap:14px;font:400 11px/1 Inter,sans-serif;color:#75798c}
 #menu-screen .mn-facts b{font-weight:600;color:#cfd3e5}
 #menu-screen .mn-rule{height:1px;background:linear-gradient(90deg,rgba(233,233,237,.14),transparent)}
@@ -89,6 +100,8 @@ const STYLE = `
   background:rgba(35,37,50,.72);box-shadow:inset 0 0 0 1px rgba(233,233,237,.16);border:none;outline:none;
   font:400 15px/1 Inter,sans-serif;color:#e9e9ed;width:100%;box-sizing:border-box}
 #menu-screen .mn-field:focus{box-shadow:inset 0 0 0 1px rgba(145,132,217,.6)}
+/* 16px or iOS zooms the page on focus and never zooms back. See raceTheme.ts. */
+@media (pointer: coarse) { #menu-screen .mn-field{font-size:16px;height:52px} }
 #menu-screen .mn-fine{font:400 11.5px/1.6 Inter,sans-serif;color:#5d6070;margin:0}
 #menu-screen .mn-btn{display:flex;align-items:center;justify-content:center;height:46px;padding:0 20px;
   border:1px solid #9184d9;border-radius:8px;background:none;cursor:pointer;
@@ -171,7 +184,6 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
 
   const el = document.createElement('div');
   el.id = 'menu-screen';
-  parent.style.position = 'relative';
   parent.appendChild(el);
 
   const progress: Progress = loadProgress();
@@ -251,14 +263,20 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
         `<div class="mn-thumb">${boardThumb(level.map, 256, !open)}</div>` +
         `<div class="mn-card-top"><div><div class="mn-kicker">${esc(level.kicker)}</div>` +
         // The blurb moves to a tooltip: good writing about a shape the player
-        // can now simply see.
+        // can now simply see. It comes back as text on touch, where there is no
+        // tooltip to move it to — .mn-card-blurb has been sitting unused in the
+        // stylesheet since that change.
         `<h2 class="mn-card-name" title="${esc(level.blurb)}">${esc(level.name)}</h2></div>` +
         `${open ? bestBadge(level) : lockSvg()}</div>` +
+        `<p class="mn-card-blurb">${esc(level.blurb)}</p>` +
         `<div class="mn-facts"><span><b>${level.waves.length}</b> waves</span>` +
         `<span><b>${facts.road}</b> road</span>` +
         `<span><b>${facts.turns}</b> turns</span></div>` +
         (open
           ? `<div class="mn-seg tight">${diffs}</div>` +
+            // The selected difficulty explains itself in words, mirroring how
+            // the targeting control labels only its active mode.
+            `<p class="mn-diff-blurb">${esc(DIFFICULTIES[difficulty].blurb)}</p>` +
             `<button class="mn-btn" data-launch="${i}">Launch →</button>`
           : `<div class="mn-lock">Hold ${esc(prev?.name ?? '')} to open</div>`) +
         `</div>`
@@ -270,8 +288,7 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
         ? `<button class="mn-btn ghost" id="mn-seed-open">Set a seed</button>` +
           `<span class="mn-fine">same seed, same waves</span>`
         : `<button class="mn-btn ghost" id="mn-seed-open">Set a seed</button>` +
-          `<button class="mn-btn ghost" id="mn-replay" title="Replay ${esc(progress.lastSeed)}">` +
-          `Replay last board</button>`;
+          `<button class="mn-btn ghost" id="mn-replay">Replay last board</button>`;
 
     el.innerHTML =
       `<div class="mn-glow"></div>` +
@@ -287,7 +304,8 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
       `<div class="mn-seedrow">${seedRow}</div>` +
       `<div class="mn-seedbox" id="mn-seedbox" hidden>` +
       `<input class="mn-field" id="mn-seed" placeholder="blank for a random board" ` +
-      `autocomplete="off" spellcheck="false"/></div>` +
+      `autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" ` +
+      `enterkeyhint="go" aria-label="Seed"/></div>` +
       `</div>`;
 
     wireBar();

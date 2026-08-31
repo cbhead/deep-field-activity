@@ -20,6 +20,7 @@ import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
 import { createMenuScreen } from './ui/menuScreen.ts';
 import { createHomeScreen } from './ui/homeScreen.ts';
+import { trackKeyboardInset } from './ui/viewport.ts';
 import { createLoop } from './app/loop.ts';
 import { attachInput } from './app/input.ts';
 import { createUiState } from './app/uiState.ts';
@@ -57,15 +58,24 @@ const HUD_INTERVAL_MS = 100;
 // paint an unstyled HUD.
 applyHudTheme();
 
+// Publishes --kb so a screen can pad itself clear of the on-screen keyboard.
+// Cheap, idempotent, and needed before the first screen paints.
+trackKeyboardInset();
+
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
   const hudRoot = document.getElementById('hud');
-  if (!mount || !hudRoot) throw new Error('#game-root or #hud missing from index.html');
+  // Full-viewport screens mount here, not on `mount`: #game-root is the board's
+  // scaled box. See the comment on #screens in index.html.
+  const screens = document.getElementById('screens');
+  if (!mount || !hudRoot || !screens) {
+    throw new Error('#game-root, #hud or #screens missing from index.html');
+  }
 
   const params = new URLSearchParams(location.search);
   const race = params.get('race');
   if (race === null) {
-    await startSinglePlayer(mount, hudRoot, params);
+    await startSinglePlayer(mount, hudRoot, screens, params);
     return;
   }
 
@@ -93,7 +103,7 @@ async function main(): Promise<void> {
   sessionStorage.removeItem('race-rejoin');
   const rejoin = rejoinRaw !== null ? (JSON.parse(rejoinRaw) as { name: string; room: string }) : null;
 
-  const lobby = createLobbyScreen(mount, {
+  const lobby = createLobbyScreen(screens, {
     ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
     relayHost: host,
     onReady: (ready) => controller.ready(ready),
@@ -127,7 +137,7 @@ async function main(): Promise<void> {
               opponentName,
               recordSeries(opponentName, outcome, matchSector),
             );
-            showResults(mount, {
+            showResults(screens, {
               myId: controller.playerId,
               winnerId,
               standings,
@@ -227,6 +237,7 @@ async function main(): Promise<void> {
 async function startSinglePlayer(
   mount: HTMLElement,
   hudRoot: HTMLElement,
+  screens: HTMLElement,
   params: URLSearchParams,
 ): Promise<void> {
   const named = params.get('level');
@@ -234,7 +245,7 @@ async function startSinglePlayer(
 
   if (level === undefined) {
     const menu = (): void => {
-      createMenuScreen(mount, {
+      createMenuScreen(screens, {
         onLaunch: (chosen, difficulty, seed) => {
           location.search = runQuery(chosen, difficulty, seed);
         },
@@ -252,7 +263,7 @@ async function startSinglePlayer(
       return;
     }
 
-    const home = createHomeScreen(mount, {
+    const home = createHomeScreen(screens, {
       onPlay: (chosen, difficulty) => {
         location.search = runQuery(chosen, difficulty, '');
       },
@@ -429,7 +440,10 @@ async function startGame(
     if (ui.prefs.stream) mapLayer.step(1 / 60);
 
     view.sync(world, dt);
-    overlay.sync(world, ui.selected, ui.hover, ui.inspecting);
+    // Before the overlay reads it: if the player disarmed by any route, the
+    // parked touch preview has nothing left to describe.
+    input.reconcile();
+    overlay.sync(world, ui.selected, ui.hover, ui.inspecting, ui.touchPreview);
     effects.update(world, dt);
     creepChrome.sync(world);
     towerChrome.sync(world, ui.prefs);
@@ -450,7 +464,7 @@ async function startGame(
     app.render();
   });
 
-  attachInput(app, world, ui, togglePause);
+  const input = attachInput(app, world, ui, togglePause, hudRoot);
 
   // Any gesture voids the 10Hz throttle: a hotkey arming a station or a click
   // opening the inspector shows on the next frame, not up to 100ms later. The
@@ -476,6 +490,10 @@ async function startGame(
   if (import.meta.env.DEV) {
     (globalThis as Record<string, unknown>)['td'] = {
       world, loop, view, overlay, effects, ui, map, app, layers,
+      // `td.input.tapMs = 200` on the device itself: how long a press must last
+      // before releasing it buys the station. The one number here that can only
+      // really be judged with a thumb.
+      input,
       // The N2 fairness gate: run this in two tabs of the same room and diff.
       // Byte-identical or the race is not fair.
       dumpWaves: (n = 20) =>
