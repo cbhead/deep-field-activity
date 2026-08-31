@@ -1,0 +1,96 @@
+name: Legal pages
+
+# Discord requires a Terms of Service and a Privacy Policy at public URLs before
+# an application can be verified, and those URLs have to answer when a reviewer
+# looks — not only while a laptop happens to be running the relay behind a
+# tunnel. This publishes the two pages to GitHub Pages, which is free, always up
+# and has no server to forget about.
+#
+# It deploys `public/` rather than a copy, so the pages Pages serves and the
+# pages the game serves are the same files. If the privacy policy ever drifts
+# from what the code does, it drifts in one place.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - public/**
+      - .github/workflows/pages.yml
+  # Deployable by hand, for when Pages needs a nudge without a content change.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it — a half-published
+# privacy policy is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # `enablement` turns Pages on for the repository on the first run, so
+      # there is no click-through in Settings to remember and no API call to
+      # make by hand. It is a no-op on every run after that.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # Assembled rather than uploading `public/` directly, for one reason:
+      # Pages needs an index and `public/` must not have one. Vite copies that
+      # directory to the build root verbatim, where an index.html would collide
+      # with the app's own entry point. So the landing page is generated here
+      # and the two documents are copied beside it, unmodified.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp public/terms.html public/privacy.html _site/
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>Deep Field — Legal</title>
+              <style>
+                :root { color-scheme: dark; }
+                body {
+                  margin: 0 auto; padding: 64px 24px; max-width: 40rem;
+                  background: #07080f; color: #d8d7e6;
+                  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+                }
+                h1 { font-size: 30px; margin: 0 0 8px; color: #efeefb; letter-spacing: -0.01em; }
+                p { color: #a4a2ba; }
+                a { color: #b5abfc; }
+                li { margin: 8px 0; }
+              </style>
+            </head>
+            <body>
+              <h1>Deep Field</h1>
+              <p>
+                A tower defense game. The game itself lives at
+                <a href="https://github.com/cbhead/deep-field-activity">github.com/cbhead/deep-field-activity</a>;
+                this site hosts only its legal documents.
+              </p>
+              <ul>
+                <li><a href="./terms.html">Terms of Service</a></li>
+                <li><a href="./privacy.html">Privacy Policy</a></li>
+              </ul>
+            </body>
+          </html>
+          HTML
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
