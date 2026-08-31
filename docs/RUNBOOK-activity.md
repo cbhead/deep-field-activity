@@ -103,6 +103,9 @@ Ctrl-C once it works — Step 3 starts it properly.
 
 In the developer portal, with your app open:
 
+- **Bot → Requires OAuth2 Code Grant** — make sure this is **off**. If it is on,
+  the handshake fails with `Integration Required Code Grant` at the authorize
+  step, and nothing in this repo can work around it.
 - **Activities → Settings** — enable Activities for the app.
 - **Activities → URL Mappings** — add:
 
@@ -208,6 +211,7 @@ Mostly predicted, not observed. Correct it as you learn.
 | `listener already exists for port 443` | A funnel is already serving this machine — usually the Step 1 check, left running in another terminal | Not a problem. `npm run tunnel` reuses it now. If you would rather start clean, Ctrl-C that terminal, or `tailscale funnel --https=443 off` |
 | The public URL returns **502** | The funnel is up and forwarding, but nothing is listening on 8787 behind it | The relay is not running. `npm run play` in the repo, or re-run `npm run tunnel`. A 502 is good news in one sense: it proves the mapping and the funnel are correct |
 | Activity shows a blank or endlessly loading frame | The URL Mapping target is wrong, or the tunnel is down | Step 4's `curl`. Target is a bare hostname — a `https://` prefix or trailing slash in that form is the classic cause |
+| **`Integration Required Code Grant`** | The app has **Bot → Requires OAuth2 Code Grant** switched on. It forces a full authorization-code flow before the integration is created, which the Activity handshake cannot complete | Portal → your app → **Bot** → uncheck **Requires OAuth2 Code Grant** → Save, then relaunch. Nothing in this repo causes or can fix it. Worth reading as progress: it means the iframe loaded, the SDK constructed, `ready()` resolved and `authorize()` reached Discord — only the grant was refused |
 | Game loads but no `[td] Discord activity:` line | Bundle built without `VITE_DISCORD_CLIENT_ID`, so the handshake was eliminated as dead code | Check `.env`, re-run `npm run tunnel`, and watch for its warning. `npm run build` prints one too |
 | Console shows `token exchange failed (503)` | The relay has no `DISCORD_CLIENT_SECRET` | It is read at run time from `.env`; confirm the file exists and restart. `npm run proxy` asserts this path |
 | Console shows `token exchange failed (502)` | Discord rejected the exchange — usually a stale or wrong client secret | Reset the secret in the portal, update `.env`, restart. The relay's terminal logs the upstream status |
