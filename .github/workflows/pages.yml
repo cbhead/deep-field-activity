@@ -38,12 +38,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # `enablement` turns Pages on for the repository on the first run, so
-      # there is no click-through in Settings to remember and no API call to
-      # make by hand. It is a no-op on every run after that.
+      # REQUIRES PAGES TO BE ENABLED ONCE, BY HAND:
+      #   Settings → Pages → Build and deployment → Source: GitHub Actions
+      #
+      # This step used to pass `enablement: true` to do that automatically, and
+      # it cannot work: *creating* a Pages site needs administration rights,
+      # while the workflow token gets at most `pages: write`, which only covers
+      # deploying to a site that already exists. The attempt failed with
+      # "Resource not accessible by integration" rather than anything that named
+      # the real problem, so it is written down here instead of rediscovered.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       # Assembled rather than uploading `public/` directly, for one reason:
       # Pages needs an index and `public/` must not have one. Vite copies that

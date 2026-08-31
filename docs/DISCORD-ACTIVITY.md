@@ -287,12 +287,26 @@ the clause is that a dispute lands somewhere the operator is actually subject to
 The terms also carry the usual carve-out saying they cannot remove a consumer
 protection someone's local law makes unwaivable.
 
-One thing still outstanding:
+**Hosting.** Serving them from the relay means they are only reachable while the
+tunnel is running, and a reviewer will look when they look. So
+`.github/workflows/pages.yml` publishes them to GitHub Pages, deploying the same
+`public/` files the game ships rather than a copy — the policy makes specific
+claims about what the code stores, so the two must not be able to drift.
 
-- **Host them somewhere that stays up.** Serving them from the relay means they
-  are only reachable while the tunnel is running, and a reviewer will look when
-  they look. GitHub Pages on this repository, or the two files in a public gist,
-  give a URL that does not depend on a laptop being awake.
+That workflow needs Pages enabled once, by hand:
+
+> **Settings → Pages → Build and deployment → Source: GitHub Actions**
+
+then re-run the *Legal pages* workflow. This cannot be automated from inside the
+job: creating a Pages site requires administration rights, and a workflow token
+gets at most `pages: write`, which only covers deploying to a site that already
+exists. Once it has run, the canonical URLs are:
+
+    https://cbhead.github.io/deep-field-activity/terms.html
+    https://cbhead.github.io/deep-field-activity/privacy.html
+
+Those are the ones to give Discord — not the tunnel's, which are only up while
+the laptop is.
 
 If the game's data handling changes — a new stored key, a wider scope, anything
 persisted server-side — the privacy policy is now a file that has to change with
