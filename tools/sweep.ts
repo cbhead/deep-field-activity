@@ -22,41 +22,92 @@
  * this reports things a human has to judge.
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
+import { CAMPAIGN } from '../src/content/levels.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { TOWERS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, type EnemyId } from '../src/content/enemies.ts';
 import { parseMap } from '../src/sim/util/grid.ts';
+import type { MapDef } from '../src/sim/types.ts';
+import { DEFAULT_RULES, resolveRules, type Rules } from '../src/sim/rules.ts';
+import type { DifficultyId } from '../src/content/difficulty.ts';
 import { createWorld } from '../src/sim/world.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { waveCount } from '../src/sim/wavePlan.ts';
 
 const map = parseMap(LEVEL01);
 
-/** Same heuristic as the probe in check.ts: a competent player's tile ranking. */
-const spotCache = new Map<number, [number, number][]>();
-function rankedSpots(range: number): [number, number][] {
-  const key = Math.round(range * 10);
+/**
+ * Two tile rankings, because on a multi-lane board they disagree and the
+ * disagreement is the finding — see the same pair in `tools/campaign.ts`.
+ *
+ * `cluster` scores every tile against the whole road and sorts, which packs the
+ * busiest stretch. `spread` is a greedy set cover: each pick reaches the most
+ * road *nothing has covered yet*. On one lane `cluster` wins comfortably; on
+ * lanes of unequal length it piles everything onto the long one, because a tile
+ * beside a 50-tile coil always outscores a tile beside a 20-tile chute.
+ */
+type Ranking = 'cluster' | 'spread';
+
+const spotCache = new Map<string, [number, number][]>();
+
+function rankedSpots(board: MapDef, range: number, how: Ranking = 'cluster'): [number, number][] {
+  const key = `${board.id}:${Math.round(range * 10)}:${how}`;
   const hit = spotCache.get(key);
   if (hit !== undefined) return hit;
 
-  const scored: { col: number; row: number; covered: number }[] = [];
-  for (let row = 0; row < map.rows; row++) {
-    for (let col = 0; col < map.cols; col++) {
-      if (map.tiles[row * map.cols + col] !== 'ground') continue;
-      let covered = 0;
-      for (let r = 0; r < map.rows; r++) {
-        for (let c = 0; c < map.cols; c++) {
-          if (map.tiles[r * map.cols + c] !== 'path') continue;
-          const dx = c - col;
-          const dy = r - row;
-          if (dx * dx + dy * dy <= range * range) covered++;
-        }
-      }
-      scored.push({ col, row, covered });
+  const road: number[] = [];
+  for (let i = 0; i < board.tiles.length; i++) if (board.tiles[i] === 'path') road.push(i);
+
+  const ground: { col: number; row: number; reach: number[] }[] = [];
+  for (let row = 0; row < board.rows; row++) {
+    for (let col = 0; col < board.cols; col++) {
+      if (board.tiles[row * board.cols + col] !== 'ground') continue;
+      const reach = road.filter((i) => {
+        const dx = (i % board.cols) - col;
+        const dy = ((i / board.cols) | 0) - row;
+        return dx * dx + dy * dy <= range * range;
+      });
+      ground.push({ col, row, reach });
     }
   }
-  scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
-  const out = scored.map((s) => [s.col, s.row] as [number, number]);
+
+  let out: [number, number][];
+  if (how === 'cluster') {
+    out = ground
+      .slice()
+      .sort((a, b) => b.reach.length - a.reach.length || a.col - b.col || a.row - b.row)
+      .map((s) => [s.col, s.row] as [number, number]);
+  } else {
+    out = [];
+    const covered = new Set<number>();
+    const taken = new Set<number>();
+    for (;;) {
+      let best = -1;
+      let bestGain = -1;
+      for (let i = 0; i < ground.length; i++) {
+        if (taken.has(i)) continue;
+        let gain = 0;
+        for (const t of ground[i]!.reach) if (!covered.has(t)) gain++;
+        if (gain > bestGain) {
+          best = i;
+          bestGain = gain;
+        }
+      }
+      if (best < 0 || bestGain <= 0) break;
+      taken.add(best);
+      out.push([ground[best]!.col, ground[best]!.row]);
+      for (const t of ground[best]!.reach) covered.add(t);
+    }
+    // Once the road is covered, doubling up on the busiest stretch is what a
+    // player with money left over would do.
+    for (const s of ground
+      .map((s, i) => ({ s, i }))
+      .filter(({ i }) => !taken.has(i))
+      .sort((a, b) => b.s.reach.length - a.s.reach.length || a.s.col - b.s.col || a.s.row - b.s.row)) {
+      out.push([s.s.col, s.s.row]);
+    }
+  }
+
   spotCache.set(key, out);
   return out;
 }
@@ -74,16 +125,30 @@ interface Result {
  * unlimited budget measures tower damage and says nothing about whether bounty
  * income can fund a defence, which is usually the actual constraint.
  */
-function run(build: TowerId[], rush: boolean, seed: number): Result {
+function run(
+  build: TowerId[],
+  rush: boolean,
+  seed: number,
+  board: MapDef = map,
+  rules: Rules = DEFAULT_RULES,
+  how: Ranking = 'cluster',
+): Result {
   // Ranked by the widest reach in the build, so every strategy shares one
   // notion of a good tile and none is flattered by its own ordering.
-  const spots = rankedSpots(Math.max(...build.map((b) => TOWERS[b].range)));
-  const w = createWorld(map, seed);
+  const spots = rankedSpots(board, Math.max(...build.map((b) => TOWERS[b].range)), how);
+  const w = createWorld(board, seed, rules);
   let next = 0;
 
   for (let i = 0; i < 300_000 && w.phase === 'playing'; i++) {
     const want = build[next % build.length]!;
-    if (next < spots.length && w.money >= TOWERS[want].cost) {
+    // Locked stations are skipped rather than attempted. Advancing `next` on a
+    // command the sim will reject burns one of the ranked tiles and leaves the
+    // build measuring less coverage than it was asked to.
+    if (
+      next < spots.length &&
+      w.money >= TOWERS[want].cost &&
+      w.wave.index >= TOWERS[want].unlockWave
+    ) {
       w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
       next++;
     }
@@ -231,8 +296,121 @@ function marginal(): void {
   }
 }
 
+/**
+ * What each of the five stations is worth, board by board.
+ *
+ * The map spec's §4 made five predictions about what routes do to the roster,
+ * and said plainly that none of it needs a number changed — that the geometry
+ * does the work on its own. This is the block that checks that, because the
+ * claim is falsifiable and was never tested:
+ *
+ *   Lance (pierce)      down, sharply — pierce pays by file length and a split
+ *                       halves every file. Braid should be its floor.
+ *   Nova (splash)       roughly flat — a lane still clumps, there are just two.
+ *   Arc (chain)         up — chain needs proximity, not alignment, and it is
+ *                       the only thing that reads a merge well.
+ *   Singularity (slow)  down as a force multiplier — it no longer manufactures
+ *                       the file Lance wants.
+ *   Filament (ramp)     up on Delta, down elsewhere — a ramp wants one target
+ *                       held, and only Delta's trunk gives that.
+ *
+ * Method is the same as the three-station block above: drop one station from
+ * the full build and read the lives delta. Dropping one slot from a 1:1:1:1:1
+ * cycle leaves the survivors in the proportion they had, so the delta is the
+ * station's contribution rather than an artefact of a changed build order.
+ *
+ * **Difficulty is chosen per board, and that is the measurement, not a
+ * convenience.** A lives delta only has resolution in a band. Below it the base
+ * build already finishes on zero, the drop finishes on zero too, and every
+ * station reads `+0.0`; above it the base finishes untouched on full lives and
+ * every station reads `+0.0` again. Both look like data and neither is: the
+ * first says the instrument is on its floor, the second that it is on its
+ * ceiling.
+ *
+ * Run at Standard, the five new boards floor. Run at Recon, the first four
+ * saturate at 30/30. There is no single tier that puts all eight inside the
+ * band — so each board is measured at the hardest tier its reference build
+ * still clears while actually losing something, and the tier is printed in the
+ * row. A row that could not find one is marked, because "no tier works" is a
+ * fact about the board worth seeing rather than a gap to fill with zeroes.
+ *
+ * The ranking is chosen per board by running the full build both ways and
+ * keeping the better — a player is allowed to pick the right strategy, and on
+ * these boards picking it is most of the game.
+ */
+const FIVE: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
+
+function boardMarginal(): void {
+  console.log(`\n\x1b[1mmarginal contribution across eight boards\x1b[0m`);
+  console.log(`  \x1b[2mlives each station adds to a build that already has the other four\x1b[0m`);
+  console.log(
+    `  \x1b[2mmeasured at the hardest tier whose reference build still wins and still bleeds —` +
+      ` on the floor or the ceiling every column reads zero\x1b[0m`,
+  );
+  console.log(
+    `  \x1b[2m${'board'.padEnd(11)}${'tier'.padEnd(10)}${'build'.padEnd(8)}` +
+      FIVE.map((t) => t.slice(0, 5).padStart(7)).join('') +
+      `\x1b[0m`,
+  );
+
+  for (const level of CAMPAIGN) {
+    const board = parseMap(level.map);
+    const lanes = board.routes.length;
+
+    const score = (build: TowerId[], rules: Rules, how: Ranking) => {
+      const rs = SEEDS.map((s) => run(build, false, s, board, rules, how));
+      return {
+        wins: rs.filter((r) => r.won).length,
+        lives: rs.reduce((a, r) => a + r.lives, 0) / rs.length,
+        cleared: rs.reduce((a, r) => a + r.cleared, 0) / rs.length,
+      };
+    };
+
+    // Hardest first. The band is "wins most seeds" and "does not finish
+    // untouched" — the second half is what rejects Recon on the older boards,
+    // where the reference build never loses a life and the drops cannot either.
+    type Probe = { tier: DifficultyId; rules: Rules; how: Ranking; base: ReturnType<typeof score> };
+    let picked: Probe | null = null;
+    let fallback: Probe | null = null;
+
+    for (const tier of ['blackout', 'standard', 'recon'] as const) {
+      const rules = resolveRules(level, tier);
+      const cl = score(FIVE, rules, 'cluster');
+      const sp = score(FIVE, rules, 'spread');
+      const how: Ranking = sp.wins > cl.wins || (sp.wins === cl.wins && sp.lives > cl.lives) ? 'spread' : 'cluster';
+      const base = how === 'spread' ? sp : cl;
+      const here = { tier, rules, how, base };
+
+      if (fallback === null || base.wins > fallback.base.wins) fallback = here;
+      if (base.wins >= 3 && base.lives < rules.startingLives) {
+        picked = here;
+        break;
+      }
+    }
+
+    const chosen = picked ?? fallback!;
+    const { rules, how, base } = chosen;
+    const worth = FIVE.map((drop) => base.lives - score(FIVE.filter((t) => t !== drop), rules, how).lives);
+
+    const note =
+      picked === null
+        ? base.lives >= rules.startingLives
+          ? 'never bled — ceiling'
+          : 'never cleared — floor'
+        : `${lanes} lane${lanes > 1 ? 's' : ''}`;
+
+    console.log(
+      `  ${level.name.padEnd(11)}${chosen.tier.padEnd(10)}${how.padEnd(8)}` +
+        worth.map((d) => `${d >= 0 ? '+' : ''}${d.toFixed(1)}`.padStart(7)).join('') +
+        `   \x1b[2m${note} · base ${base.wins}/${SEEDS.length} won,` +
+        ` ${base.cleared.toFixed(1)}/${waveCount(rules)} waves, ${base.lives.toFixed(1)}/${rules.startingLives} lives\x1b[0m`,
+    );
+  }
+}
+
 sweep('as shipped', () => {});
 marginal();
+boardMarginal();
 
-export { sweep, run, apply, marginal };
+export { sweep, run, apply, marginal, boardMarginal };
 export type { Candidate };
