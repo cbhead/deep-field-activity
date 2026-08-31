@@ -9,6 +9,15 @@ name: Legal pages
 # It deploys `public/` rather than a copy, so the pages Pages serves and the
 # pages the game serves are the same files. If the privacy policy ever drifts
 # from what the code does, it drifts in one place.
+#
+# This is the only workflow that deploys to Pages, and needs to stay that way.
+# Switching Pages on in the web UI offers GitHub's `static.yml` starter, which
+# publishes the whole repository — that briefly ran alongside this one, putting
+# the documents at /public/terms.html and serving the *unbuilt* index.html at
+# the root, where it asks the browser for /src/main.ts and fails. Two workflows
+# also share the `pages` concurrency group, so they simply take turns deciding
+# what the site is. If Pages ever needs re-enabling, turn it on and delete the
+# starter it brings with it.
 
 on:
   push:
