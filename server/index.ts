@@ -23,7 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type S2C, type Standing } from '../src/net/protocol.ts';
+import { DEFAULT_PORT, WS_PATH, decodeC2S, encode, type LobbyPlayer, type S2C, type Standing } from '../src/net/protocol.ts';
 import { matchReport } from '../src/net/report.ts';
 import { CAMPAIGN, levelById } from '../src/content/levels.ts';
 import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from '../src/content/difficulty.ts';
@@ -92,6 +92,15 @@ type Player = { id: string; name: string; ready: boolean; ws: WebSocket };
 type Room = {
   code: string;
   players: Player[];
+  /**
+   * Everyone in the room without a seat, in the order they will get one.
+   *
+   * A voice channel routinely holds five people and the relay seats two. Being
+   * turned away was the first thing three of them met, which is a poor greeting
+   * from a game they just opened together — so the rest wait here, watch the
+   * race live, and are seated in turn.
+   */
+  watchers: Player[];
   started: boolean;
   /** The creator's pick, re-dealt in every lobby and start. Unvalidated —
    *  clients fall back to the baseline if they don't recognise it. */
@@ -133,7 +142,7 @@ function newRoom(instance: string | null = null): Room {
     code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
   } while (rooms.has(code));
   const room: Room = {
-    code, players: [], started: false, level: 'level01', diff: 'standard',
+    code, players: [], watchers: [], started: false, level: 'level01', diff: 'standard',
     roster: new Map(), finals: new Map(), lastStatus: new Map(), forfeitTimer: null,
     instance, seed: 0,
   };
@@ -150,6 +159,25 @@ function dropRoom(room: Room): void {
   }
 }
 
+/**
+ * Fill an empty seat from the head of the queue, if there is one of each.
+ *
+ * Deliberately does nothing mid-match: a seat vacated while a race is running
+ * belongs to the player who left until the forfeit timer decides otherwise, and
+ * handing it to a stranger would drop them into a board already in progress
+ * with someone else's lives.
+ */
+function seatNext(room: Room): boolean {
+  if (room.started || room.players.length >= 2) return false;
+  const next = room.watchers.shift();
+  if (next === undefined) return false;
+  next.ready = false;
+  room.players.push(next);
+  room.roster.set(next.id, next.name);
+  console.log(`[seat] ${next.name} (${next.id}) takes a seat in room ${room.code}`);
+  return true;
+}
+
 /** Ranking order: waves cleared, then lives remaining, then elapsed time. */
 function rank(a: Standing, b: Standing): number {
   return b.wave - a.wave || b.lives - a.lives || a.elapsedMs - b.elapsedMs;
@@ -159,10 +187,17 @@ const send = (ws: WebSocket, msg: S2C): void => ws.send(encode(msg));
 
 const broadcast = (room: Room, msg: S2C): void => room.players.forEach((p) => send(p.ws, msg));
 
+/** Players and watchers alike — the room, not just the match. */
+const broadcastAll = (room: Room, msg: S2C): void =>
+  [...room.players, ...room.watchers].forEach((p) => send(p.ws, msg));
+
+const seatOf = ({ id, name, ready }: Player): LobbyPlayer => ({ playerId: id, name, ready });
+
 const broadcastLobby = (room: Room): void =>
-  broadcast(room, {
+  broadcastAll(room, {
     t: 'lobby',
-    players: room.players.map(({ id, name, ready }) => ({ playerId: id, name, ready })),
+    players: room.players.map(seatOf),
+    watchers: room.watchers.map(seatOf),
     level: room.level,
     diff: room.diff,
   });
@@ -226,7 +261,8 @@ function settle(room: Room, forfeitWinner?: string): void {
     winnerId = first && second && rank(first, second) === 0 ? null : (first?.playerId ?? null);
   }
   console.log(`[result] room ${room.code} winner=${winnerId ?? 'tie'}${forfeitWinner ? ' (forfeit)' : ''}`);
-  broadcast(room, {
+  // Everyone, not just the seats: the queue watched this and wants the result.
+  broadcastAll(room, {
     t: 'result', winnerId, standings,
     ...(forfeitWinner !== undefined ? { reason: 'forfeit' as const } : {}),
   });
@@ -242,6 +278,31 @@ function settle(room: Room, forfeitWinner?: string): void {
   room.players.forEach((p) => {
     p.ready = false;
   });
+
+  /**
+   * Winner stays on.
+   *
+   * Only when somebody is actually waiting — with an empty queue nothing moves
+   * and a rematch works exactly as it always did. But a queue that never
+   * advances is not a queue, and two friends rematching forever while three
+   * others watch is precisely the situation this was built to fix. So the loser
+   * goes to the back and the head of the queue takes the seat.
+   *
+   * The loser is the *last* standing, which is already the ranking's answer,
+   * and on a forfeit is the player who walked away — who is by then usually
+   * gone anyway.
+   */
+  if (room.watchers.length > 0 && room.players.length === 2) {
+    const loserId = standings[standings.length - 1]?.playerId;
+    const loser = room.players.find((p) => p.id === loserId);
+    if (loser !== undefined) {
+      room.players = room.players.filter((p) => p !== loser);
+      room.watchers.push(loser);
+      seatNext(room);
+      console.log(`[rotate] ${loser.name} yields the seat in room ${room.code}`);
+    }
+  }
+  broadcastLobby(room);
 }
 
 // N6: the same process serves the built client, so one URL on one port is the
@@ -386,6 +447,8 @@ wss.on('connection', (ws: WebSocket, req) => {
   const from = req.socket.remoteAddress ?? '?';
   let me: Player | null = null;
   let room: Room | null = null;
+  /** True while this connection holds no seat — it is in the queue, watching. */
+  let watching = false;
   console.log(`[conn] ${from}`);
 
   // Heartbeat: browsers answer pings automatically, so a silent socket is a
@@ -439,15 +502,18 @@ wss.on('connection', (ws: WebSocket, req) => {
           if (wanted && !wanted.started && wanted.players.length < 2) {
             room = wanted;
           } else if (wanted) {
-            // Two distinguishable refusals, because they are different
-            // problems: one resolves when the match ends, the other when
-            // somebody leaves. Gap #7 turns both into a spectator seat.
-            return send(ws, {
-              t: 'error',
-              reason: wanted.started
-                ? 'a race is already under way in this channel'
-                : 'both seats in this channel are taken',
-            });
+            // No longer a refusal. The room is busy — mid-match, or both seats
+            // filled — so this connection joins the queue instead, watches, and
+            // is seated in turn. Being turned away was the first thing three of
+            // five people met.
+            room = wanted;
+            me = { id: `p${nextPlayer++}`, name: msg.name, ready: false, ws };
+            room.watchers.push(me);
+            watching = true;
+            console.log(`[watch] "${me.name}" → ${me.id} waiting in room ${room.code} (${from})`);
+            send(ws, { t: 'joined', playerId: me.id, room: room.code });
+            broadcastLobby(room);
+            return;
           } else {
             room = newRoom(msg.instance);
             if (msg.level !== undefined) room.level = msg.level;
@@ -474,7 +540,9 @@ wss.on('connection', (ws: WebSocket, req) => {
       }
 
       case 'ready': {
-        if (!me || !room || room.started) return;
+        // A watcher has no seat to ready. Without this their flag would show in
+        // the queue as though they were about to play.
+        if (!me || !room || room.started || watching) return;
         me.ready = msg.ready ?? true;
         console.log(`[ready] ${me.name} (${me.id}) ${me.ready ? 'ready' : 'un-readied'} in room ${room.code}`);
         broadcastLobby(room);
@@ -509,7 +577,9 @@ wss.on('connection', (ws: WebSocket, req) => {
       // Relay, verbatim and unvalidated: the opponent's client is the only
       // consumer, and cheating is a non-goal between trusted friends.
       case 'status': {
-        if (!me || !room) return;
+        // A watcher has no board, so a status frame from one is meaningless —
+        // and would put a spectator into the standings they are watching.
+        if (!me || !room || watching) return;
         room.lastStatus.set(me.id, { wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs });
         const other = room.players.find((p) => p !== me);
         if (other) {
@@ -519,11 +589,27 @@ wss.on('connection', (ws: WebSocket, req) => {
             ...(msg.towers !== undefined ? { towers: msg.towers } : {}),
           });
         }
+        // The queue sees both sides. Sent on each relayed frame rather than on a
+        // timer of its own, so it inherits the pump's 2Hz and costs nothing when
+        // nobody is waiting.
+        if (room.watchers.length > 0) {
+          // Captured, because the closure below loses the null-narrowing.
+          const r = room;
+          const live = r.players.map((p) => ({
+            playerId: p.id,
+            name: p.name,
+            ...(r.lastStatus.get(p.id) ?? { wave: 0, lives: 0, elapsedMs: 0 }),
+          }));
+          r.watchers.forEach((w) => send(w.ws, { t: 'watchStatus', standings: live }));
+        }
         break;
       }
 
       case 'dead': {
-        if (!me || !room || !room.started) return;
+        // Guarded against watchers for a sharper reason than tidiness: `finals`
+        // is settled on reaching two entries, so a watcher reporting a run would
+        // end the match with one real player's figures and a spectator's.
+        if (!me || !room || !room.started || watching) return;
         console.log(`[dead] ${me.name} (${me.id}) wave=${msg.wave} lives=${msg.lives}`);
         room.finals.set(me.id, {
           playerId: me.id, name: me.name,
@@ -541,9 +627,18 @@ wss.on('connection', (ws: WebSocket, req) => {
     if (!room || !me) return;
     const r = room;
     const gone = me;
+
+    if (watching) {
+      // Somebody left the queue. Nothing about the match changes; the people
+      // behind them simply move up, which the roster broadcast conveys.
+      r.watchers = r.watchers.filter((p) => p !== gone);
+      broadcastLobby(r);
+      return;
+    }
+
     r.players = r.players.filter((p) => p !== gone);
 
-    if (r.players.length === 0) {
+    if (r.players.length === 0 && r.watchers.length === 0) {
       // Both sides reload to rematch, so hold the room open briefly.
       r.started = false;
       if (r.forfeitTimer !== null) clearTimeout(r.forfeitTimer);
@@ -552,8 +647,15 @@ wss.on('connection', (ws: WebSocket, req) => {
         // dropRoom, not rooms.delete: an instance room that vanished from the
         // code table while still indexed by instance would send the next pair
         // in that channel to a room nobody can reach.
-        if (r.players.length === 0) dropRoom(r);
+        if (r.players.length === 0 && r.watchers.length === 0) dropRoom(r);
       }, EMPTY_ROOM_TTL_MS);
+      return;
+    }
+
+    // A seat opened outside a match — the queue fills it rather than the room
+    // sitting one short while people wait.
+    if (!r.started && seatNext(r)) {
+      broadcastLobby(r);
       return;
     }
 

@@ -14,7 +14,8 @@
  * - Readiness is server truth: the button renders from the roster broadcast,
  *   not from a local flag, and un-ready is allowed until the seed is dealt.
  */
-import type { LobbyPlayer } from '../net/protocol.ts';
+import type { LobbyPlayer, Standing } from '../net/protocol.ts';
+import { fmtTime } from '../net/report.ts';
 import { formatSeed } from '../sim/util/rng.ts';
 import { CAMPAIGN, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
@@ -24,6 +25,10 @@ import { ensureRaceStyle, raceBar, hexSvg, escapeHtml, YOU, THEM } from './raceT
 export interface LobbyScreen {
   /** level/diff are the room's pick, as re-dealt by the server. */
   showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void;
+  /** You hold no seat: who is playing, who is ahead of you, and how long. */
+  showWatching(players: LobbyPlayer[], watchers: LobbyPlayer[], myId: string, level: string, diff: string): void;
+  /** Live figures while watching. Updates in place — this arrives at 2Hz. */
+  showWatchStatus(standings: Standing[]): void;
   showCountdown(ms: number, seed: number): void;
   showError(reason: string): void;
   remove(): void;
@@ -384,6 +389,73 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       : `<span class="lb-pill">Not ready</span>`) +
     `</div>`;
 
+  /**
+   * The queue's view. No seat, so no Ready button and nothing to choose — the
+   * two questions worth answering are who is playing and how long until it is
+   * you, and while a race runs, how it is going.
+   *
+   * The live figures are written into placeholders by `showWatchStatus` rather
+   * than re-rendering: they arrive twice a second, and a screen that rebuilt
+   * itself at 2Hz would flicker and lose any text selection.
+   */
+  function showWatching(
+    players: LobbyPlayer[],
+    watchers: LobbyPlayer[],
+    myId: string,
+    level: string,
+    diff: string,
+  ): void {
+    const lv = levelOr01(level);
+    const df = DIFFICULTIES[diffOrStd(diff)];
+    const place = watchers.findIndex((w) => w.playerId === myId);
+    const ahead = place < 0 ? 0 : place;
+    const title = ahead === 0 ? "You're next" : 'Waiting for a seat';
+    const lede =
+      ahead === 0
+        ? 'The next seat to open is yours — you will be seated automatically, no need to do anything.'
+        : `${ahead} ${ahead === 1 ? 'pilot is' : 'pilots are'} ahead of you. The loser yields their seat when a race ends.`;
+
+    el.innerHTML = bar(lv.name, `${df.name} · watching`, 'connected') +
+      `<div class="lb-glow"></div>` +
+      `<div class="lb-body"><div class="lb-col" style="width:min(620px,92vw)">` +
+      `<div style="display:flex;flex-direction:column;gap:10px">` +
+      `<span class="lb-kicker">In the queue</span>` +
+      `<h1 class="lb-title" style="font-size:44px">${title}</h1>` +
+      `<span class="lb-lede">${lede}</span></div>` +
+      `<div style="display:flex;flex-direction:column;gap:10px" id="watch-seats">` +
+      players
+        .map(
+          (p) =>
+            `<div class="lb-seat them"><span style="display:flex;flex-direction:column;gap:2px">` +
+            `<span class="lb-seat-name">${escapeHtml(p.name)}</span>` +
+            `<span class="lb-seat-sub" id="watch-${p.playerId}">${p.ready ? 'ready' : 'in the lobby'}</span>` +
+            `</span></div>`,
+        )
+        .join('') +
+      `</div>` +
+      `<div class="lb-rule"></div>` +
+      `<span class="lb-label" style="letter-spacing:.18em">Queue</span>` +
+      `<div style="display:flex;flex-direction:column;gap:6px">` +
+      watchers
+        .map(
+          (w, i) =>
+            `<span class="lb-fine"${w.playerId === myId ? ' style="color:#d2cefd"' : ''}>` +
+            `${i + 1}. ${escapeHtml(w.name)}${w.playerId === myId ? ' — you' : ''}</span>`,
+        )
+        .join('') +
+      `</div>` +
+      `<button class="lb-leave" id="race-leave">Leave</button>` +
+      `</div></div>`;
+    el.querySelector('#race-leave')?.addEventListener('click', () => opts.onLeave());
+  }
+
+  function showWatchStatus(standings: Standing[]): void {
+    for (const s of standings) {
+      const line = el.querySelector(`#watch-${s.playerId}`);
+      if (line) line.textContent = `wave ${s.wave} · ${s.lives} lives · ${fmtTime(s.elapsedMs)}`;
+    }
+  }
+
   function showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void {
     lastPlayers = players;
     lastMyId = myId;
@@ -521,6 +593,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
 
   return {
     showRoster,
+    showWatching,
+    showWatchStatus,
 
     showCountdown(ms, seed) {
       // Local rendering of a relative delay; no cross-machine clocks involved.

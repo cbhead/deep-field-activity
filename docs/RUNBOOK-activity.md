@@ -177,6 +177,7 @@ The run was a success if all of these are true:
 - [ ] `Race` opened the lobby with **no name prompt and no room code**
 - [ ] A second person launching in the same channel took the other seat, with
       nothing sent between you
+- [ ] A third saw the queue and the race live, rather than being turned away
 - [ ] Ctrl-C stopped the public URL answering
 
 ---
@@ -217,8 +218,10 @@ exactly as [match night](RUNBOOK-match-night.md) describes.
 
 ## Known gaps (don't file these as bugs mid-test)
 
-- **The relay seats exactly two.** A third person in the channel is refused with
-  "both seats in this channel are taken". Gap #7.
+- **Winner stays on.** With people queuing, the loser yields their seat at the
+  end of a race. Two friends who want to rematch each other repeatedly need the
+  queue to be empty — which is the intended trade, but worth knowing before
+  someone is surprised by it.
 - **Mobile is not expected to work well.** The board and HUD scale as one unit,
   so a phone in landscape cannot reach a 44px touch target.
 

@@ -42,7 +42,7 @@ accident of having been built for one friend on one Tailscale box:
 | 4 | **Navigation.** `location.search = '?race'` and its siblings in `src/main.ts` throw away Discord's launch params (`frame_id`, `instance_id`) and break the SDK on reload. | **The real refactor**, and bigger than the eight call sites suggest — see §4. Also drags in the rematch-by-reload path, which leans on `sessionStorage` surviving a navigation. |
 | 5 | ~~**Rooms become the instance.**~~ **Done**, and verified with two real clients. See §7. | |
 | 6 | ~~**Match reports move server-side.**~~ **Done**, and verified against a stub webhook. See §8. | |
-| 7 | **More than two people.** The relay seats exactly two and answers "room is full" to the third. A voice channel routinely holds five. | Needs a spectator or queue path. Not hard, but it's the first impression. |
+| 7 | ~~**More than two people.**~~ **Done** — the rest queue, watch, and are seated in turn. See §9. | |
 | 8 | **Terms of Service and Privacy Policy URLs.** Required by Discord before an app can be verified — a gap the original survey missed entirely. | Drafted and served; see §6. Two placeholders still to fill, and they need a host that is up when a reviewer looks. |
 
 ## §2 — Cost
@@ -391,6 +391,44 @@ server, points the relay's `DISCORD_WEBHOOK_URL` at it, plays a match to a
 result, and asserts exactly one post arrives naming the winner, the sector by
 name rather than id, the seed, and both pilots' figures — with no browser
 holding a webhook anywhere.
+
+## §9 — Everyone else
+
+The relay seats two and a voice channel routinely holds five, so being turned
+away was the first thing three of them met from a game they had just opened
+together. They now join a queue, watch the race live, and are seated in turn.
+
+**Winner stays on** — but only when somebody is waiting. With an empty queue
+nothing moves and a rematch behaves exactly as it always did. That condition is
+the whole design: a queue that never advances is not a queue, and two friends
+rematching forever while three others watch is the situation this exists to fix.
+So when there *is* a queue, the loser goes to the back and its head takes the
+seat. The loser is the last standing, which is already the ranking's answer.
+
+**A client works out its own role from one thing:** whether its id is in
+`lobby.players` or `lobby.watchers`. That is deliberately the only signal, so
+there is nowhere for two sources of truth to disagree, and promotion needs no
+message of its own — the next roster simply lists you elsewhere and the screen
+changes.
+
+`watchStatus` carries both sides, because a watcher has no board of their own to
+read; seated players learn about each other through `peer`, which carries one
+opponent and no names. It rides on the existing status relay rather than a timer
+of its own, so it inherits the pump's 2Hz and costs nothing when nobody waits.
+
+Three guards on the server matter more than they look. A watcher's `ready` would
+show them as about to play; a watcher's `status` would put a spectator into the
+standings they are watching; and a watcher's `dead` would be *actively wrong* —
+`finals` settles the match on reaching two entries, so it would have ended a race
+with one real player's figures and a spectator's. `seatNext` also refuses to act
+mid-match, because a seat vacated during a race belongs to whoever left until the
+forfeit timer says otherwise, and filling it would drop a stranger onto a board
+already in progress with someone else's lives.
+
+`npm run rooms` covers all of it with real clients: a third and fourth admitted
+rather than refused and queued in arrival order, a watcher receiving both sides
+live with names, and after the result — Ada wins, Cy takes Bo's seat, Bo goes to
+the back behind Dee.
 
 ## Relationship to upstream
 

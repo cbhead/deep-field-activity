@@ -180,15 +180,26 @@ async function main(): Promise<void> {
       afterIgnored === null ? 'no broadcast at all' : `${afterIgnored.level}/${afterIgnored.diff}`,
     );
 
-    console.log('\na third pilot in the same channel');
+    console.log('\na third and fourth pilot join the queue, not a wall');
     const c = await Client.open();
-    clients.push(c);
+    const d2 = await Client.open();
+    clients.push(c, d2);
     c.hello('Cy', 'instance-alpha');
-    const refused = await c.next('error');
+    await c.next('joined');
+    d2.hello('Dee', 'instance-alpha');
+    await d2.next('joined');
+
+    const queued = await c.settled('lobby');
+    check('they are admitted rather than refused', queued !== null);
     check(
-      'is refused, and told which kind of full',
-      refused?.reason === 'both seats in this channel are taken',
-      refused?.reason ?? 'no error at all',
+      'seated as watchers, in arrival order',
+      (queued?.watchers ?? []).map((w) => w.name).join(', ') === 'Cy, Dee',
+      (queued?.watchers ?? []).map((w) => w.name).join(', ') || 'none',
+    );
+    check(
+      'and the seats are still the original two',
+      (queued?.players ?? []).map((p) => p.name).sort().join(', ') === 'Ada, Bo',
+      (queued?.players ?? []).map((p) => p.name).join(', '),
     );
 
     console.log('\na different channel is a different race');
@@ -219,6 +230,18 @@ async function main(): Promise<void> {
       `${startA?.level ?? '—'} / ${startB?.level ?? '—'}`,
     );
 
+    console.log('\nthe queue watches the race');
+    a.send({ t: 'status', wave: 4, lives: 18, elapsedMs: 30_000 });
+    b.send({ t: 'status', wave: 2, lives: 9, elapsedMs: 30_000 });
+    const live = await c.settled('watchStatus');
+    check('a watcher is sent both sides, not one', live?.standings.length === 2, `${live?.standings.length ?? 0} side(s)`);
+    check(
+      'with names, since a watcher has no board to read',
+      (live?.standings ?? []).every((s) => s.name !== '') &&
+        (live?.standings ?? []).some((s) => s.name === 'Ada' && s.wave === 4),
+      (live?.standings ?? []).map((s) => `${s.name} w${s.wave}`).join(' / '),
+    );
+
     console.log('\nthe relay files the match report');
     // Both finish, which settles the match and triggers the post.
     const done = { wave: 7, lives: 12, elapsedMs: 84_000 };
@@ -237,6 +260,23 @@ async function main(): Promise<void> {
       content.split('\n')[1] ?? '',
     );
     check('and both pilots’ figures', content.includes('Ada — wave 7') && content.includes('Bo — wave 5'));
+
+    console.log('\nwinner stays on');
+    const rotated = await c.settled('lobby');
+    check(
+      'the loser yields their seat to the head of the queue',
+      (rotated?.players ?? []).map((p) => p.name).sort().join(', ') === 'Ada, Cy',
+      (rotated?.players ?? []).map((p) => p.name).join(' + ') || 'none',
+    );
+    check(
+      'and goes to the back of it, behind whoever was waiting',
+      (rotated?.watchers ?? []).map((w) => w.name).join(', ') === 'Dee, Bo',
+      (rotated?.watchers ?? []).map((w) => w.name).join(', ') || 'none',
+    );
+    check(
+      'the winner keeps playing',
+      (rotated?.players ?? []).some((p) => p.name === 'Ada'),
+    );
 
     console.log(
       failures === 0

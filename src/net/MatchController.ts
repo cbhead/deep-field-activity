@@ -27,8 +27,11 @@ export interface RaceStatus {
 
 export interface RaceHooks {
   /** Called once joined, and again whenever the lobby roster changes.
-   *  level/diff are the creator's pick, re-dealt by the server. */
-  onLobby(room: string, players: LobbyPlayer[], level: string, diff: string): void;
+   *  level/diff are the creator's pick, re-dealt by the server.
+   *  `watchers` is the queue; you are seated if your id is in `players`. */
+  onLobby(room: string, players: LobbyPlayer[], watchers: LobbyPlayer[], level: string, diff: string): void;
+  /** Live figures for both seats — only ever sent while you are watching. */
+  onWatchStatus?(standings: Standing[]): void;
   /** Countdown has begun; boot() fires when it reaches zero. The seed rides
    *  along for display — it's the proof of fairness the mode rests on. */
   onCountdown(ms: number, seed: number): void;
@@ -93,7 +96,7 @@ export class MatchController {
       // authoritative level/diff arrive with the first lobby broadcast.
       this.room = joined.room;
       this.playerId = joined.playerId;
-      hooks.onLobby(joined.room, [], choice?.level ?? 'level01', choice?.diff ?? 'standard');
+      hooks.onLobby(joined.room, [], [], choice?.level ?? 'level01', choice?.diff ?? 'standard');
       if (autoReady) this.ready();
     } catch (err) {
       hooks.onError(err instanceof Error ? err.message : String(err));
@@ -205,7 +208,10 @@ export class MatchController {
       case 'joined':
         break; // consumed by NetClient.connect; room captured in run()
       case 'lobby':
-        hooks.onLobby(this.room, msg.players, msg.level, msg.diff);
+        hooks.onLobby(this.room, msg.players, msg.watchers, msg.level, msg.diff);
+        break;
+      case 'watchStatus':
+        hooks.onWatchStatus?.(msg.standings);
         break;
       case 'start':
         hooks.onCountdown(msg.countdownMs, msg.seed);

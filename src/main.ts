@@ -363,11 +363,20 @@ function mountRace(
         ...(choice === undefined ? {} : { choice }),
         autoReady: rejoin !== null,
         hooks: {
-          onLobby: (roomCode, players, level, diff) => {
+          onLobby: (roomCode, players, watchers, level, diff) => {
             currentRoom = roomCode;
             opponentName = players.find((p) => p.playerId !== c.playerId)?.name ?? 'opponent';
-            lobby.showRoster(roomCode, players, c.playerId, level, diff);
+            // Seated or watching is decided by one thing — whether the roster
+            // has us in it. Being promoted out of the queue therefore needs no
+            // message of its own: the next broadcast simply lists us elsewhere,
+            // and this switches screens.
+            if (players.some((p) => p.playerId === c.playerId)) {
+              lobby.showRoster(roomCode, players, c.playerId, level, diff);
+            } else {
+              lobby.showWatching(players, watchers, c.playerId, level, diff);
+            }
           },
+          onWatchStatus: (standings) => lobby.showWatchStatus(standings),
           onCountdown: (ms, seed) => lobby.showCountdown(ms, seed),
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),

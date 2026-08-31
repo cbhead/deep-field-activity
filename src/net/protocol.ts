@@ -68,7 +68,22 @@ export type C2S =
 /** server → client */
 export type S2C =
   | { t: 'joined'; playerId: string; room: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; level: string; diff: string }
+  /**
+   * The room, to everyone in it — seated or not.
+   *
+   * `watchers` is the queue, in the order it will be seated. A client works out
+   * its own role by looking for its id: in `players` it holds a seat, in
+   * `watchers` it is waiting. That is deliberately the only signal, so there is
+   * no second place for the two to disagree, and being promoted needs no
+   * message of its own — the next roster simply has you in a different list.
+   */
+  | { t: 'lobby'; players: LobbyPlayer[]; watchers: LobbyPlayer[]; level: string; diff: string }
+  /**
+   * Live figures for both seats, sent only to watchers. Seated players learn
+   * about each other through `peer`, which carries one opponent and no names;
+   * a watcher needs both sides and has no board of their own to read.
+   */
+  | { t: 'watchStatus'; standings: Standing[] }
   | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string }
   | { t: 'peer'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }
   | { t: 'peerConn'; connected: boolean }
