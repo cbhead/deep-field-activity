@@ -22,7 +22,8 @@
     "campaign": "zsh scripts/campaign.sh",
     "shots": "zsh scripts/shots.sh",
     "teardown": "zsh scripts/teardown.sh",
-    "proxy": "zsh scripts/proxy.sh"
+    "proxy": "zsh scripts/proxy.sh",
+    "tunnel": "zsh scripts/tunnel.sh"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",

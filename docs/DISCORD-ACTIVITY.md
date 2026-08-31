@@ -218,10 +218,15 @@ cp .env.example .env     # then fill in the two blanks
 npm run play             # build + serve, reading .env for both halves
 ```
 
-Then in the portal: **Activities → Settings** to enable it, and
-**Activities → URL Mappings** with the root prefix `/` pointing at your public
-HTTPS origin (gap #1 — `cloudflared tunnel --url http://localhost:8787` is the
-usual way to get one before there is real hosting).
+Then you need a public HTTPS origin for Discord's proxy to forward to, which is
+gap #1 in its cheap form: `npm run tunnel` builds, serves, and opens a
+**Tailscale Funnel**, printing the hostname to paste into
+**Activities → URL Mappings**. Funnel rather than a `cloudflared` quick tunnel
+because the hostname is stable — the mapping is a hand-filled web form, and a
+tunnel that renames itself every run means editing that form every session.
+
+The whole sequence, including the portal steps and how to tell whether the
+handshake actually happened, is [docs/RUNBOOK-activity.md](RUNBOOK-activity.md).
 
 Two things about that file are easy to get wrong, and both used to be silent:
 
