@@ -75,6 +75,127 @@ const evaluate = async (cdp: Cdp, expression: string): Promise<unknown> => {
   return (r['result'] as { value?: unknown }).value;
 };
 
+/** Poll until `expression` is true, or give up and let the caller's check fail. */
+async function until(cdp: Cdp, expression: string, tries = 40): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    if ((await evaluate(cdp, expression)) === true) return true;
+    await sleep(150);
+  }
+  return false;
+}
+
+const RUN_ROUTE = `{ k: 'run', level: 'level01', difficulty: 'standard', seed: 'nav', bank: null }`;
+
+/**
+ * The half of the refactor that teardown exists to serve: navigating between
+ * scenes repeatedly, in place, without accumulating anything.
+ *
+ * A single dispose being clean is necessary but not sufficient — leaks of this
+ * kind are cumulative, and one of anything is invisible. So the shape of the
+ * test is a loop, and the assertion is that the listener table is *identical*
+ * after several round trips, not merely small.
+ */
+async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
+  console.log('\nnavigation');
+
+  // A foreign query parameter, standing in for Discord's launch parameters.
+  // Everything the router writes has to carry it through untouched; losing it
+  // inside the iframe means losing the SDK handshake, which is the single
+  // failure this whole refactor exists to prevent.
+  await cdp.send('Page.navigate', { url: `${BASE}/?frame_id=abc123&instance_id=xyz789` });
+  const ready = await until(cdp, 'typeof globalThis.tdApp === "object"');
+  check('the app boots at the front door', ready);
+  if (!ready) return;
+
+  const before = thrown.length;
+  const winBase = await listeners(cdp, 'window');
+  const docBase = await listeners(cdp, 'document');
+
+  const CYCLES = 6;
+  let peakCanvases = 0;
+  for (let i = 0; i < CYCLES; i++) {
+    await evaluate(cdp, `tdApp.router.go(${RUN_ROUTE})`);
+    if (!(await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 1'))) break;
+    peakCanvases = Math.max(
+      peakCanvases,
+      Number(await evaluate(cdp, 'document.querySelectorAll("#game-root canvas").length')),
+    );
+    await evaluate(cdp, `tdApp.router.go({ k: 'home' })`);
+    if (!(await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 0'))) break;
+  }
+
+  check(`${CYCLES} round trips never stack a second canvas`, peakCanvases === 1, `peak ${peakCanvases}`);
+
+  const winAfter = await listeners(cdp, 'window');
+  const docAfter = await listeners(cdp, 'document');
+  const drift = (a: Record<string, number>, b: Record<string, number>): string[] =>
+    [...new Set([...Object.keys(a), ...Object.keys(b)])]
+      .filter((t) => (a[t] ?? 0) !== (b[t] ?? 0))
+      .map((t) => `${t} ${a[t] ?? 0}→${b[t] ?? 0}`);
+
+  const winDrift = drift(winBase, winAfter);
+  const docDrift = drift(docBase, docAfter);
+  check(`window's listener table is unchanged after ${CYCLES} round trips`, winDrift.length === 0, winDrift.join(', '));
+  check(`document's listener table is unchanged after ${CYCLES} round trips`, docDrift.length === 0, docDrift.join(', '));
+
+  // Restart is `remount`, and remount has to mean what `location.reload()`
+  // meant: re-resolve the seed. An unpinned run must deal a new board and a
+  // pinned one must not, which is the difference between "play it again" and
+  // "play that again" — and the reason remount is not just go(route).
+  await evaluate(cdp, `tdApp.router.go({ k: 'run', level: 'level01', difficulty: 'standard', seed: null, bank: null })`);
+  await until(cdp, 'typeof globalThis.td === "object"');
+  const loose = await evaluate(cdp, 'td.world.seed');
+  await evaluate(cdp, 'tdApp.router.remount()');
+  await until(cdp, `typeof globalThis.td === "object" && td.world.seed !== ${String(loose)}`);
+  check(
+    'restart deals a fresh board when no seed is pinned',
+    (await evaluate(cdp, 'td.world.seed')) !== loose,
+    `${String(loose)} → ${String(await evaluate(cdp, 'td.world.seed'))}`,
+  );
+
+  await evaluate(cdp, `tdApp.router.go(${RUN_ROUTE})`);
+  await until(cdp, 'typeof globalThis.td === "object"');
+  const pinned = await evaluate(cdp, 'td.world.seed');
+  await evaluate(cdp, 'tdApp.router.remount()');
+  await sleep(1200);
+  check(
+    'and the same board when one is',
+    (await evaluate(cdp, 'td.world.seed')) === pinned,
+    `seed=nav → ${String(pinned)}`,
+  );
+
+  // The lobby is the one scene with no canvas, and the one whose teardown has
+  // the most to let go of — a socket, a countdown timer and a reconnect loop.
+  // No relay is running here, so this only proves it mounts and unmounts; the
+  // match path still needs two clients and a server to exercise.
+  await evaluate(cdp, `tdApp.router.go({ k: 'race', room: null })`);
+  check('the race lobby mounts', await until(cdp, 'document.querySelector("#race-create") !== null'));
+  await evaluate(cdp, `tdApp.router.go({ k: 'home' })`);
+  check('and unmounts', await until(cdp, 'document.querySelector("#race-create") === null'));
+  const winRace = await listeners(cdp, 'window');
+  const raceDrift = drift(winBase, winRace);
+  check('a lobby round trip leaves no listeners behind', raceDrift.length === 0, raceDrift.join(', '));
+
+  // The Discord-critical one.
+  await evaluate(cdp, `tdApp.router.go(${RUN_ROUTE})`);
+  await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 1');
+  const search = String(await evaluate(cdp, 'location.search'));
+  check(
+    'foreign query parameters survive a navigation',
+    search.includes('frame_id=abc123') && search.includes('instance_id=xyz789'),
+    search,
+  );
+  check('and the route is in there too', search.includes('level=level01') && search.includes('seed=nav'), search);
+
+  // Back must return to the front door rather than leaving the app, which it
+  // could never do when every navigation was a document load.
+  await evaluate(cdp, 'history.back()');
+  const backHome = await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 0');
+  check('Back leaves the run and returns to the front door', backHome);
+
+  check('navigating throws nothing', thrown.length === before, thrown.slice(before).join(' | '));
+}
+
 async function main(): Promise<void> {
   const { cdp, chrome } = await launch({
     port: DEBUG_PORT,
@@ -170,10 +291,12 @@ async function main(): Promise<void> {
       thrown.slice(beforeCount).join(' | '),
     );
 
+    await navigationPhase(cdp, thrown);
+
     console.log(
       failures === 0
         ? '\n\x1b[32mteardown is clean\x1b[0m'
-        : `\n\x1b[31m${failures} teardown check${failures === 1 ? '' : 's'} failed\x1b[0m`,
+        : `\n\x1b[31m${failures} check${failures === 1 ? '' : 's'} failed\x1b[0m`,
     );
   } finally {
     cdp.close();

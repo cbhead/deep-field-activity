@@ -41,6 +41,11 @@ export interface HomeOptions {
   /** The sector picker, for choosing something other than the obvious. */
   onCampaign(): void;
   onRace(): void;
+  /**
+   * Progress was erased. The screen is built from progress, so it has to be
+   * rebuilt — this was a page reload, and is now a re-entry of the route.
+   */
+  onReset(): void;
 }
 
 export interface HomeScreen {
@@ -254,7 +259,7 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
         return;
       }
       resetProgress();
-      location.reload();
+      opts.onReset();
     }
   });
 

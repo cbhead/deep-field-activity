@@ -91,6 +91,29 @@ export class MatchController {
 
   private resulted = false;
   private reconnecting = false;
+  private disposed = false;
+  /** The countdown's deferred boot, held so navigating away can cancel it. */
+  private bootTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Let go of the socket and everything scheduled on it.
+   *
+   * Two of these are not hygiene. The reconnect loop below retries every two
+   * seconds until the match is settled, so without a disposed flag, leaving a
+   * lobby would leave a socket reconnecting to a room nobody is in for as long
+   * as the page lives. And `start` defers boot() by the countdown — leaving
+   * during those three seconds would otherwise build a world into a scene that
+   * had already been torn down.
+   */
+  dispose(): void {
+    this.disposed = true;
+    this.stopStatusPump();
+    if (this.bootTimer !== null) clearTimeout(this.bootTimer);
+    this.bootTimer = null;
+    this.client.onMessage = null;
+    this.client.onClose = null;
+    this.client.close();
+  }
 
   /**
    * Socket dropped. If we ever joined and the match hasn't been settled,
@@ -98,12 +121,12 @@ export class MatchController {
    * seat is gone (forfeit fired, room expired).
    */
   private onDropped(): void {
-    if (this.playerId === '' || this.resulted || this.reconnecting) return;
+    if (this.disposed || this.playerId === '' || this.resulted || this.reconnecting) return;
     this.reconnecting = true;
     this.opts.hooks.onSelfConn?.(false);
     void (async () => {
       const { url, name, hooks } = this.opts;
-      while (!this.resulted) {
+      while (!this.resulted && !this.disposed) {
         await new Promise((r) => setTimeout(r, 2000));
         try {
           await this.client.connect(url, name, { room: this.room, resume: this.playerId });
@@ -160,6 +183,7 @@ export class MatchController {
   playerId = '';
 
   private handle(msg: S2C): void {
+    if (this.disposed) return;
     const { hooks } = this.opts;
     switch (msg.t) {
       case 'joined':
@@ -171,7 +195,10 @@ export class MatchController {
         hooks.onCountdown(msg.countdownMs, msg.seed);
         // Relative delay on purpose — wall clocks are never compared across
         // machines, so "start in 3000ms" is fair under any clock skew.
-        setTimeout(() => hooks.boot(msg.seed, msg.level, msg.diff), msg.countdownMs);
+        this.bootTimer = setTimeout(() => {
+          this.bootTimer = null;
+          if (!this.disposed) hooks.boot(msg.seed, msg.level, msg.diff);
+        }, msg.countdownMs);
         break;
       case 'error':
         hooks.onError(msg.reason);

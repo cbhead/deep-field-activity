@@ -50,6 +50,12 @@ export interface LobbyOptions {
   /** choice present only when creating — the server ignores it on joins. */
   onSubmit(name: string, room?: string, choice?: RaceChoice): void;
   onReady(ready: boolean): void;
+  /**
+   * Back to a fresh lobby — from "Leave the room", and from "start your own
+   * instead" on a deep link. Both used to assign `location.href`, which is a
+   * page load; where to go is the router's decision now, not this screen's.
+   */
+  onLeave(): void;
 }
 
 /** Room picks come off the wire unvalidated; fall back to the baseline. */
@@ -73,6 +79,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
 
   const savedName = localStorage.getItem('race-name') ?? '';
   let timer: ReturnType<typeof setInterval> | null = null;
+  /** The deferred auto-rejoin, cancellable by `remove()`. */
+  let joinTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPlayers: LobbyPlayer[] = [];
   let lastMyId = '';
   let lastRoom = '';
@@ -262,9 +270,16 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       nameField() +
       `<div style="display:flex;align-items:center;gap:14px">` +
       `<button id="race-go" class="lb-btn" style="width:180px">Join room</button>` +
-      `<span class="lb-fine">or <a href="?race" style="color:#b5abfc;text-decoration:none">start your own instead</a></span>` +
+      `<span class="lb-fine">or <a id="race-own" href="?race" style="color:#b5abfc;text-decoration:none">start your own instead</a></span>` +
       `</div></div></div>`;
     el.querySelector('#race-go')!.addEventListener('click', () => submit(code));
+    // Still a real anchor — a middle-click or "copy link" on a deep link should
+    // behave like a link. Only the plain click is intercepted, so the ordinary
+    // case routes in place instead of reloading the document.
+    el.querySelector('#race-own')!.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      opts.onLeave();
+    });
     el.querySelector('#race-name')!.addEventListener('keydown', (ev) => {
       if ((ev as KeyboardEvent).key === 'Enter') submit(code);
     });
@@ -346,9 +361,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       el.querySelector('#race-ready')?.addEventListener('click', () => opts.onReady(true));
       el.querySelector('#race-unready')?.addEventListener('click', () => opts.onReady(false));
     }
-    el.querySelector('#race-leave')?.addEventListener('click', () => {
-      location.href = '?race';
-    });
+    el.querySelector('#race-leave')?.addEventListener('click', () => opts.onLeave());
     if (players.length < 2) wireDiscord(room);
   }
 
@@ -356,8 +369,13 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     el.innerHTML = bar('Race', 'Race relay', 'rejoining…') + `<div class="lb-glow"></div>` +
       `<div class="lb-center"><span class="lb-lede">Rejoining room <b style="color:#d2cefd">${opts.autoJoin.room}</b>…</span></div>`;
     // Deferred a tick so the caller has its handle before callbacks fire.
+    // Tracked, because `remove()` can now happen inside that tick: navigating
+    // away mid-rejoin would otherwise open a socket for a screen that is gone.
     const { name, room } = opts.autoJoin;
-    setTimeout(() => opts.onSubmit(name, room), 0);
+    joinTimer = setTimeout(() => {
+      joinTimer = null;
+      opts.onSubmit(name, room);
+    }, 0);
   } else if (opts.prefillRoom !== undefined) {
     showDeepLink(opts.prefillRoom);
   } else {
@@ -423,6 +441,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
 
     remove() {
       if (timer !== null) clearInterval(timer);
+      if (joinTimer !== null) clearTimeout(joinTimer);
       el.remove();
       // The stylesheet stays: it's shared race chrome and results needs it.
     },

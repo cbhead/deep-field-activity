@@ -104,7 +104,40 @@ lives. It ends with the check that actually matters: after `dispose()`,
 dispatching a keydown, a resize and a visibilitychange at the dead page throws
 nothing and nobody is listening.
 
-The router itself is still to come. It now has something safe to stand on.
+### The router, now that teardown holds
+
+`src/app/router.ts` parses a `Route` out of the query, and `main.ts` became a
+scene manager: one mounted scene at a time, each returning its own `dispose`.
+The pieces worth knowing:
+
+- **`toSearch` deletes only the keys the router owns and writes everything else
+  back.** That single behaviour is what makes the port possible — Discord's
+  launch parameters survive every navigation the game makes. It is asserted in
+  the gate with a stand-in `frame_id`.
+- **Restart is `remount`, not `go`.** Re-entering a route re-resolves the seed,
+  so an unpinned run deals a fresh board and a `?seed=`-pinned one does not —
+  precisely what `location.reload()` used to buy. Both directions are asserted.
+- **A generation counter guards the mount race.** `startGame` awaits the
+  renderer's async init, which is long enough for a second navigation to land;
+  the loser now discards itself instead of installing over the winner.
+- **`MatchController` gained a `dispose`.** Two of its jobs are not hygiene: the
+  reconnect loop retries every two seconds until the match settles, and the
+  countdown defers `boot()` by three seconds. Leaving a lobby used to be a
+  document load, so neither could outlive the screen. Now they can, and would
+  have — the deferred boot would have built a world into a torn-down scene.
+- **Back and forward work**, which they never did before.
+
+Two things deliberately did *not* change. The URL contract is identical —
+`?level=`, `?seed=`, `?race=CODE` and bare `?seed=` all still mean what they
+meant, so existing invite links and bug reports keep working. And the rematch
+handoff, which used to travel through `sessionStorage` because a reload ate
+everything else, is now a module-level variable claimed once: transient intent
+is not an address, and `?race=ABCD` should not also mean "skip the form".
+
+What is still reload-shaped and untested: the match itself. The gate proves the
+lobby mounts and unmounts, but a real race needs two clients and a relay, so
+the rematch path and mid-match disposal have been reasoned about rather than
+observed.
 
 ## Relationship to upstream
 

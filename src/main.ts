@@ -21,6 +21,7 @@ import { createWorld, type World } from './sim/world.ts';
 import { grade } from './sim/analysis.ts';
 import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
+import { createRouter, type Route, type Router } from './app/router.ts';
 import { createMenuScreen } from './ui/menuScreen.ts';
 import { createHomeScreen } from './ui/homeScreen.ts';
 import { trackKeyboardInset } from './ui/viewport.ts';
@@ -41,10 +42,14 @@ import { recordSeries, formatSeries } from './app/raceSeries.ts';
 /**
  * The match seed comes from the URL so any run is reproducible: `?seed=hunter2`
  * turns "reproduce that bug" and "race the same board again" into free features.
- * In Race mode (phase 2) the server supplies this instead.
+ * In Race mode the server supplies this instead.
+ *
+ * Takes the raw parameter rather than reading `location` itself, because it is
+ * now resolved once per *mount* rather than once per page load — which is what
+ * makes restart deal a new board when no seed is pinned, exactly as the reload
+ * it replaces did.
  */
-function resolveSeed(): number {
-  const raw = new URLSearchParams(location.search).get('seed');
+function resolveSeed(raw: string | null): number {
   if (raw === null || raw === '') {
     // Presentation-layer randomness, so Math.random is correct here.
     return Math.floor(Math.random() * 0xffffffff) >>> 0;
@@ -65,6 +70,31 @@ applyHudTheme();
 // Cheap, idempotent, and needed before the first screen paints.
 trackKeyboardInset();
 
+/** A mounted screen or run, and how to take it down again. */
+interface Scene {
+  dispose(): void;
+}
+
+interface SceneDeps {
+  mount: HTMLElement;
+  hudRoot: HTMLElement;
+  screens: HTMLElement;
+  router: Router;
+}
+
+/**
+ * A rematch's rejoin details, handed from the results card to the lobby that
+ * replaces it.
+ *
+ * Deliberately not part of the Route: this is transient intent, not an address,
+ * and `?race=ABCD` already means "join that room" without also meaning "and
+ * skip the form". It travelled through sessionStorage before because the
+ * rematch reloaded the document and nothing else survived; the scene swap now
+ * happens in memory, so a module-level handoff is the entire mechanism.
+ * Claimed exactly once, so a later visit to the lobby shows the form as normal.
+ */
+let pendingRejoin: { name: string; room: string } | null = null;
+
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
   const hudRoot = document.getElementById('hud');
@@ -75,21 +105,178 @@ async function main(): Promise<void> {
     throw new Error('#game-root, #hud or #screens missing from index.html');
   }
 
-  const params = new URLSearchParams(location.search);
-  const race = params.get('race');
-  if (race === null) {
-    await startSinglePlayer(mount, hudRoot, screens, params);
-    return;
+  let scene: Scene | null = null;
+  /**
+   * Bumped on every navigation, so a mount that loses a race discards itself.
+   * `startGame` awaits the renderer's async init, which is comfortably long
+   * enough for a second navigation to land on a slow machine — and without
+   * this the loser would install itself over the winner, becoming unreachable
+   * but still running.
+   */
+  let generation = 0;
+
+  const show = async (route: Route): Promise<void> => {
+    const mine = ++generation;
+    scene?.dispose();
+    scene = null;
+    // Backstop, not the mechanism: screens remove their own markup, but a scene
+    // that threw partway through mounting may not have, and the results card
+    // has never had a remove() of its own.
+    screens.replaceChildren();
+
+    const next = await mountRoute(route, { mount, hudRoot, screens, router });
+    if (mine !== generation) {
+      next.dispose();
+      return;
+    }
+    scene = next;
+  };
+
+  const router = createRouter((route) => {
+    void show(route).catch((err: unknown) => {
+      console.error(`[td] could not mount ${route.k}`, err);
+    });
+  });
+
+  // Dev-only, and app-level rather than per-run: `td` comes and goes with the
+  // world, but the router outlives every scene. `tdApp.router.go({k:'home'})`
+  // from devtools is the quickest way to reproduce a navigation bug, and it is
+  // how tools/teardown.ts drives the navigation gate without clicking through
+  // screens whose markup it would then be coupled to.
+  if (import.meta.env.DEV) {
+    (globalThis as Record<string, unknown>)['tdApp'] = { router };
   }
 
-  // `?race` opens the lobby, `?race=CODE` deep-links into a room. The host is
-  // derived in one place — `net/relay.ts` — because the front door probes the
-  // same relay this dials, and a probe aimed at a different port than the socket
-  // is worse than no probe at all.
+  router.start();
+}
+
+function mountRoute(route: Route, deps: SceneDeps): Promise<Scene> {
+  switch (route.k) {
+    case 'home':
+      return Promise.resolve(mountHome(deps));
+    case 'sectors':
+      return Promise.resolve(mountSectors(deps));
+    case 'run':
+      return mountRun(route, deps);
+    case 'race':
+      return mountRace(route, deps);
+  }
+}
+
+/**
+ * The front door. It sits ahead of the picker so booting no longer lands on a
+ * file dialog, and Continue is a shortcut rather than a gate.
+ *
+ * Campaign now pushes `?sectors` instead of swapping the picker in silently.
+ * The picker was always a linkable place; giving it a history entry is what
+ * makes Back mean "the front door" rather than "leave the game".
+ */
+function mountHome({ screens, router }: SceneDeps): Scene {
+  const home = createHomeScreen(screens, {
+    onPlay: (chosen, difficulty) =>
+      router.go({ k: 'run', level: chosen.id, difficulty, seed: null, bank: null }),
+    onCampaign: () => router.go({ k: 'sectors' }),
+    onRace: () => router.go({ k: 'race', room: null }),
+    // Erasing progress rebuilds this same screen from the now-empty record,
+    // rather than reloading the document to achieve the same thing.
+    onReset: () => router.remount(),
+  });
+  return { dispose: () => home.destroy() };
+}
+
+function mountSectors({ screens, router }: SceneDeps): Scene {
+  const menu = createMenuScreen(screens, {
+    onLaunch: (chosen, difficulty, seed) =>
+      router.go({ k: 'run', level: chosen.id, difficulty, seed: seed === '' ? null : seed, bank: null }),
+    onRace: () => router.go({ k: 'race', room: null }),
+    onBack: () => router.go({ k: 'home' }),
+  });
+  return { dispose: () => menu.remove() };
+}
+
+async function mountRun(
+  route: Extract<Route, { k: 'run' }>,
+  { mount, hudRoot, router }: SceneDeps,
+): Promise<Scene> {
+  // parseRoute already sent an unknown level to the menu, so this only defends
+  // against CAMPAIGN changing underneath a URL somebody kept.
+  const level = levelById(route.level) ?? CAMPAIGN[0]!;
+  const nextLevel = CAMPAIGN[levelIndex(level.id) + 1];
+
+  // Set when the run settles, read by `next`. The victory card is the only way
+  // to reach `next`, and it cannot be shown before `onEnd` has fired, so this
+  // is always populated by the time it is used.
+  let finalMoney = 0;
+
+  const { dispose } = await startGame(mount, hudRoot, resolveSeed(route.seed), {
+    level,
+    rules: resolveRules(level, route.difficulty, route.bank ?? undefined),
+    // Re-enter the same route rather than reloading the document. With no
+    // `?seed=` pinned that resolves a fresh board, which is exactly what the
+    // reload bought — see Router.remount.
+    restart: () => router.remount(),
+    campaign: {
+      nextName: nextLevel?.name ?? null,
+      menu: () => router.go({ k: 'home' }),
+      next: () => {
+        // Carrying the difficulty and dropping the seed is the useful default:
+        // the next sector should be as hard as the last one, on a fresh board.
+        // The bank travels with it — that is what makes the campaign a run.
+        if (nextLevel !== undefined) {
+          router.go({
+            k: 'run',
+            level: nextLevel.id,
+            difficulty: route.difficulty,
+            seed: null,
+            bank: finalMoney,
+          });
+        }
+      },
+    },
+    onEnd: (w) => {
+      finalMoney = Math.floor(w.money);
+      recordRun(
+        level.id,
+        route.difficulty,
+        {
+          grade: grade(w),
+          lives: w.lives,
+          startingLives: w.rules.startingLives,
+          seconds: w.time,
+          waves: w.wave.clearedThrough + 1,
+        },
+        w.phase === 'won',
+      );
+    },
+  });
+
+  return { dispose };
+}
+
+/**
+ * The lobby, and the match it turns into.
+ *
+ * One scene rather than two, because the match is not addressable: there is no
+ * URL for "mid-race", the server decides when it starts, and a reload during
+ * one has always meant rejoining through the lobby. So the route stays `?race`
+ * throughout and this scene owns everything the mode builds.
+ */
+function mountRace(
+  route: Extract<Route, { k: 'race' }>,
+  { mount, hudRoot, screens, router }: SceneDeps,
+): Promise<Scene> {
+  // Derived in one place — net/relay.ts — because the front door probes the
+  // same relay this dials, and a probe aimed at a different port from the
+  // socket is worse than no probe at all.
   const host = relayHost();
 
-  let controller: MatchController;
+  let controller: MatchController | null = null;
   let raceHud: RaceHud | null = null;
+  let run: { dispose(): void } | null = null;
+  let onVisibility: (() => void) | null = null;
+  /** Set by dispose, read by the async boot that may still be in flight. */
+  let disposed = false;
+
   let opponentName = 'opponent';
   let currentRoom = '';
   let playerName = '';
@@ -99,20 +286,29 @@ async function main(): Promise<void> {
   // reconnect where the opponent may have missed frames).
   let sentPins = '';
 
-  // A rematch reloads the page with {name, room} stashed, then rejoins and
-  // readies up without touching the form. Cleared immediately so a plain
-  // reload never accidentally re-enters a room.
-  const rejoinRaw = sessionStorage.getItem('race-rejoin');
-  sessionStorage.removeItem('race-rejoin');
-  const rejoin = rejoinRaw !== null ? (JSON.parse(rejoinRaw) as { name: string; room: string }) : null;
+  const rejoin = pendingRejoin;
+  pendingRejoin = null;
+
+  // Leaving a room you joined by code should return to a lobby that is not
+  // still holding that code, so it navigates; leaving one you created is
+  // already at `?race` and only needs re-entering.
+  const leave = (): void => {
+    if (route.room === null) router.remount();
+    else router.go({ k: 'race', room: null });
+  };
 
   const lobby = createLobbyScreen(screens, {
-    ...(rejoin !== null ? { autoJoin: rejoin } : race === '' ? {} : { prefillRoom: race }),
+    ...(rejoin !== null
+      ? { autoJoin: rejoin }
+      : route.room !== null
+        ? { prefillRoom: route.room }
+        : {}),
     relayHost: host,
-    onReady: (ready) => controller.ready(ready),
+    onLeave: leave,
+    onReady: (ready) => controller?.ready(ready),
     onSubmit: (name, room, choice) => {
       playerName = name;
-      controller = new MatchController({
+      const c = new MatchController({
         url: serverUrl(host, location.protocol === 'https:'),
         name,
         ...(room === undefined ? {} : { room }),
@@ -121,8 +317,8 @@ async function main(): Promise<void> {
         hooks: {
           onLobby: (roomCode, players, level, diff) => {
             currentRoom = roomCode;
-            opponentName = players.find((p) => p.playerId !== controller.playerId)?.name ?? 'opponent';
-            lobby.showRoster(roomCode, players, controller.playerId, level, diff);
+            opponentName = players.find((p) => p.playerId !== c.playerId)?.name ?? 'opponent';
+            lobby.showRoster(roomCode, players, c.playerId, level, diff);
           },
           onCountdown: (ms, seed) => lobby.showCountdown(ms, seed),
           onError: (reason) => lobby.showError(reason),
@@ -133,7 +329,7 @@ async function main(): Promise<void> {
             raceHud?.selfConn(connected);
           },
           onResult: (winnerId, standings, reason) => {
-            const outcome = winnerId === null ? 't' : winnerId === controller.playerId ? 'w' : 'l';
+            const outcome = winnerId === null ? 't' : winnerId === c.playerId ? 'w' : 'l';
             // The sector goes in too, so the front door can say what happened
             // rather than only how the rivalry stands.
             const series = formatSeries(
@@ -141,7 +337,7 @@ async function main(): Promise<void> {
               recordSeries(opponentName, outcome, matchSector),
             );
             showResults(screens, {
-              myId: controller.playerId,
+              myId: c.playerId,
               winnerId,
               standings,
               ...(reason !== undefined ? { reason } : {}),
@@ -150,8 +346,8 @@ async function main(): Promise<void> {
               seed: matchSeed,
               series,
               onRematch: () => {
-                sessionStorage.setItem('race-rejoin', JSON.stringify({ name: playerName, room: currentRoom }));
-                location.reload();
+                pendingRejoin = { name: playerName, room: currentRoom };
+                router.remount();
               },
             });
             // Log the match to the shared channel — the webhook doubles as
@@ -180,13 +376,22 @@ async function main(): Promise<void> {
             void startGame(mount, hudRoot, seed, {
               level,
               rules: resolveRules(level, difficulty),
-            }).then(({ world, raceCues, startRaceTone }) => {
+              restart: () => router.remount(),
+            }).then((game) => {
+              // Navigating away during the countdown or the renderer's init
+              // lands here with nowhere to put a world.
+              if (disposed) {
+                game.dispose();
+                return;
+              }
+              const { world, raceCues, startRaceTone } = game;
+              run = game;
               raceHud = createRaceHud(mount, opponentName, currentRoom, world.map, raceCues);
               startRaceTone();
               const bootAt = performance.now();
               sentPins = '';
-              const sample = (): Parameters<typeof controller.finish>[0] => {
-                const status: Parameters<typeof controller.finish>[0] = {
+              const sample = (): Parameters<typeof c.finish>[0] => {
+                const status: Parameters<typeof c.finish>[0] = {
                   wave: world.wave.clearedThrough + 1,
                   lives: world.lives,
                   elapsedMs: Math.round(performance.now() - bootAt),
@@ -202,161 +407,52 @@ async function main(): Promise<void> {
                 }
                 return status;
               };
-              controller.startStatusPump(() => {
+              c.startStatusPump(() => {
                 const status = sample();
                 raceHud?.own(status);
                 // Defeat or full clear alike: report final figures once and
                 // let the server settle the match when both runs are over.
-                if (world.phase !== 'playing') controller.finish(status);
+                if (world.phase !== 'playing') c.finish(status);
                 return status;
               });
               // The pump is throttled in hidden tabs, so tell the opponent
               // immediately that our sim froze (and when it thawed).
-              document.addEventListener('visibilitychange', () =>
-                controller.client.send({ t: 'status', ...sample() }),
-              );
+              onVisibility = () => c.client.send({ t: 'status', ...sample() });
+              document.addEventListener('visibilitychange', onVisibility);
             });
           },
         },
       });
-      void controller.run();
+      controller = c;
+      void c.run();
     },
   });
-}
 
-/**
- * The single-player front door.
- *
- * Three entries, and the order matters. `?level=` plays a named campaign level;
- * `?seed=` alone still means "level 1 on this seed", which is what the plan
- * documented and what the fairness gate and every bug report already use — a
- * front door is not a reason to break a URL that works. Anything else opens the
- * menu.
- *
- * Navigation between levels goes through the URL rather than tearing the game
- * down in place, for the reason `restart` already reloads: a reload rebuilds the
- * world and every renderer pool with no chance of a stale reference surviving,
- * and it makes each run linkable for free.
- */
-async function startSinglePlayer(
-  mount: HTMLElement,
-  hudRoot: HTMLElement,
-  screens: HTMLElement,
-  params: URLSearchParams,
-): Promise<void> {
-  const named = params.get('level');
-  const level = named !== null ? levelById(named) : params.has('seed') ? CAMPAIGN[0] : undefined;
-
-  if (level === undefined) {
-    const menu = (): void => {
-      createMenuScreen(screens, {
-        onLaunch: (chosen, difficulty, seed) => {
-          location.search = runQuery(chosen, difficulty, seed);
-        },
-        onRace: () => {
-          location.search = '?race';
-        },
-      });
-    };
-
-    // The home screen sits ahead of the picker, so booting no longer lands on
-    // a file dialog. `?sectors` skips it — the picker is still a place you can
-    // link to, and Continue is a shortcut rather than a gate.
-    if (params.has('sectors')) {
-      menu();
-      return;
-    }
-
-    const home = createHomeScreen(screens, {
-      onPlay: (chosen, difficulty) => {
-        location.search = runQuery(chosen, difficulty, '');
-      },
-      onCampaign: () => {
-        home.destroy();
-        menu();
-      },
-      onRace: () => {
-        location.search = '?race';
-      },
-    });
-    return;
-  }
-
-  const raw = params.get('difficulty');
-  const difficulty: DifficultyId =
-    raw !== null && Object.hasOwn(DIFFICULTIES, raw) ? (raw as DifficultyId) : DEFAULT_DIFFICULTY;
-
-  const index = levelIndex(level.id);
-  const nextLevel = CAMPAIGN[index + 1];
-
-  /**
-   * Money carried into this sector, and out of it.
-   *
-   * It rides in the URL alongside the level and difficulty, which gives the
-   * retry path its behaviour for free: `restart` reloads the same URL, so
-   * retrying a sector re-enters it with the bank it was *entered* with rather
-   * than whatever was left when the run collapsed. Banking cannot be farmed by
-   * dying repeatedly.
-   */
-  const carried = Number(params.get('bank'));
-  const bank = Number.isFinite(carried) && carried >= 0 ? Math.floor(carried) : undefined;
-
-  // Set when the run settles, read by `next`. The victory card is the only way
-  // to reach `next`, and it cannot be shown before `onEnd` has fired, so this
-  // is always populated by the time it is used.
-  let finalMoney = 0;
-
-  await startGame(mount, hudRoot, resolveSeed(), {
-    level,
-    rules: resolveRules(level, difficulty, bank),
-    campaign: {
-      nextName: nextLevel?.name ?? null,
-      menu: () => {
-        location.search = '';
-      },
-      next: () => {
-        // Carrying the difficulty and dropping the seed is the useful default:
-        // the next sector should be as hard as the last one, on a fresh board.
-        // The bank travels with it — that is what makes the campaign a run.
-        if (nextLevel !== undefined) {
-          location.search = runQuery(nextLevel, difficulty, '', finalMoney);
-        }
-      },
-    },
-    onEnd: (w) => {
-      finalMoney = Math.floor(w.money);
-      recordRun(
-        level.id,
-        difficulty,
-        {
-          grade: grade(w),
-          lives: w.lives,
-          startingLives: w.rules.startingLives,
-          seconds: w.time,
-          waves: w.wave.clearedThrough + 1,
-        },
-        w.phase === 'won',
-      );
+  return Promise.resolve({
+    dispose(): void {
+      // The controller goes first: it silences the socket, cancels the
+      // countdown's deferred boot and stops the reconnect loop, so nothing
+      // below can be reached by a message arriving mid-teardown.
+      disposed = true;
+      controller?.dispose();
+      if (onVisibility !== null) document.removeEventListener('visibilitychange', onVisibility);
+      raceHud?.remove();
+      run?.dispose();
+      lobby.remove();
     },
   });
-}
-
-function runQuery(
-  level: LevelDef,
-  difficulty: DifficultyId,
-  seed: string,
-  bank?: number,
-): string {
-  const q = new URLSearchParams({ level: level.id, difficulty });
-  if (seed !== '') q.set('seed', seed);
-  if (bank !== undefined) q.set('bank', String(bank));
-  return `?${q.toString()}`;
 }
 
 interface StartOptions {
   level?: LevelDef;
   rules?: Rules;
   campaign?: CampaignPorts;
+  /**
+   * What the HUD's restart button does. Injected rather than assumed: it used
+   * to be `location.reload()`, and the whole point of the router is that there
+   * is no longer a document reload to fall back on.
+   */
+  restart: () => void;
   /** Fired once, the first frame the run is no longer playing. */
   onEnd?: (w: World) => void;
 }
@@ -365,7 +461,7 @@ async function startGame(
   mount: HTMLElement,
   hudRoot: HTMLElement,
   seed: number,
-  opts: StartOptions = {},
+  opts: StartOptions,
 ): Promise<{
   world: World;
   raceCues: RaceCues;
@@ -424,12 +520,12 @@ async function startGame(
         audio.setMuted(prefs.muted);
       },
     },
-    // A full reload is the honest restart: it re-runs seed resolution, rebuilds
-    // the world and resets every renderer pool, with no chance of a stale
-    // reference surviving into the new run. Cheap, and impossible to get wrong.
-    restart: () => {
-      location.reload();
-    },
+    // Restart used to be `location.reload()` — honest, and impossible to get
+    // wrong, because a reload cannot leave a stale reference behind. The router
+    // re-enters the route instead, which means the guarantee now has to be
+    // earned by `dispose` below rather than granted by the browser. That is
+    // what tools/teardown.ts exists to check.
+    restart: opts.restart,
     ...(opts.campaign === undefined ? {} : { campaign: opts.campaign }),
   });
 
@@ -509,6 +605,9 @@ async function startGame(
 
   loop.start();
 
+  /** The dev console handle, so `dispose` can tell ours from a successor's. */
+  let devHandle: unknown = null;
+
   /**
    * Undo everything above, in the reverse of the order it was built.
    *
@@ -530,7 +629,13 @@ async function startGame(
     hud.destroy();
     audio.dispose();
     renderer.dispose();
-    if (import.meta.env.DEV) delete (globalThis as Record<string, unknown>)['td'];
+    // Only if it is still ours. Two runs can briefly overlap — a navigation
+    // landing while another is still awaiting its renderer — and the loser
+    // must not delete the winner's handle on its way out.
+    if (import.meta.env.DEV) {
+      const g = globalThis as Record<string, unknown>;
+      if (g['td'] === devHandle) delete g['td'];
+    }
   };
 
   console.info(
@@ -544,7 +649,7 @@ async function startGame(
   // `td.loop.speed` from devtools is worth far more here than in a typical app,
   // because the interesting bugs are all "what is the sim actually doing".
   if (import.meta.env.DEV) {
-    (globalThis as Record<string, unknown>)['td'] = {
+    devHandle = {
       world, loop, view, overlay, effects, ui, map, app, layers,
       // Exposed so teardown is testable from outside the app: `td.dispose()`
       // in devtools should leave no canvas, no listeners and no <html> classes
@@ -566,6 +671,7 @@ async function startGame(
       audio,
       soundscape,
     };
+    (globalThis as Record<string, unknown>)['td'] = devHandle;
   }
 
   // Race mode reads the world for the status pump; single player ignores this.

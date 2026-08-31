@@ -28,6 +28,8 @@ export interface MenuOptions {
   /** A blank seed means "pick one" — resolution stays in main.ts. */
   onLaunch(level: LevelDef, difficulty: DifficultyId, seed: string): void;
   onRace(): void;
+  /** Escape — back to the home screen this was reached from. */
+  onBack(): void;
 }
 
 export interface MenuScreen {
@@ -389,7 +391,7 @@ export function createMenuScreen(parent: HTMLElement, opts: MenuOptions): MenuSc
       case 'Escape':
         ev.preventDefault();
         // Back to the home screen, which is where this screen was reached from.
-        location.search = '';
+        opts.onBack();
         return;
       default:
         return;
