@@ -167,6 +167,39 @@ where the error messages are yours rather than an iframe's.
 Join a voice channel in your test server → **Activities** (the rocket) → your
 app. It should load the front door.
 
+If it is not in the rocket menu, check **Settings → Supported Platforms** in the
+portal — an activity with no platform ticked does not appear — and that you have
+**Developer Mode** on in Discord (User Settings → Advanced).
+
+### Step 5a — Getting a second person in
+
+**This is not "send them a link".** An unverified Activity is playable only by
+the app's team members and by people explicitly added as **App Testers**, and
+only in a server with **fewer than 25 members**. A friend who simply joins the
+voice channel will not see it.
+
+So, once each:
+
+1. Portal → your app → **App Testers** → **Invite**, and send them that link.
+   (Adding them to the app's **Team** works too, and gives them more than they
+   need.)
+2. They accept, and join your test server.
+
+Then, every time:
+
+3. You both join the **same voice channel** — the instance is the channel, so
+   this is what puts you in the same race.
+4. One of you starts it from the rocket menu. The other sees the activity tile
+   in the voice channel with **Join Activity**.
+5. For someone not yet in the channel: right-click the voice channel →
+   **Invite to Join**, which gives a link you can paste in chat.
+
+Note what is *not* involved: no room code, no seed, no invite link from inside
+the game. The lobby does not ask, because the voice channel already answered.
+That is gap #5 working, and it is the thing to confirm — if either of you is
+asked for a name or shown a room code, the handshake did not complete and you
+are looking at the plain-URL lobby.
+
 ### Step 6 — Confirm the handshake actually happened
 
 The thing most likely to be quietly broken. In the Activity, open devtools
@@ -200,8 +233,8 @@ The run was a success if all of these are true:
 - [ ] `[td] Discord activity: …` appeared in the Activity's console
 - [ ] A single-player sector started and was playable
 - [ ] `Race` opened the lobby with **no name prompt and no room code**
-- [ ] A second person launching in the same channel took the other seat, with
-      nothing sent between you
+- [ ] A second person — added as an App Tester — took the other seat from the
+      same voice channel, with nothing sent between you
 - [ ] A third saw the queue and the race live, rather than being turned away
 - [ ] Ctrl-C stopped the public URL answering
 
@@ -224,6 +257,8 @@ Mostly predicted, not observed. Correct it as you learn.
 | `frame_id query param is not defined` | The page was opened outside Discord with the SDK forced somehow | Should be impossible — `inActivity()` gates construction on exactly that parameter. If you see it, that guard has a hole |
 | Race lobby asks for a name or shows a room code | The Discord handshake did not complete, so the lobby fell back to its plain-URL form | Same cause as a missing `[td] Discord activity:` line — the identity is what puts the lobby in Activity mode |
 | Both pilots end up in *different* rooms | They are not in the same instance — separate voice channels, or one relaunched the activity | Both must launch from the same channel. `npm run rooms` asserts the server side of this |
+| A friend cannot see the activity at all | Unverified activities are playable only by team members and invited **App Testers**, in servers under 25 members | Portal → **App Testers** → Invite. Not a bug, and not something a link can route around — see Step 5a |
+| The activity is missing from the rocket menu | No platform ticked under **Settings → Supported Platforms**, or Developer Mode off | Tick desktop (and mobile if wanted); User Settings → Advanced → Developer Mode |
 | `EADDRINUSE` on 8787 | An earlier relay is still running | `kill $(lsof -nP -tiTCP:8787 -sTCP:LISTEN)` |
 | Assets 404 inside Discord but work on the tunnel URL | A path assumption that survives only outside the proxy | `base: './'` in `vite.config.ts` exists to prevent this; `npm run proxy` covers the prefix cases. Capture the failing URL before changing anything |
 
