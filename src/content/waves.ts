@@ -302,28 +302,32 @@ const chute = lane('chute');
 const coil = lane('coil');
 
 export const WAVES_SLUICE: readonly WaveDef[] = [
-  wave(coil(9, 3), chute(2, 3.8, 7)), //               released later, and still lands first
-  wave(coil(9, 2.6), chute(4, 2.6, 6), chute(4, 1.1, 12, 'mote')),
+  wave(coil(9, 4.1), chute(2, 5.1, 7)), //               released later, and still lands first
+  wave(coil(9, 3.5), chute(4, 3.5, 6), chute(4, 1.5, 12, 'mote')),
   // Same lesson as Delta: the hull waits for the fourth station. Two spawns and
   // a 2.5 : 1 length ratio already make coverage expensive here without armour
   // arriving before it can be paid for.
-  wave(coil(9, 2.8), chute(4, 1.8, 9), chute(4, 1, 14, 'mote')),
-  wave(coil(1, 7.6, 0, 'monolith'), coil(9, 3, 4), chute(4, 1.9, 10)), // hull takes the slow road
-  wave(coil(1, 7.6, 0, 'bulwark'), coil(7, 3, 5), chute(2, 1.8, 13, 'mote'), chute(2, 3, 17)),
-  wave(coil(4, 6.6, 0, 'bulwark'), coil(6, 3.5, 5), chute(2, 4.5, 11, 'cluster'), chute(4, 2.1, 15)),
-  wave(coil(4, 5.5, 0, 'bulwark'), coil(5, 3.1, 4), chute(2, 3.8, 9, 'cluster'), chute(4, 1.5, 14)),
-  wave(coil(4, 6.4, 0, 'monolith'), coil(4, 3.5, 6, 'warden'), chute(2, 1.1, 11, 'mote')),
-  wave(coil(3, 4.1, 0, 'bulwark'), coil(2, 6.9, 5, 'monolith'), chute(1, 3, 11, 'cluster')),
-  wave(coil(4, 3.8, 0, 'warden'), chute(1, 0.8, 9, 'mote'), chute(1, 4.1, 15, 'cluster')),
-  wave(coil(2, 5.8, 0, 'monolith'), coil(3, 3.1, 5, 'bulwark'), chute(1, 2.8, 12, 'cluster')),
+  wave(coil(9, 3.8), chute(4, 2.5, 9), chute(4, 1.4, 14, 'mote')),
+  wave(coil(1, 10.2, 0, 'monolith'), coil(9, 4.1, 4), chute(4, 2.6, 10)), // hull takes the slow road
+  // Armour waits one wave longer than the hull does. A Bulwark at wave 5 against
+  // four stations is not a hard wave, it is an unkillable one — the plating
+  // eats a Lance's per-hit damage outright and it simply walks the coil.
+  wave(coil(1, 10.2, 0, 'monolith'), coil(8, 4.1, 4), chute(3, 2.5, 13, 'mote'), chute(2, 4.1, 17)),
+  wave(coil(2, 8.9, 0, 'bulwark'), coil(7, 4.7, 5), chute(3, 6, 11, 'cluster'), chute(4, 2.8, 15)),
+  wave(coil(4, 7.4, 0, 'bulwark'), coil(7, 4.2, 4), chute(3, 5.1, 9, 'cluster'), chute(5, 2, 14)),
+  wave(coil(4, 8.6, 0, 'monolith'), coil(6, 4.7, 6, 'warden'), chute(5, 1.5, 11, 'mote')),
+  wave(coil(5, 5.5, 0, 'bulwark'), coil(3, 9.2, 5, 'monolith'), chute(3, 4.1, 11, 'cluster')),
+  wave(coil(7, 5.1, 0, 'warden'), chute(7, 1.1, 9, 'mote'), chute(3, 5.5, 15, 'cluster')),
+  wave(coil(4, 7.8, 0, 'monolith'), coil(6, 4.2, 5, 'bulwark'), chute(4, 3.8, 12, 'cluster')),
   wave(
-    coil(2, 5, 0, 'monolith'), //                     finale: the hull leaves first
-    coil(2, 3, 4, 'bulwark'),
-    coil(2, 3.1, 9, 'warden'),
-    chute(1, 1.6, 12), //                               and the chute lands on top of it
-    chute(1, 0.55, 16, 'mote'),
-    chute(1, 3.5, 20, 'cluster'),
-  ),];
+    coil(5, 6.7, 0, 'monolith'), //                        finale: the hull leaves first
+    coil(6, 4.1, 4, 'bulwark'),
+    coil(6, 4.2, 9, 'warden'),
+    chute(4, 2.1, 12), //                                and the chute lands on top of it
+    chute(8, 0.75, 16, 'mote'),
+    chute(3, 4.7, 20, 'cluster'),
+  ),
+];
 
 /**
  * Level 8, Crown. Twelve waves, and its subject is **half is not enough**.
