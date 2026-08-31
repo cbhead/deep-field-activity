@@ -78,6 +78,14 @@ export const DEFAULT_RULES: Rules = {
  * every tier's normal start, so arriving poor still costs you — it just cannot
  * cost you the ability to play.
  *
+ * **The height of that floor is load-bearing and was wrong.** A builder that
+ * spends to zero lands on the floor every time, so the floor is not a safety
+ * net for that player — it is their opening budget for every sector after the
+ * first. At 0.6 that meant playing seven of the eight boards on $150 when they
+ * are tuned at $250, and the campaign could not be finished on Standard at all.
+ * See the note on `BANK_FLOOR` for why the fix was the floor rather than the
+ * boards.
+ *
  * Beyond that the bank is uncapped, so hoarding really does compound. That is a
  * deliberate choice rather than an oversight: the run is the player's to make
  * lopsided if they want to.

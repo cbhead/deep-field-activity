@@ -166,7 +166,16 @@ for (const id of DIFFICULTY_ORDER) {
     const legs: string[] = [];
     for (const level of CAMPAIGN) {
       const rules = resolveRules(level, id, bank);
-      const r = run(parseMap(level.map), rules, seed, STOP_BUYING_AFTER);
+      const map = parseMap(level.map);
+      // Best of the two strategies per leg, exactly as the per-level table
+      // above. Running the whole campaign on `cluster` denied the player a
+      // choice the report grants three lines earlier, and it showed: the run
+      // broke on Sluice, which is a `spread` board, while the same board reads
+      // 5/5 above. A continuous run should be the campaign a player could
+      // actually have, not the campaign of someone who never changes tactics.
+      const r = (['cluster', 'spread'] as const)
+        .map((strategy) => run(map, rules, seed, STOP_BUYING_AFTER, strategy))
+        .reduce((a, b) => (b.won !== a.won ? (b.won ? b : a) : b.money > a.money ? b : a));
       legs.push(`${r.won ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'}${String(r.cleared).padStart(2)}w $${r.money}`);
       if (!r.won) { broke = true; break; }
       bank = r.money;

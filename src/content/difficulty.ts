@@ -113,12 +113,29 @@ export const DIFFICULTIES = {
  * continuous run in the probe died there, on every difficulty, one of them with
  * thirty lives still in hand.
  *
- * 0.6 leaves enough for a genuine opening (two Lances, or a Lance and a
- * Singularity) without softening the mechanic: anything banked above the floor
- * is still entirely the player's doing, and the floor is *below* every tier's
- * normal start, so arriving poor still costs you.
+ * **0.9, raised from 0.6, because the floor was itself an opening-budget cut.**
+ * That is the dial the Blackout note above already records rejecting, and it
+ * was being applied here to every sector after the first. A spend-everything
+ * run always lands *on* the floor, so 0.6 meant arriving at sector 2 onwards
+ * with $150 against boards tuned at $250 — and the compounding is the same
+ * compounding: a thin opening leaks, a leak costs bounty, the sector is gone.
+ *
+ * It read as a content problem and was not one. Cascade clears Blackout 5/5 on
+ * a fresh start and died on *wave 2* of the continuous run; Standard could not
+ * finish the campaign at all, breaking at sector 4 on every seed. At 0.9 both
+ * of those go away — Standard completes 5/5, and Blackout is limited by Sluice
+ * being a coin flip rather than by the wallet.
+ *
+ * The mechanic is unchanged in the direction that matters. Banking is still
+ * entirely the player's doing and still uncapped, so a careful run arrives at
+ * the finale on three hundred dollars and a profligate one does not. What is
+ * gone is the *punishment* for arriving empty, and that is the right thing to
+ * lose: a floor exists to keep a sector playable, not to be the penalty. The
+ * penalty for never banking is simply never getting the upside.
+ *
+ * Still below every tier's normal start, so arriving poor is not free.
  */
-export const BANK_FLOOR = 0.6;
+export const BANK_FLOOR = 0.9;
 
 export type DifficultyId = keyof typeof DIFFICULTIES;
 
