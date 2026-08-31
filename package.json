@@ -1,6 +1,6 @@
 {
-  "name": "tower-defense",
-  "description": "Deep Field \u2014 a tower defense game with a two-player Race mode over Tailscale",
+  "name": "deep-field-activity",
+  "description": "Deep Field as a Discord Activity \u2014 an Embedded App SDK port of deep-field-td",
   "license": "MIT",
   "private": true,
   "version": "0.0.0",

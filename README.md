@@ -1,4 +1,17 @@
-# Deep Field
+# Deep Field — Discord Activity
+
+> **This is the Activity experiment, not the game's home.** The finished,
+> playable Deep Field lives at
+> [cbhead/deep-field-td](https://github.com/cbhead/deep-field-td); this repo
+> forked from it at `1e2469a` and is porting it to run inside a Discord voice
+> channel via the Embedded App SDK. The plan, and what it costs, is in
+> [docs/DISCORD-ACTIVITY.md](docs/DISCORD-ACTIVITY.md).
+>
+> Upstream is wired up as a remote, so sim and balance fixes still flow down:
+> `git pull upstream main`. Everything below this line describes the game as it
+> works **today** — over Tailscale, unchanged from upstream. It stays accurate
+> until the port actually lands, and each section gets rewritten as the thing it
+> describes is replaced.
 
 A tower defense game for your browser — hold the line through a three-sector
 campaign, or race a friend head-to-head on the same seed and see who survives
