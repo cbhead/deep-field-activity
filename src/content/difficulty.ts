@@ -93,6 +93,35 @@ export const DIFFICULTIES = {
  * Singularity) without softening the mechanic: anything banked above the floor
  * is still entirely the player's doing, and the floor is *below* every tier's
  * normal start, so arriving poor still costs you.
+ *
+ * That last clause is the load-bearing one, and it was silently false for a
+ * while. `main.ts` parsed an absent `?bank` with `Number(params.get('bank'))`,
+ * which is `0` — finite and non-negative, so it read as a real carried bank of
+ * nothing and every *fresh* run opened on the floor instead of the tier's own
+ * money. The floor became the opening budget for the home screen's Play button,
+ * the sector picker, and any `?seed=` boot. Race mode and the headless probes
+ * pass no bank and so were never affected, which is why nothing caught it: for
+ * the whole of that period `tools/campaign.ts` was scoring a game no player
+ * could reach.
+ *
+ * Same probe, same five seeds, `bank` undefined vs `0`:
+ *
+ *                          full start        on the floor
+ *   Standard  Switchback   5/5, 17.4 lives   1/5,  1.2 lives
+ *   Standard  Cascade      5/5, 12.0 waves   3/5,  8.8 waves
+ *   Standard  Pincer       5/5, 12.0 waves   5/5, 12.0 waves
+ *   Blackout  Cascade      5/5, 12.0 waves   0/5,  2.0 waves
+ *   Blackout  Pincer       5/5, 12.0 waves   0/5,  6.0 waves
+ *   Standard  continuous   2 of 3 seeds finish the arc   all 3 break on leg one
+ *
+ * The greedy builder only spreads — it never upgrades and never holds cash back
+ * — so read the absolute numbers as a floor rather than a forecast. The *gap*
+ * is the point, and it is the same gap the Blackout note above already rejects
+ * on its own evidence: cutting the opening budget compounds, and it took that
+ * tier to 0/5 on every sector, dying on Cascade in the first two waves. The bug
+ * was re-applying, to all three tiers at once, the one dial this file documents
+ * as the wrong one. Fixing the parse restores the intent this comment always
+ * claimed: the floor catches a poor arrival, it does not set the opening.
  */
 export const BANK_FLOOR = 0.6;
 

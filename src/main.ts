@@ -298,7 +298,15 @@ async function startSinglePlayer(
    * than whatever was left when the run collapsed. Banking cannot be farmed by
    * dying repeatedly.
    */
-  const carried = Number(params.get('bank'));
+  /*
+   * Absent must parse as `undefined`, not `0`. `Number(null)` is `0`, and `0` is
+   * finite and non-negative, so the obvious one-liner turned every fresh run
+   * into a carried bank of nothing and handed it `BANK_FLOOR` instead of the
+   * tier's opening money — 150 rather than 250 on Standard. See the evidence
+   * table by `BANK_FLOOR` in `content/difficulty.ts` for what that cost.
+   */
+  const rawBank = params.get('bank');
+  const carried = rawBank === null || rawBank === '' ? Number.NaN : Number(rawBank);
   const bank = Number.isFinite(carried) && carried >= 0 ? Math.floor(carried) : undefined;
 
   // Set when the run settles, read by `next`. The victory card is the only way
