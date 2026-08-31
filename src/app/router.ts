@@ -67,18 +67,21 @@ export function parseRoute(search: string): Route {
   const difficulty: DifficultyId =
     rawDiff !== null && Object.hasOwn(DIFFICULTIES, rawDiff) ? (rawDiff as DifficultyId) : DEFAULT_DIFFICULTY;
 
-  // BEHAVIOUR PRESERVED ON PURPOSE, INCLUDING A BUG. `Number(null)` is 0 and 0
-  // passes the `>= 0` test, so the code this replaces resolved an *absent*
-  // `bank` to 0 rather than to "no bank" — and `resolveRules` floors a supplied
-  // bank at BANK_FLOOR (0.6) of the tier's starting money. Every run launched
-  // without `?bank` therefore starts at 150 rather than 250 on Standard.
+  // Absent must be `null`, not 0. `Number(null)` is 0 and 0 passes the `>= 0`
+  // test, so the obvious parse resolves an *absent* `bank` to a carried bank of
+  // nothing — and `resolveRules` floors a supplied bank at BANK_FLOOR (0.6) of
+  // the tier's starting money, so every run launched without `?bank` opened on
+  // 150 instead of 250 on Standard. An empty `?bank=` is absent too, for the
+  // same reason: `Number('')` is also 0.
   //
-  // Not fixed here. It is a balance change, the campaign was played and signed
-  // off with it in place, and a navigation refactor is the wrong commit to
-  // silently move every opening board in. Fix it deliberately, upstream, and
-  // re-sweep — or decide 150 is the balance that was actually tested and make
-  // it explicit instead.
-  const carried = Number(p.get('bank'));
+  // This used to be preserved here on purpose. A navigation refactor was the
+  // wrong commit to silently move every opening board in, so the note said to
+  // fix it deliberately upstream and re-sweep. That has happened — deep-field-td
+  // restored the tier's opening money and swept the floor separately — and the
+  // reason to hold is therefore gone. The Activity and the web build have to
+  // open on the same number or they are not the same game.
+  const rawBank = p.get('bank');
+  const carried = rawBank === null || rawBank === '' ? Number.NaN : Number(rawBank);
   const bank = Number.isFinite(carried) && carried >= 0 ? Math.floor(carried) : null;
 
   return { k: 'run', level: level.id, difficulty, seed: p.get('seed'), bank };
