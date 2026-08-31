@@ -78,6 +78,18 @@ In the developer portal, with your app open:
 
   Hostname only. No `https://`, no trailing slash, no port.
 
+While you are in there, **Legal → Terms of Service URL / Privacy Policy URL**:
+
+    https://chandlers-macbook-pro.tail58cbdb.ts.net/terms
+    https://chandlers-macbook-pro.tail58cbdb.ts.net/privacy
+
+These are only needed for verification, not to launch the app in your own
+server. Both pages ship with the build. Before submitting anything, fill in the
+`CONTACT_EMAIL_HERE` and `GOVERNING_JURISDICTION_HERE` placeholders, and move
+them somewhere that stays up — served from here they only exist while the tunnel
+does, and a reviewer will look when they look. See §6 of
+[DISCORD-ACTIVITY.md](DISCORD-ACTIVITY.md).
+
 This is why the runbook uses Funnel rather than a `cloudflared` quick tunnel:
 the hostname is derived from the machine and does not change, so this form is
 filled in once. A quick tunnel issues a fresh random name every run and you

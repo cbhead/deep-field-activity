@@ -43,6 +43,7 @@ accident of having been built for one friend on one Tailscale box:
 | 5 | **Rooms become the instance.** Everyone who launches in the same voice channel is already in the same room; `instanceId` replaces the generated code. | Net deletion: room codes, invite links, the `/info` Tailscale lookup, and name entry all stop having a job. Names come from the Discord profile. |
 | 6 | **Match reports move server-side.** The client can't reach `discord.com/api/webhooks` through the CSP. | `src/ui/discord.ts` keeps its formatter; only the transport moves. |
 | 7 | **More than two people.** The relay seats exactly two and answers "room is full" to the third. A voice channel routinely holds five. | Needs a spectator or queue path. Not hard, but it's the first impression. |
+| 8 | **Terms of Service and Privacy Policy URLs.** Required by Discord before an app can be verified — a gap the original survey missed entirely. | Drafted and served; see §6. Two placeholders still to fill, and they need a host that is up when a reviewer looks. |
 
 ## §2 — Cost
 
@@ -261,6 +262,40 @@ boot and render a board with `base: './'`.
 application, a client secret, and a public HTTPS origin, none of which exist
 yet. Every line of it is written from the SDK's own type declarations rather
 than from a working run, and the first real launch should be treated as the test.
+
+## §6 — Terms and privacy
+
+Discord requires both as public URLs before an application can be verified. They
+live in `public/`, so the existing static handler ships them with the build, and
+the server resolves extensionless paths to `.html` so the URLs are `/terms` and
+`/privacy` rather than something with a file extension in it.
+
+    https://<your-public-origin>/terms
+    https://<your-public-origin>/privacy
+
+**These are drafts, not legal advice.** They are boilerplate in structure, but
+the privacy policy is deliberately not generic: it was written against the code
+and names the actual `localStorage` keys, what the relay holds in memory and for
+how long, the `identify`-only OAuth scope, and the fact that the relay prints
+display names and connecting IP addresses to its own terminal. A reviewer can
+check every claim in it against the source, which is the point — a policy that
+overstates what a game collects is as wrong as one that understates it.
+
+Two things before submitting:
+
+- **Fill the placeholders.** `CONTACT_EMAIL_HERE` in both files, and
+  `GOVERNING_JURISDICTION_HERE` in the terms. They are deliberately loud so they
+  cannot be missed, and deliberately not guessed — a contact address and a
+  jurisdiction are the author's to choose.
+- **Host them somewhere that stays up.** Serving them from the relay means they
+  are only reachable while the tunnel is running, and a reviewer will look when
+  they look. Making the repository public and enabling GitHub Pages, or pasting
+  the two files into a public gist, both give a URL that does not depend on a
+  laptop being awake.
+
+If the game's data handling changes — a new stored key, a wider scope, anything
+persisted server-side — the privacy policy is now a file that has to change with
+it, which is the reason to keep it in the repository rather than in a web form.
 
 ## Relationship to upstream
 

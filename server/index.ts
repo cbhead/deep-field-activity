@@ -260,6 +260,14 @@ const httpServer = http.createServer((req, res) => {
     }
     let path = normalize(decodeURIComponent(rawPath)).replace(/^(\.\.[/\\])+|^[/\\]+/, '');
     if (path === '' || path === '.') path = 'index.html';
+    // Extensionless paths get a `.html` if one exists, so the legal pages can be
+    // `/terms` and `/privacy`. Those two URLs go into Discord's verification
+    // form and get read by humans, and `.html` in a pasted URL is a small ugly
+    // thing that lasts as long as the application does.
+    if (extname(path) === '') {
+      const asHtml = `${path}.html`;
+      if (await readFile(join(DIST, asHtml)).then(() => true, () => false)) path = asHtml;
+    }
     try {
       const body = await readFile(join(DIST, path));
       res.writeHead(200, { 'content-type': MIME[extname(path)] ?? 'application/octet-stream' });

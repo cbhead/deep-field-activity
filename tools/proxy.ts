@@ -161,6 +161,21 @@ async function main(): Promise<void> {
     const infoProxied = await fetch(`${BASE}/.proxy/info`);
     check('/.proxy/info reaches the info route', infoProxied.ok, String(infoProxied.status));
 
+    // The two URLs that go into Discord's verification form. Extensionless, so
+    // they exercise the `.html` fallback as well as being the actual answer to
+    // "is the privacy policy reachable" — which is a question a reviewer asks
+    // and a laptop-hosted origin can quietly fail.
+    for (const page of ['/terms', '/privacy']) {
+      const res = await fetch(`${BASE}${page}`);
+      check(
+        `${page} is served as a page`,
+        res.ok && (res.headers.get('content-type') ?? '').startsWith('text/html'),
+        `${res.status} ${res.headers.get('content-type') ?? ''}`,
+      );
+    }
+    const missing = await fetch(`${BASE}/definitely-not-a-page`);
+    check('and an unknown path is still a 404', missing.status === 404, String(missing.status));
+
     console.log('\nthe relay socket answers on both paths');
     check('ws://…/ws upgrades', (await dialSocket('/ws')) === 'open');
     check('ws://…/.proxy/ws upgrades', (await dialSocket('/.proxy/ws')) === 'open');

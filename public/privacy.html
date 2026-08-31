@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deep Field — Privacy Policy</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0 auto; padding: 48px 24px 96px; max-width: 46rem;
+        background: #07080f; color: #d8d7e6;
+        font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      h1 { font-size: 30px; margin: 0 0 4px; color: #efeefb; letter-spacing: -0.01em; }
+      h2 { font-size: 18px; margin: 40px 0 10px; color: #b5abfc; }
+      .date { color: #7b7a90; margin: 0 0 36px; font-size: 14px; }
+      a { color: #b5abfc; }
+      code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; color: #d2cefd; }
+      ul { padding-left: 1.2rem; }
+      li { margin: 6px 0; }
+      table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1e1f2e; vertical-align: top; }
+      th { color: #9a97b8; font-weight: 600; }
+      .note { border-left: 2px solid #3a3752; padding-left: 14px; color: #a4a2ba; }
+    </style>
+  </head>
+  <body>
+    <h1>Privacy Policy</h1>
+    <p class="date">Deep Field · Effective 30 August 2026</p>
+
+    <p>
+      Deep Field is a hobby tower-defense game. It has no accounts, no adverts, no
+      analytics, no cookies and no third-party trackers, and nothing it collects is
+      ever sold or shared for advertising. This policy describes the small amount of
+      data it does handle, and is written to be checkable against the source code at
+      <a href="https://github.com/cbhead/deep-field-activity">github.com/cbhead/deep-field-activity</a>.
+    </p>
+
+    <h2>Stored on your own device</h2>
+    <p>
+      Single-player progress and preferences never leave your browser. They live in
+      <code>localStorage</code> and are readable only by this game, on this device:
+    </p>
+    <table>
+      <tr><th>Key</th><th>What it holds</th></tr>
+      <tr><td><code>td-campaign</code></td><td>Campaign progress: grades, lives remaining, times, waves reached</td></tr>
+      <tr><td><code>race-name</code></td><td>The display name you last used in Race mode</td></tr>
+      <tr><td><code>race-level</code>, <code>race-diff</code></td><td>Your last sector and difficulty choice</td></tr>
+      <tr><td><code>race-series</code></td><td>Win/loss tally against opponents you have raced, by name</td></tr>
+      <tr><td><code>deep-field-audio</code></td><td>Volume and mute settings</td></tr>
+      <tr><td><code>discord-webhook</code></td><td>A Discord webhook URL, only if you paste one in</td></tr>
+    </table>
+    <p>
+      Clearing your browser's site data for this origin erases all of it. The game's
+      settings screen also has a <em>Reset progress</em> button.
+    </p>
+
+    <h2>Sent to the game server, during a race only</h2>
+    <p>
+      Race mode relays two players through a small server. While a race is running it
+      holds, <strong>in memory only</strong>:
+    </p>
+    <ul>
+      <li>the display name you typed or that Discord provided;</li>
+      <li>a temporary player id and room code;</li>
+      <li>your progress numbers — wave, lives remaining and elapsed time.</li>
+    </ul>
+    <p>
+      There is no database and nothing is written to disk. A room and everything in it
+      is discarded about a minute after the last player leaves, and everything is lost
+      when the server stops — which, since it is usually run from a laptop for a
+      session, is often.
+    </p>
+    <p class="note">
+      The server prints a log line to its own terminal when a player joins, readies,
+      finishes or disconnects. Those lines include display names and the connecting IP
+      address. They are not stored in a file, sent anywhere, or retained after the
+      terminal is closed, but the person running the server can see them.
+    </p>
+
+    <h2>Discord</h2>
+    <p>
+      When played as a Discord Activity, the game asks Discord for the
+      <code>identify</code> scope and nothing else. That returns your Discord user id,
+      username and display name. The display name is used to label you in a race; the
+      access token is used once to complete the sign-in and is not stored. No message,
+      server, friend or email data is requested, and none is accessible to the game.
+    </p>
+    <p>
+      Discord itself handles the connection and applies
+      <a href="https://discord.com/privacy">its own privacy policy</a>.
+    </p>
+
+    <h2>Match reports, if you turn them on</h2>
+    <p>
+      Race mode can post a summary to a Discord channel through a webhook you paste in
+      yourself. It is off unless configured. A report contains both players' display
+      names, waves reached, lives remaining, times, the sector and the board seed.
+      Sending it publishes that to whoever can read the channel. Removing the webhook
+      from the settings field stops it.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      This game is not directed at children. Discord requires its users to be at least
+      13, or older where local law says so.
+    </p>
+
+    <h2>Your data</h2>
+    <p>
+      There is no account to delete and no server-side record to request: clearing your
+      browser storage removes everything the game keeps about you. Discord data is held
+      by Discord, and you can revoke this application's access at any time in
+      <strong>Discord → Settings → Authorised Apps</strong>.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      If this policy changes, the effective date above changes with it, and the history
+      is public in the repository linked at the top.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions or requests: <strong>CONTACT_EMAIL_HERE</strong>, or open an issue in
+      the repository.
+    </p>
+  </body>
+</html>
