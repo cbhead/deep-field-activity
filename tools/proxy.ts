@@ -161,6 +161,12 @@ async function main(): Promise<void> {
     const infoProxied = await fetch(`${BASE}/.proxy/info`);
     check('/.proxy/info reaches the info route', infoProxied.ok, String(infoProxied.status));
 
+    // Which checkout is answering. Upstream shares this port and this route,
+    // and has silently taken over three times; `app` is how you tell in one
+    // request rather than by noticing the game asks for a room code.
+    const who = (await (await fetch(`${BASE}/info`)).json()) as { app?: string };
+    check('/info says which app it is', who.app === 'deep-field-activity', who.app ?? '(no app field — upstream?)');
+
     // The two URLs that go into Discord's verification form. Extensionless, so
     // they exercise the `.html` fallback as well as being the actual answer to
     // "is the privacy policy reachable" — which is a question a reviewer asks

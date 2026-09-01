@@ -159,8 +159,22 @@ curl -sI https://<funnel-host>/ | head -1
 curl -s  https://<funnel-host>/info
 ```
 
-`200` and a JSON blob. If this fails, Discord has no chance — fix it here,
-where the error messages are yours rather than an iframe's.
+`200`, and the JSON must say `"app":"deep-field-activity"`.
+
+**Check that field every time.** This fork and its upstream both default to port
+8787 and are both cloned on this machine, so whichever server was started last
+owns it — and upstream's build has never heard of Discord. When that happens the
+Activity still loads and still plays, but asks for a callsign and a room code,
+which reads as the port having regressed rather than as the wrong program
+answering. It has happened three times. If `app` is missing:
+
+```sh
+kill $(lsof -nP -tiTCP:8787 -sTCP:LISTEN)
+cd ~/dev/deep-field-activity && npm run play
+```
+
+If this step fails outright, Discord has no chance — fix it here, where the
+error messages are yours rather than an iframe's.
 
 ### Step 5 — Launch it
 

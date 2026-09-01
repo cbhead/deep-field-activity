@@ -252,7 +252,14 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       ` inputmode="text" autocapitalize="characters" autocorrect="off" autocomplete="off"` +
       ` spellcheck="false" enterkeyhint="go" aria-label="Room code">` +
       `<button id="race-join" class="lb-btn dim" style="flex:1">Join</button>` +
-      `</div></div></div>` +
+      `</div>` +
+      // A way out, which this screen never had. On the web it is reached from
+      // the home screen and the browser's own Back sufficed. Inside a Discord
+      // Activity there is no browser chrome, and if the handshake fails this
+      // form is the *landing* screen — so without this, single player is
+      // unreachable by any route at all.
+      `<button class="lb-leave" id="race-leave" style="align-self:flex-start">Back to the front door</button>` +
+      `</div></div>` +
       `<div class="lb-how"><span class="lb-label" style="letter-spacing:.18em">How a race works</span>` +
       `<div class="lb-how-item"><span class="lb-how-n">01</span><span><span class="lb-how-t">One seed, two boards</span>` +
       `<span class="lb-how-d">The relay hands both pilots the same seed, so every wave arrives in the same order with the same jitter. Nothing about the board is luck.</span></span></div>` +
@@ -297,6 +304,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     el.querySelector('#race-name')!.addEventListener('keydown', (ev) => {
       if ((ev as KeyboardEvent).key === 'Enter') submit();
     });
+    el.querySelector('#race-leave')?.addEventListener('click', () => opts.onLeave());
   }
 
   function showDeepLink(code: string): void {

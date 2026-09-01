@@ -104,8 +104,24 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   // failure this whole refactor exists to prevent.
   await cdp.send('Page.navigate', { url: `${BASE}/?frame_id=abc123&instance_id=xyz789` });
   const ready = await until(cdp, 'typeof globalThis.tdApp === "object"');
-  check('the app boots at the front door', ready);
+  check('the app boots', ready);
   if (!ready) return;
+
+  // That URL carries a `frame_id`, so this is the Activity case: people launch
+  // it together in a voice channel and the lobby is the front door. It used to
+  // land on the single-player screen instead, because Discord's parameters are
+  // none that the router owns and the query therefore parsed as `home` — so an
+  // invited friend arrived at a campaign menu with no sign that the person who
+  // invited them was one click away.
+  check(
+    'a Discord launch lands in Race, not single player',
+    (await evaluate(cdp, 'tdApp.router.route.k')) === 'race',
+    `route = ${String(await evaluate(cdp, 'tdApp.router.route.k'))}`,
+  );
+  check(
+    'and the race lobby is what actually mounted',
+    await until(cdp, 'document.querySelector("#lobby-screen") !== null'),
+  );
 
   // That URL carries a `frame_id`, so the app just tried the Discord handshake
   // and failed — there is no client id in a dev build and no Discord on the
@@ -118,6 +134,12 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   );
 
   const before = thrown.length;
+  // Baseline from `home`, which is where the round-trip loop below also ends.
+  // Taking it on whatever happened to be mounted at boot compared two different
+  // screens and reported the home screen's own Esc handler as a leak — the
+  // Discord default landing on Race is what surfaced that.
+  await evaluate(cdp, `tdApp.router.go({ k: 'home' })`);
+  await until(cdp, 'document.querySelector("#lobby-screen") === null');
   const winBase = await listeners(cdp, 'window');
   const docBase = await listeners(cdp, 'document');
 
@@ -197,11 +219,25 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   );
   check('and the route is in there too', search.includes('level=level01') && search.includes('seed=nav'), search);
 
-  // Back must return to the front door rather than leaving the app, which it
+  // Leaving Race inside an Activity has to reach single player, because the
+  // lobby is now the first thing you see. It used to `remount()` the same
+  // screen, so the button appeared to do nothing whatsoever.
+  await evaluate(cdp, `tdApp.router.go({ k: 'race', room: null })`);
+  await until(cdp, 'document.querySelector("#lobby-screen") !== null');
+  await evaluate(cdp, `document.querySelector('#race-leave')?.click()`);
+  check(
+    'Leave gets out of the lobby rather than re-entering it',
+    await until(cdp, 'tdApp.router.route.k === "home"'),
+    `route = ${String(await evaluate(cdp, 'tdApp.router.route.k'))}`,
+  );
+
+  // Back must return to a previous screen rather than leaving the app, which it
   // could never do when every navigation was a document load.
+  await evaluate(cdp, `tdApp.router.go(${RUN_ROUTE})`);
+  await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 1');
   await evaluate(cdp, 'history.back()');
   const backHome = await until(cdp, 'document.querySelectorAll("#game-root canvas").length === 0');
-  check('Back leaves the run and returns to the front door', backHome);
+  check('Back leaves the run', backHome);
 
   check('navigating throws nothing', thrown.length === before, thrown.slice(before).join(' | '));
 }

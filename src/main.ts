@@ -188,7 +188,27 @@ async function main(): Promise<void> {
     (globalThis as Record<string, unknown>)['tdApp'] = { router, activity };
   }
 
-  router.start();
+  /**
+   * Inside an Activity, Race is the front door.
+   *
+   * Discord hands the iframe `frame_id`, `instance_id` and `platform`, none of
+   * which this app's router owns, so the query parses to `home` and everyone who
+   * launched together landed on the single-player screen — with nothing saying
+   * that the people they opened it with were one click away. People do not start
+   * an activity in a voice channel in order to play alone.
+   *
+   * Only when the URL says nothing else: an explicit `?level=` or `?sectors=`
+   * still wins, so a link into a specific sector keeps working inside Discord.
+   * `go` rather than `start`, so the front door stays behind it in history and
+   * single player is still reachable — see `leave` for the other way there.
+   *
+   * Keyed on `inActivity()` rather than on a completed handshake, because this
+   * is a question about where the page is, not about who is signed in. A failed
+   * handshake should still land you in the lobby; it costs you a name, not the
+   * mode you came for.
+   */
+  if (inActivity() && router.route.k === 'home') router.go({ k: 'race', room: null });
+  else router.start();
 }
 
 function mountRoute(route: Route, deps: SceneDeps): Promise<Scene> {
@@ -334,7 +354,13 @@ function mountRace(
   // still holding that code, so it navigates; leaving one you created is
   // already at `?race` and only needs re-entering.
   const leave = (): void => {
-    if (route.room === null) router.remount();
+    // Inside an Activity there is no other lobby to fall back to — the instance
+    // is the only room there is — so `remount()` re-entered the very screen the
+    // player was trying to leave, and Leave did nothing at all. It means "out of
+    // Race" here, which is also the only way to reach single player now that the
+    // lobby is the front door.
+    if (inActivity()) router.go({ k: 'home' });
+    else if (route.room === null) router.remount();
     else router.go({ k: 'race', room: null });
   };
 

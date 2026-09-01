@@ -402,7 +402,15 @@ const httpServer = http.createServer((req, res) => {
     }
     if (rawPath === '/info') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ tailscaleIp: tailscaleIp(), port }));
+      // `app` identifies which checkout is answering.
+      //
+      // This fork and its upstream both default to 8787, and both are cloned on
+      // the same machine, so whichever was started last owns the port. That has
+      // now silently swapped the served game three times — and the symptom is
+      // baffling: the Activity loads, plays, and asks for a callsign and a room
+      // code, because it is upstream's build, which has never heard of Discord.
+      // One field turns twenty minutes of that into one curl.
+      res.end(JSON.stringify({ app: 'deep-field-activity', tailscaleIp: tailscaleIp(), port }));
       return;
     }
     let path = normalize(decodeURIComponent(rawPath)).replace(/^(\.\.[/\\])+|^[/\\]+/, '');
