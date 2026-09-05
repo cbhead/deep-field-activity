@@ -83,6 +83,64 @@ export const BALANCE = {
   rushBonusPerSecond: 2.5,
 
   /**
+   * The era ladder. Versus only — the campaign hands stations out on
+   * `TowerDef.unlockWave` and never reads any of this.
+   *
+   * `advanceCost[0]` buys era II, `advanceCost[1]` buys era III. There is no
+   * entry for era I because you start there.
+   *
+   * **These are unswept and are the mode's main open dial.** The starting
+   * figures are reasoned rather than measured: era II is priced near two
+   * stations' worth of the tier's opening money, so the first advance is
+   * genuinely instead of a defence rather than alongside one, and era III at
+   * double that, so the second is a commitment you visibly stop building for.
+   * That gap is the Age of War evolution window and the entire point — while
+   * you are banking, you are not defending, and that is when the other side
+   * pushes.
+   *
+   * The property to sweep for is *not* a win rate. It is that **rushing
+   * straight to era III is survivable but not correct** — the same shape as
+   * `hpGrowth`'s rule that mixing beats mono-building without making any
+   * single-station build unplayable. If a rush to III wins, lower the gap; if
+   * it loses every time, the ladder is decoration and the mode is just Race
+   * with a grief button.
+   */
+  eras: {
+    advanceCost: [200, 400],
+  },
+
+  /**
+   * The sortie economy. Versus only.
+   *
+   * Two numbers, and between them they are the entire aggression dial.
+   *
+   * **`markup`** — a sortie costs this multiple of the bounty the defender will
+   * collect for killing it. Above 1 by definition: every send into a line that
+   * holds is a net transfer to the person you are attacking, which is what
+   * makes spam structurally self-defeating rather than merely discouraged. It
+   * also means the cost curve is `bountyGrowth`'s curve, so there is no second
+   * scaling to keep in step.
+   *
+   * **`kickback`** — the fraction of the price returned when a sortie reaches
+   * their core. Below 1, so aggression is never free; high enough that a send
+   * which lands is clearly worth having made. At 0.6 against a markup of 2.2,
+   * a sortie that lands costs you 1.3 bounties and takes at least one life,
+   * and one that dies costs you 2.2 and hands them 1. Those are the two swings
+   * the mode is made of, and the gap between them is the whole design.
+   *
+   * **Unswept**, like the era costs. The property to sweep for is that
+   * *neither* pure strategy wins: a player who never sends should lose to one
+   * who sends well, and a player who sends constantly should lose to one who
+   * builds. If sending always wins, raise `markup`; if it never does, raise
+   * `kickback` before touching the markup — the markup is what keeps spam
+   * self-punishing and is the more load-bearing of the two.
+   */
+  sortie: {
+    markup: 2.2,
+    kickback: 0.6,
+  },
+
+  /**
    * Per-wave multipliers, compounding: wave N enemies have
    * `base * growth ** N`. Computed rather than tabulated is the whole reason
    * content is TypeScript and not JSON — this is the dial difficulty is
@@ -109,6 +167,13 @@ export const BALANCE = {
    * roster. Do not nudge it by feel — the last re-sweep, run after Lance went
    * 6 to 8 damage and two stations were repriced, reproduced these numbers
    * byte-for-byte, which is the only reason to trust them.
+   *
+   * Re-swept again when Overclock joined the roster, and unmoved. Both
+   * mono-build columns — which are what "without making any single-station
+   * build unplayable" actually means — reproduced exactly: 13.2 and 10.6 lives
+   * at 1.26, pure Lance falling to 2/5 at 1.27 and 0/5 at 1.28, pure Nova to
+   * 1/5 at 1.30. A station that changes no existing number and only ever helps
+   * a mix cannot move that boundary, and now it is measured rather than assumed.
    */
   hpGrowth: 1.26,
   bountyGrowth: 1.14,

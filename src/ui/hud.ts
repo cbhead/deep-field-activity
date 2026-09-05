@@ -12,8 +12,20 @@ import {
   toughestArmour,
   formatDamage,
 } from '../sim/analysis.ts';
-import { sellValue, upgradeCost, isUnlocked, nextStats, visualTier } from '../sim/build.ts';
+import {
+  sellValue,
+  upgradeCost,
+  isUnlocked,
+  nextStats,
+  visualTier,
+  hasDamagePath,
+  effectiveInterval,
+  tierCeiling,
+  advanceEraCost,
+} from '../sim/build.ts';
 import { planWave, waveCount } from '../sim/wavePlan.ts';
+import { SORTIES, SORTIE_IDS, type SortieId } from '../content/sorties.ts';
+import { sortieCost, sortieUnlocked } from '../sim/sortie.ts';
 import {
   TARGET_MODES,
   UPGRADE_PATHS,
@@ -170,6 +182,19 @@ export function createHud(root: HTMLElement, ports: HudPorts): Hud {
       }
       case 'send':
         ports.dispatch({ type: 'startWave' });
+        break;
+      case 'era':
+        ports.dispatch({ type: 'advanceEra' });
+        break;
+      case 'lane':
+        ui.sortieLane = Number(data['v']);
+        break;
+      case 'sortie':
+        ports.dispatch({
+          type: 'sortie',
+          sortie: data['id'] as SortieId,
+          lane: ui.sortieLane,
+        });
         break;
       case 'deck':
         ui.deckOpen = !ui.deckOpen;
@@ -364,6 +389,11 @@ function topKey(w: World, speed: number, paused: boolean): string {
     s.phase,
     Math.ceil(s.timer),
     aliveInWave(w, s.index),
+    // The rail draws the rung and the price of the next one. Advancing always
+    // spends, so `w.money` would in practice cover this — but the rule for a
+    // region key is that it describes everything the region displays, not
+    // everything that happens to change alongside it.
+    w.era,
     speed,
     paused,
   ].join('|');
@@ -371,8 +401,10 @@ function topKey(w: World, speed: number, paused: boolean): string {
 
 function renderTop(w: World, speed: number, paused: boolean): string {
   const s = w.wave;
-  const total = waveCount(w.rules);
-  const cleared = Math.min(s.clearedThrough + 1, total);
+  // An endless arc has no denominator — see `heldLabel`. On Front Line, waves
+  // held is a score rather than progress toward anything, because there is
+  // nothing to be partway through.
+  const held = heldLabel(w);
 
   let label: string;
   let fill: number;
@@ -412,7 +444,8 @@ function renderTop(w: World, speed: number, paused: boolean): string {
     // every price is a character the player has already agreed to.
     `<div class="stat"><label>Cash</label><b>${w.money}</b></div>` +
     `<div class="stat"><label>Lives</label><b class="${crit ? 'crit' : ''}">${w.lives}</b></div>` +
-    `<div class="stat"><label>Waves held</label><b>${cleared} / ${total}</b></div>` +
+    `<div class="stat"><label>Waves held</label><b>${held}</b></div>` +
+    renderEraRail(w) +
     `<div class="ribbon${crit ? ' crit' : ''}"><span>${label}</span>` +
     `<i style="width:${(clamp01(fill) * 100).toFixed(1)}%"></i></div>` +
     `<div class="seg speeds">${speeds}</div>` +
@@ -420,6 +453,42 @@ function renderTop(w: World, speed: number, paused: boolean): string {
     // on a touch device, and a tooltip that never fires there is dead weight.
     `<button class="icon" data-act="pause" aria-label="${paused ? 'Resume' : 'Pause'}">` +
     `${paused ? '▶' : '❚❚'}</button>`
+  );
+}
+
+/** Era numerals, so the rail reads I · II · III rather than 1 · 2 · 3. */
+const ROMAN: Readonly<Record<number, string>> = { 1: 'I', 2: 'II', 3: 'III' };
+
+/**
+ * The era ladder, in the status row and nowhere else.
+ *
+ * Empty markup outside versus, which is what keeps the campaign's top row
+ * byte-identical rather than gaining a disabled control it can never use.
+ *
+ * The rung and the price sit *together*, deliberately. The decision this
+ * control exists to pose is "is the next rung worth what it costs right now",
+ * and splitting those across two places would make the player do the join. It
+ * sits beside Cash for the same reason — the shortfall should be readable
+ * without moving your eyes, because the moment it matters is the moment a wave
+ * is walking.
+ *
+ * At the top of the ladder the button becomes a plain readout: there is nothing
+ * left to buy, and a permanently disabled button is a worse way to say so than
+ * not drawing one.
+ */
+function renderEraRail(w: World): string {
+  if (!w.rules.eras) return '';
+  const numeral = ROMAN[w.era] ?? String(w.era);
+  const cost = advanceEraCost(w);
+  if (cost === null) {
+    return `<div class="stat era"><label>Era</label><b>${numeral}</b></div>`;
+  }
+  const poor = w.money < cost;
+  return (
+    `<div class="stat era"><label>Era</label><b>${numeral}</b></div>` +
+    `<button class="icon era-up${poor ? ' poor' : ''}" data-act="era"` +
+    ` aria-label="Advance to era ${ROMAN[w.era + 1] ?? w.era + 1} for ${cost}"` +
+    `>▲<span>${cost}</span></button>`
   );
 }
 
@@ -459,6 +528,11 @@ export function deckKey(w: World, ui: UiState, inspected: Tower | undefined): st
       : '-',
     // Affordability of every slot, plus the two buttons the inspector prices.
     w.money,
+    // Which slots are locked, and the ceiling the upgrade buttons price against.
+    // Also which sortie cards are open, and — via `s.index` below — what they
+    // cost, since a sortie is priced off the wave it would be sent into.
+    w.era,
+    ui.sortieLane,
     s.index,
     s.phase,
     Math.ceil(s.timer),
@@ -485,10 +559,67 @@ function renderDeck(w: World, ui: UiState, inspected: Tower | undefined): string
     `<section class="build"><h6>Build${ui.selected ? ' · armed' : ''}</h6>` +
     `<div class="slots">${renderSlots(w, ui)}</div></section>` +
     `<span class="sep"></span>` +
+    renderSortieDeck(w, ui) +
     `<section class="detail">${renderDetail(w, ui, inspected)}</section>` +
     `<span class="sep"></span>` +
     `<section class="send">${handle}${renderSend(w)}</section>` +
     `</div>`
+  );
+}
+
+/**
+ * The sortie deck: what you can send, and which lane it goes down.
+ *
+ * Empty markup outside versus, so the campaign's deck is byte-identical.
+ *
+ * **The lane picker is a mode, not a per-send argument.** Two rows of six
+ * buttons would put the whole table on screen at once and read as twelve
+ * choices; one row plus a lane toggle reads as the two decisions it actually
+ * is — *what* to send, and *where*. The lane persists between sends because
+ * pressure down one lane is the strategy, and re-picking it every time would
+ * tax the thing the board was built to reward.
+ *
+ * Locked rungs stay visible and name the era that opens them, exactly as build
+ * slots do. A deck that hid what it was hiding would make the era ladder's
+ * offensive half invisible until it was already bought, which is the wrong
+ * order — the reason to save is supposed to be legible before you save.
+ */
+function renderSortieDeck(w: World, ui: UiState): string {
+  if (!w.rules.sorties) return '';
+
+  const lanes = w.map.routes
+    .map((r, i) => {
+      const on = ui.sortieLane === i ? ' class="on"' : '';
+      return `<button data-act="lane" data-v="${i}"${on}>${r.id}</button>`;
+    })
+    .join('');
+
+  const cards = SORTIE_IDS.map((id) => {
+    const def = SORTIES[id];
+    if (!sortieUnlocked(w, id)) {
+      const gate = `Era ${ROMAN[def.era] ?? def.era}`;
+      return (
+        `<div class="sortie locked" aria-label="${ENEMIES[def.enemy].name}, opens at ${gate}">` +
+        `${contactIcon(def.enemy, 22)}<span class="wave">${gate}</span></div>`
+      );
+    }
+    const cost = sortieCost(id, w.wave.index, w);
+    const poor = w.money < cost;
+    // Weight is printed only when it is not 1. A "×1" on four of six cards is
+    // noise that makes the two that matter harder to find.
+    const weight = def.weight > 1 ? `<i class="w">${def.weight}</i>` : '';
+    return (
+      `<button class="sortie${poor ? ' poor' : ''}" data-act="sortie" data-id="${id}"` +
+      ` aria-label="Send ${ENEMIES[def.enemy].name} down ${w.map.routes[ui.sortieLane]?.id ?? 'lane'} for ${cost}">` +
+      `${contactIcon(def.enemy, 22)}${weight}<b>${cost}</b></button>`
+    );
+  }).join('');
+
+  return (
+    `<section class="sorties"><h6>Send</h6>` +
+    `<div class="seg lanes">${lanes}</div>` +
+    `<div class="sortie-row">${cards}</div></section>` +
+    `<span class="sep"></span>`
   );
 }
 
@@ -516,10 +647,15 @@ export function renderSlots(w: World, ui: UiState): string {
 
     // Locked says one thing: when. No cost, no shortfall, nothing to weigh —
     // it is not a decision yet.
+    //
+    // Under eras "when" is a *purchase* rather than a moment, so the slot names
+    // the rung instead of the wave. Both are the same sentence — this is what
+    // you do not have yet, and here is the thing that will give it to you.
     if (!isUnlocked(w, id)) {
+      const gate = w.rules.eras ? `Era ${ROMAN[def.era] ?? def.era}` : `Wave ${def.unlockWave + 1}`;
       return (
-        `<div class="slot locked" aria-label="${def.name}, unlocks at wave ${def.unlockWave + 1}">` +
-        `${stationIcon(id, 40)}<span class="wave">Wave ${def.unlockWave + 1}</span></div>`
+        `<div class="slot locked" aria-label="${def.name}, unlocks at ${gate}">` +
+        `${stationIcon(id, 40)}<span class="wave">${gate}</span></div>`
       );
     }
 
@@ -633,17 +769,48 @@ function mechanicWords(d: TowerStats): string {
   return `<span class="mech-words">${m.map((x) => x.words).join(' · ')}</span>`;
 }
 
-/** Damage, rate and range — the three every station has, so always neutral. */
-function axisChips(d: TowerStats, verbose = false): string {
+/**
+ * Damage, rate and range — the three every station has, so always neutral.
+ *
+ * `fed` is the station's *actual* interval once support is counted, and is
+ * passed only by the inspector, which is the only panel looking at a station
+ * that exists on a board. It must come from `effectiveInterval`, never from a
+ * local recomputation: this is the figure a player prices an Overclock against,
+ * and a HUD that derived its own copy would drift from the simulation at exactly
+ * the moment money is being spent. Same discipline as `effectiveDamage` and
+ * `rampFactor`.
+ */
+function axisChips(d: TowerStats, verbose = false, fed?: number): string {
   // Named in the armed panel, bare in the inspector. A lone "8" is ambiguous
   // the first time you meet it and obvious the twentieth, and only one of those
   // two audiences is looking at this panel.
   const chip = (hint: string, label: string, v: string): string =>
     verbose ? `<b><i class="ax">${label}</i>${v}</b>` : `<b title="${hint}">${v}</b>`;
+  // A station that does not shoot has neither a damage nor a rate to compare,
+  // and `1 / 0` printed `Infinity/s` on the panel until the word-budget gate
+  // caught it. Its `+0.35/s` mechanic chip is the number that matters and is
+  // already rendered beside these; reach still is one, because reach is what
+  // decides who it feeds.
+  const shoots = d.fireInterval > 0;
+  const rate = (interval: number): string => (1 / interval).toFixed(1);
+
+  // `2.0→2.4/s` rather than a bare `2.4/s`. A station silently firing faster
+  // than its own stat block says is the kind of number a player reads as a bug;
+  // showing the base it came from is what makes the Overclock beside it legible
+  // as the cause. Both halves are numerals, so the word budget is untouched.
+  const boosted = shoots && fed !== undefined && fed < d.fireInterval;
+  const rateChip = boosted
+    ? chip(
+        `Shots per second — ${rate(d.fireInterval)} on its own, ${rate(fed!)} with support`,
+        'rate',
+        `${rate(d.fireInterval)}<i class="fed">→${rate(fed!)}</i>/s`,
+      )
+    : chip('Shots per second', 'rate', `${rate(d.fireInterval)}/s`);
+
   return (
     `<span class="axes">` +
-    chip('Damage per shot', 'dmg', formatDamage(d.damage)) +
-    chip('Shots per second', 'rate', `${(1 / d.fireInterval).toFixed(1)}/s`) +
+    (shoots ? chip('Damage per shot', 'dmg', formatDamage(d.damage)) : '') +
+    (shoots ? rateChip : '') +
     chip('Reach in tiles', 'reach', `${d.range.toFixed(1)}tl`) +
     `</span>`
   );
@@ -689,7 +856,7 @@ export function renderArmed(id: TowerId): string {
 export function renderInspector(w: World, t: Tower): string {
   const d = TOWERS[t.defId];
   const s = t.stats;
-  const nextDamage = nextStats(t, 'damage')?.damage ?? null;
+  const nextDamage = nextStats(t, 'damage', tierCeiling(w))?.damage ?? null;
 
   // Iconic, with **the active mode labelled** — not labels-on-hover.
   //
@@ -730,7 +897,7 @@ export function renderInspector(w: World, t: Tower): string {
     // Live stats, not the def: this is where an effect purchase becomes visible
     // in numbers, including the secondary dial the upgrade card omits. One row
     // for both chip groups — the inspector's height budget has no room for two.
-    `<div class="chipline t-${t.defId}">${mechanicChips(s)}${axisChips(s)}</div>` +
+    `<div class="chipline t-${t.defId}">${mechanicChips(s)}${axisChips(s, false, effectiveInterval(t))}</div>` +
     renderArmourLine(w, t, nextDamage) +
     `</div>` +
     `<div class="upgrades">${renderPathButtons(w, t)}</div>` +
@@ -747,10 +914,14 @@ export function renderInspector(w: World, t: Tower): string {
  * runs — so the button can never promise a number the sim won't deliver.
  */
 function renderPathButtons(w: World, t: Tower): string {
-  return UPGRADE_PATHS.map((path) => {
-    const cost = upgradeCost(t, path);
-    const next = nextStats(t, path);
+  return UPGRADE_PATHS.filter((path) => path !== 'damage' || hasDamagePath(t.defId)).map((path) => {
+    const ceiling = tierCeiling(w);
+    const cost = upgradeCost(t, path, ceiling);
+    const next = nextStats(t, path, ceiling);
     const { label, value } = pathPreview(t, path, next);
+    // Pips always show the full ladder, never the era's slice of it: a track
+    // capped at Mk II by the era is *held back*, and drawing two pips would say
+    // it was finished. The disabled button says why.
     const pips = tierPips(t.tiers[path], BALANCE.upgrade.maxTier);
 
     // The dial shows where this path sits on the station's collar, so the
@@ -887,7 +1058,7 @@ export function renderNextContact(w: World): string {
     return `<div class="head"><b>Route clear</b></div><div class="hint">Nothing else is coming.</div>`;
   }
 
-  const plan = planWave(w.seed, s.index, w.rules);
+  const plan = planWave(w.seed, s.index, w.rules, w.map.routes);
   if (plan.length === 0) {
     return `<div class="head"><b>Wave ${s.index + 1}</b></div>`;
   }
@@ -1091,21 +1262,48 @@ export function renderPaused(w: World, ui: UiState): string {
   );
 }
 
+/**
+ * "3 / 12" on a finite arc, plain "3" on an endless one.
+ *
+ * Shared by the status strip and the defeat card so the two cannot disagree,
+ * and so neither of them ever prints the literal string "Infinity" — which is
+ * what `waveCount` honestly returns for a versus match and what a player would
+ * reasonably read as a bug.
+ */
+function heldLabel(w: World): string {
+  const total = waveCount(w.rules);
+  const cleared = Math.max(0, w.wave.clearedThrough + 1);
+  return Number.isFinite(total) ? `${cleared} / ${total}` : String(cleared);
+}
+
 function renderDefeat(w: World, campaign: CampaignPorts | undefined): string {
   const cov = coverage(w);
+  const versus = w.rules.sorties;
+
+  // Versus is not a sector, cannot be cleared, and has nothing to advance to,
+  // so every noun on this card changes. It is also the only board where some
+  // of the damage was *bought* by somebody — a run that merged those into one
+  // "leaks" figure would hide the thing the player most wants explained.
+  const taken = w.stats.sortiesTaken;
+  const third = versus
+    ? bigStat('Sorties taken', String(taken), taken > 0 ? 'danger' : '')
+    : bigStat('Leaks', String(w.stats.leaks), 'danger');
+
   return (
     `<div class="scrim lost"></div><div class="card lost">` +
-    `<span class="eyebrow danger">Sector lost</span>` +
+    `<span class="eyebrow danger">${versus ? 'Core lost' : 'Sector lost'}</span>` +
     `<h2>The core went dark on wave ${w.wave.index + 1}</h2>` +
     `<div class="grid3">` +
-    `${bigStat('Waves held', `${Math.max(0, w.wave.clearedThrough + 1)} / ${waveCount(w.rules)}`)}` +
+    `${bigStat('Waves held', heldLabel(w))}` +
     `${bigStat('Contacts killed', String(w.stats.kills))}` +
-    `${bigStat('Leaks', String(w.stats.leaks), 'danger')}` +
+    `${third}` +
     `</div>` +
     `<div class="note danger"><span class="eyebrow danger">What broke</span>` +
     `<p>${describeGaps(cov)}</p></div>` +
-    `<button class="btn primary wide" data-act="restart">Retry sector</button>` +
-    (campaign === undefined ? '' : `<button class="btn wide" data-act="menu">Choose another sector</button>`)
+    (versus
+      ? `<button class="btn primary wide" data-act="restart">Play it again</button>`
+      : `<button class="btn primary wide" data-act="restart">Retry sector</button>` +
+        (campaign === undefined ? '' : `<button class="btn wide" data-act="menu">Choose another sector</button>`))
   );
 }
 

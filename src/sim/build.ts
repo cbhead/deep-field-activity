@@ -2,6 +2,7 @@ import { BALANCE } from '../content/balance.ts';
 import { TOWERS, type TowerId } from '../content/towers.ts';
 import type { TowerStats } from '../content/types.ts';
 import type {
+  EraError,
   PlacementError,
   TargetMode,
   Tower,
@@ -52,7 +53,47 @@ export const canPlace = (w: World, defId: TowerId, col: number, row: number): bo
  * which is the only moment the unlock is useful.
  */
 export const isUnlocked = (w: World, defId: TowerId): boolean =>
-  w.wave.index >= TOWERS[defId].unlockWave;
+  w.rules.eras ? w.era >= TOWERS[defId].era : w.wave.index >= TOWERS[defId].unlockWave;
+
+/**
+ * The highest tier any path may be bought to right now.
+ *
+ * One function rather than a literal at each site, because three of the four
+ * callers are presentation — the inspector prices its buttons, previews the
+ * next stats, and decides whether to render the row at all — and a HUD
+ * computing its own ceiling would drift from what the purchase allows. Same
+ * discipline as `hasDamagePath` and `placementError` being shared.
+ *
+ * Under eras the ceiling *is* the era: era II allows Mk II on every path. That
+ * makes one purchase do two things — it opens a station and it raises the roof
+ * on every station already standing — which is what stops the ladder being a
+ * shop and makes it a tempo decision. Outside versus this is the constant it
+ * always was.
+ */
+export const tierCeiling = (w: World): number =>
+  w.rules.eras ? Math.min(w.era, BALANCE.upgrade.maxTier) : BALANCE.upgrade.maxTier;
+
+/** Price of the next era, or null at the top of the ladder. */
+export function advanceEraCost(w: World): number | null {
+  if (!w.rules.eras) return null;
+  return BALANCE.eras.advanceCost[w.era - 1] ?? null;
+}
+
+export function advanceEraError(w: World): EraError | null {
+  const cost = advanceEraCost(w);
+  if (cost === null) return w.rules.eras ? 'maxEra' : 'noEras';
+  if (w.money < cost) return 'tooPoor';
+  return null;
+}
+
+/** Assumes `advanceEraError` already returned null. */
+export function advanceEra(w: World): number {
+  const cost = advanceEraCost(w)!;
+  w.money -= cost;
+  w.eraSpent += cost;
+  w.era++;
+  return cost;
+}
 
 /**
  * Linear scan. With a couple of dozen towers this is faster than maintaining a
@@ -97,6 +138,7 @@ export function computeStats(defId: TowerId, tiers: TowerTiers): TowerStats {
     chainFalloff: def.chainFalloff,
     rampPerSecond: def.rampPerSecond,
     rampMax: def.rampMax,
+    buffShotsPerSecond: def.buffShotsPerSecond,
   };
 
   // Widened from the def's literal type: each station's `perTier` is a narrow
@@ -112,12 +154,59 @@ export function computeStats(defId: TowerId, tiers: TowerTiers): TowerStats {
 }
 
 /**
+ * Recompute every station's incoming support.
+ *
+ * **The invariant: any mutation of `w.towers`, or of any tower's `stats`, must
+ * be followed by this.** All three such mutations are in this file —
+ * `buildTower`, `sellTower`, `upgradeTower` — which is the reason the function
+ * lives here rather than under `systems/`. A fourth mutation site added
+ * elsewhere without a call to this would show up as stations quietly keeping a
+ * buff from a tower that is no longer there.
+ *
+ * **Maximum, never sum.** Two Overclocks covering the same Lance give it one
+ * Overclock's worth. Summing would make a lattice of support the dominant
+ * build, which is the pathology this station most plausibly has; taking the max
+ * makes a second one on the same tiles *wasted*, which pushes them apart and
+ * turns support placement into the same coverage puzzle the rest of the game
+ * already is. It also makes upgrading an Overclock beat adding one wherever
+ * coverage overlaps, which is the intended pressure.
+ *
+ * Order-independent by construction, because a maximum over a set does not care
+ * about the order of the set. That is load-bearing for Race: two clients
+ * replaying the same commands cannot diverge on tower array order here.
+ *
+ * A support station inside another's radius is buffed like anything else, and
+ * the buff is inert because it never fires. One rule, no special case.
+ *
+ * O(towers²), which at this game's ceiling of ~25 towers is 625 squared-distance
+ * checks a handful of times a match.
+ */
+function refreshBuffs(w: World): void {
+  for (const t of w.towers) t.buffShots = 0;
+  for (const src of w.towers) {
+    const add = src.stats.buffShotsPerSecond;
+    if (add <= 0) continue;
+    const r2 = src.stats.range * src.stats.range;
+    for (const t of w.towers) {
+      if (t === src) continue;
+      const dx = t.x - src.x;
+      const dy = t.y - src.y;
+      if (dx * dx + dy * dy <= r2) t.buffShots = Math.max(t.buffShots, add);
+    }
+  }
+}
+
+/**
  * What the stats would be after buying the next tier of `path`, or null at the
  * ceiling. The inspector prices its three buttons off this, so the preview is
  * computed by the same function the purchase will run.
  */
-export function nextStats(t: Tower, path: UpgradePath): TowerStats | null {
-  if (t.tiers[path] >= BALANCE.upgrade.maxTier) return null;
+export function nextStats(
+  t: Tower,
+  path: UpgradePath,
+  ceiling: number = BALANCE.upgrade.maxTier,
+): TowerStats | null {
+  if (t.tiers[path] >= ceiling) return null;
   return computeStats(t.defId, { ...t.tiers, [path]: t.tiers[path] + 1 });
 }
 
@@ -135,11 +224,49 @@ export const visualTier = (t: Tower): number =>
  * Escalates with the path's current tier so deepening one track never strictly
  * dominates broadening — see `BALANCE.upgrade.costFactor`.
  */
-export function upgradeCost(t: Tower, path: UpgradePath): number | null {
+export function upgradeCost(
+  t: Tower,
+  path: UpgradePath,
+  ceiling: number = BALANCE.upgrade.maxTier,
+): number | null {
+  // A station with no damage has no damage path. `damageAtTier` multiplies the
+  // def's damage, so on an Overclock every tier of this track is a purchase
+  // that provably cannot move a number the sim reads — a money sink, not a
+  // decision. Priced as unavailable rather than left to sell nothing.
+  if (path === 'damage' && !hasDamagePath(t.defId)) return null;
   const tier = t.tiers[path];
-  if (tier >= BALANCE.upgrade.maxTier) return null;
+  // The ceiling defaults to the global maximum, which is what the campaign and
+  // Race always pass. Versus passes `tierCeiling(w)` so the era caps it.
+  if (tier >= ceiling) return null;
   return Math.round(TOWERS[t.defId].cost * BALANCE.upgrade.costFactor * tier);
 }
+
+/**
+ * Whether this station's damage track buys anything. Exported because the
+ * inspector omits the button entirely rather than rendering it disabled, and a
+ * HUD deciding that for itself would drift from what `upgradeCost` allows.
+ */
+export const hasDamagePath = (defId: TowerId): boolean => TOWERS[defId].damage > 0;
+
+/**
+ * Seconds between a station's shots, support included.
+ *
+ * Here rather than in `systems/targeting.ts` beside the loop that uses it,
+ * because the inspector prints this figure and the eslint boundary (rightly)
+ * stops presentation importing simulation systems. This file is the stated home
+ * for exactly that case — a pure query over world state that both sides need —
+ * and a HUD computing its own copy would drift from the simulation at the very
+ * moment money is being spent. Same discipline as `effectiveDamage` and
+ * `placementError` being shared.
+ *
+ * Converts to shots per second, adds, and converts back, because that is the
+ * unit the buff is authored in and the unit the panel reads. Subtracting from
+ * the interval instead would make one `+0.35` mean wildly different things to a
+ * 1.4s Nova and a 0.25s Filament — and that it does *not* is the whole reason
+ * the buff is safe to add. See `TowerDef.buffShotsPerSecond`.
+ */
+export const effectiveInterval = (t: Tower): number =>
+  t.buffShots > 0 ? 1 / (1 / t.stats.fireInterval + t.buffShots) : t.stats.fireInterval;
 
 /** What selling returns right now — a cut of everything sunk in, upgrades included. */
 export const sellValue = (t: Tower): number => Math.floor(t.spent * BALANCE.sellRefund);
@@ -150,7 +277,10 @@ export function upgradeError(
   path: UpgradePath,
 ): TowerActionError | null {
   if (t === undefined) return 'noSuchTower';
-  const cost = upgradeCost(t, path);
+  // Checked before `upgradeCost` returns its null, because the two nulls mean
+  // different things and only this one can tell them apart.
+  if (path === 'damage' && !hasDamagePath(t.defId)) return 'noSuchPath';
+  const cost = upgradeCost(t, path, tierCeiling(w));
   if (cost === null) return 'maxTier';
   if (w.money < cost) return 'tooPoor';
   return null;
@@ -175,6 +305,9 @@ export function buildTower(w: World, defId: TowerId, col: number, row: number): 
     y: centre.y,
     tiers,
     stats: computeStats(defId, tiers),
+    // Filled in by the `refreshBuffs` below, which also covers this station
+    // being placed *into* an existing Overclock's reach.
+    buffShots: 0,
     targeting: 'first',
     // Ready to fire the moment it lands, so a last-second build still helps.
     cooldown: 0,
@@ -188,6 +321,7 @@ export function buildTower(w: World, defId: TowerId, col: number, row: number): 
   w.money -= def.cost;
   w.stats.spent += def.cost;
   w.towers.push(tower);
+  refreshBuffs(w);
   return tower;
 }
 
@@ -201,6 +335,9 @@ export function upgradeTower(w: World, t: Tower, path: UpgradePath): number {
   t.spent += cost;
   w.money -= cost;
   w.stats.spent += cost;
+  // Both an Overclock's range and its effect path change who it feeds and by
+  // how much, so an upgrade is a buff-graph change like a build or a sell.
+  refreshBuffs(w);
   return cost;
 }
 
@@ -220,6 +357,10 @@ export function sellTower(w: World, t: Tower): number {
     w.towers.pop();
   }
   w.money += refund;
+  // Selling the support is what takes the buff away again, and a station that
+  // kept firing fast after the Overclock feeding it was sold reads as a bug in
+  // exactly the way a tower that keeps firing after you sold it does.
+  refreshBuffs(w);
   return refund;
 }
 

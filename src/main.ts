@@ -10,14 +10,21 @@ import { tilesToPx } from './render/constants.ts';
 import { applyHudTheme, fieldFor, DEFAULT_FIELD } from './render/theme.ts';
 import { AudioEngine } from './audio/engine.ts';
 import { Soundscape } from './audio/soundscape.ts';
-import { RACE_LEAD_CHANGE, RACE_OPPONENT_WAVE, RACE_START } from './audio/palette.ts';
+import {
+  RACE_LEAD_CHANGE,
+  RACE_OPPONENT_WAVE,
+  RACE_START,
+  SORTIE_INBOUND,
+} from './audio/palette.ts';
 import { LEVEL01 } from './content/maps/level01.ts';
-import { CAMPAIGN, levelById, levelIndex, type LevelDef } from './content/levels.ts';
+import { CAMPAIGN, VERSUS_LEVEL, levelById, levelIndex, type LevelDef } from './content/levels.ts';
+import type { SortieId } from './content/sorties.ts';
 import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from './content/difficulty.ts';
 import { parseMap } from './sim/util/grid.ts';
 import { hashSeed, formatSeed } from './sim/util/rng.ts';
-import { DEFAULT_RULES, resolveRules, type Rules } from './sim/rules.ts';
+import { DEFAULT_RULES, resolveRules, versusRules, type Rules } from './sim/rules.ts';
 import { createWorld, type World } from './sim/world.ts';
+import type { SimEvent } from './sim/types.ts';
 import { grade } from './sim/analysis.ts';
 import { visualTier } from './sim/build.ts';
 import { recordRun } from './app/progress.ts';
@@ -56,6 +63,38 @@ function resolveSeed(raw: string | null): number {
   }
   const asInt = Number(raw);
   return Number.isInteger(asInt) && asInt >= 0 ? asInt >>> 0 : hashSeed(raw);
+}
+
+/**
+ * Solo versus: your own sorties come straight back at you.
+ *
+ * The sim is deliberately blind to who is on the other end — `sortie` charges
+ * a world and `inbound` spawns on one, and nothing in `sim/` knows whether
+ * those are the same world. That is what makes this three lines: feed the
+ * launch event back in as an arrival, and feed the landing back as a credit.
+ *
+ * It is a **balance harness, not a stub**. Playing both sides is how the sortie
+ * economy gets tuned before any of the wire exists: every figure that matters —
+ * what a send costs, what the defender earns for killing it, what it pays back
+ * when it lands — is exercised exactly as it will be in a real match. The one
+ * thing it cannot show is the tension of not knowing what is coming, and no
+ * amount of local wiring would.
+ *
+ * V7 replaces this function with the relay and deletes nothing else.
+ */
+function localSortieRelay(world: World): (ev: SimEvent) => void {
+  return (ev) => {
+    if (ev.type === 'sortieLaunched') {
+      world.commands.push({
+        type: 'inbound',
+        sortie: ev.sortie,
+        lane: ev.lane,
+        kickback: ev.kickback,
+      });
+    } else if (ev.type === 'sortieLanded') {
+      world.commands.push({ type: 'creditSortie', amount: ev.kickback });
+    }
+  };
 }
 
 /** The HUD is text; 10Hz is indistinguishable from 60 and does a sixth the work. */
@@ -207,7 +246,7 @@ async function main(): Promise<void> {
    * handshake should still land you in the lobby; it costs you a name, not the
    * mode you came for.
    */
-  if (inActivity() && router.route.k === 'home') router.go({ k: 'race', room: null });
+  if (inActivity() && router.route.k === 'home') router.go({ k: 'race', room: null, mode: 'race' });
   else router.start();
 }
 
@@ -237,7 +276,7 @@ function mountHome({ screens, router }: SceneDeps): Scene {
     onPlay: (chosen, difficulty) =>
       router.go({ k: 'run', level: chosen.id, difficulty, seed: null, bank: null }),
     onCampaign: () => router.go({ k: 'sectors' }),
-    onRace: () => router.go({ k: 'race', room: null }),
+    onRace: () => router.go({ k: 'race', room: null, mode: 'race' }),
     // Erasing progress rebuilds this same screen from the now-empty record,
     // rather than reloading the document to achieve the same thing.
     onReset: () => router.remount(),
@@ -249,7 +288,7 @@ function mountSectors({ screens, router }: SceneDeps): Scene {
   const menu = createMenuScreen(screens, {
     onLaunch: (chosen, difficulty, seed) =>
       router.go({ k: 'run', level: chosen.id, difficulty, seed: seed === '' ? null : seed, bank: null }),
-    onRace: () => router.go({ k: 'race', room: null }),
+    onRace: () => router.go({ k: 'race', room: null, mode: 'race' }),
     onBack: () => router.go({ k: 'home' }),
   });
   return { dispose: () => menu.remove() };
@@ -262,7 +301,19 @@ async function mountRun(
   // parseRoute already sent an unknown level to the menu, so this only defends
   // against CAMPAIGN changing underneath a URL somebody kept.
   const level = levelById(route.level) ?? CAMPAIGN[0]!;
-  const nextLevel = CAMPAIGN[levelIndex(level.id) + 1];
+
+  // Front Line is not a sector: it has no place in the unlock chain, cannot be
+  // cleared, and must not write campaign progress. `?level=versus` reaches it
+  // because `levelById` resolves it, and this is where that stops being a
+  // campaign run — without it `levelIndex` returns -1, `CAMPAIGN[0]` becomes
+  // the "next sector", and a board that can only be lost would be offering to
+  // advance to Switchback.
+  //
+  // Solo, it is the balance harness: `startGame` falls back to the local
+  // loopback, so you play both sides of the sortie economy on one screen. The
+  // networked version of this board is `?versus`, which goes through mountRace.
+  const isVersus = level.id === VERSUS_LEVEL.id;
+  const nextLevel = isVersus ? undefined : CAMPAIGN[levelIndex(level.id) + 1];
 
   // Set when the run settles, read by `next`. The victory card is the only way
   // to reach `next`, and it cannot be shown before `onEnd` has fired, so this
@@ -271,7 +322,9 @@ async function mountRun(
 
   const { dispose } = await startGame(mount, hudRoot, resolveSeed(route.seed), {
     level,
-    rules: resolveRules(level, route.difficulty, route.bank ?? undefined),
+    rules: isVersus
+      ? versusRules(level, route.difficulty)
+      : resolveRules(level, route.difficulty, route.bank ?? undefined),
     // Re-enter the same route rather than reloading the document. With no
     // `?seed=` pinned that resolves a fresh board, which is exactly what the
     // reload bought — see Router.remount.
@@ -296,6 +349,9 @@ async function mountRun(
     },
     onEnd: (w) => {
       finalMoney = Math.floor(w.money);
+      // A versus run is not a sector result. Recording it would put a board
+      // with no win state into the progress store, where Continue reads from.
+      if (isVersus) return;
       recordRun(
         level.id,
         route.difficulty,
@@ -331,6 +387,11 @@ function mountRace(
   // socket is worse than no probe at all.
   const host = relayHost();
 
+  // What differs between the two modes is three things — the rules the world
+  // boots with, where sorties go, and how the server settles — and each is a
+  // branch on this one flag. Everything else on this screen is shared.
+  const isVersus = route.mode === 'versus';
+
   let controller: MatchController | null = null;
   let raceHud: RaceHud | null = null;
   let run: { dispose(): void } | null = null;
@@ -346,6 +407,9 @@ function mountRace(
   // Serialized last-sent tower layout; '' forces a resend (fresh boot, or a
   // reconnect where the opponent may have missed frames).
   let sentPins = '';
+  // The booted world, once there is one. Inbound sorties arrive on the socket
+  // and have to reach it, and the socket is wired before the world exists.
+  let liveWorld: World | null = null;
 
   const rejoin = pendingRejoin;
   pendingRejoin = null;
@@ -361,7 +425,7 @@ function mountRace(
     // lobby is the front door.
     if (inActivity()) router.go({ k: 'home' });
     else if (route.room === null) router.remount();
-    else router.go({ k: 'race', room: null });
+    else router.go({ k: 'race', room: null, mode: route.mode });
   };
 
   const lobby = createLobbyScreen(screens, {
@@ -376,6 +440,7 @@ function mountRace(
           ? { prefillRoom: route.room }
           : {}),
     relayHost: host,
+    ...(isVersus ? { mode: 'versus' as const } : {}),
     onLeave: leave,
     onReady: (ready) => controller?.ready(ready),
     onPick: (level, diff) => controller?.pick(level, diff),
@@ -387,6 +452,7 @@ function mountRace(
         ...(room === undefined ? {} : { room }),
         ...(instance === undefined ? {} : { instance }),
         ...(choice === undefined ? {} : { choice }),
+        ...(isVersus ? { mode: 'versus' as const } : {}),
         autoReady: rejoin !== null,
         hooks: {
           onLobby: (roomCode, players, watchers, level, diff) => {
@@ -406,6 +472,23 @@ function mountRace(
           onCountdown: (ms, seed) => lobby.showCountdown(ms, seed),
           onError: (reason) => lobby.showError(reason),
           onPeer: (status) => raceHud?.peer(status),
+          // The two hooks that make a match a match. Both push a command
+          // rather than touching world state directly, so an arrival lands on
+          // a tick boundary exactly like a click does — and re-validates the
+          // same way, which matters because a credit can arrive after the run
+          // it belongs to has already ended.
+          onInbound: (sortie, lane, kickback) => {
+            liveWorld?.commands.push({
+              type: 'inbound',
+              sortie: sortie as SortieId,
+              lane,
+              kickback,
+            });
+            raceHud?.incoming(sortie, lane);
+          },
+          onCredit: (amount) => {
+            liveWorld?.commands.push({ type: 'creditSortie', amount });
+          },
           onPeerConn: (connected) => raceHud?.peerConn(connected),
           onSelfConn: (connected) => {
             if (connected) sentPins = '';
@@ -428,6 +511,7 @@ function mountRace(
               room: currentRoom,
               seed: matchSeed,
               series,
+              ...(isVersus ? { versus: true } : {}),
               onRematch: () => {
                 pendingRejoin = { name: playerName, room: currentRoom };
                 router.remount();
@@ -443,16 +527,32 @@ function mountRace(
             matchSeed = seed;
             // The room's pick arrives unvalidated; unknown values fall back to
             // the baseline on BOTH clients, so a version-skewed pair still
-            // plays the same board.
-            const level = levelById(levelId) ?? CAMPAIGN[0]!;
+            // plays the same board. Versus ignores the pick entirely — there
+            // is one board, and letting a stale lobby choice send two players
+            // to different maps is a failure with no upside.
+            const level = isVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
             const difficulty: DifficultyId =
               Object.hasOwn(DIFFICULTIES, diffId) ? (diffId as DifficultyId) : DEFAULT_DIFFICULTY;
             matchSector = `${level.name} · ${DIFFICULTIES[difficulty].name}`;
             lobby.remove();
             void startGame(mount, hudRoot, seed, {
               level,
-              rules: resolveRules(level, difficulty),
+              rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
               restart: () => router.remount(),
+              ...(isVersus
+                ? {
+                    // The relay stands in for the loopback: a launch goes out
+                    // over the socket instead of straight back at us, and a
+                    // landing is reported so the server can pay whoever sent it.
+                    sortieRelay: (ev: SimEvent) => {
+                      if (ev.type === 'sortieLaunched') {
+                        c.sendSortie(ev.sortie, ev.lane, ev.kickback);
+                      } else if (ev.type === 'sortieLanded') {
+                        c.reportLanded(ev.kickback);
+                      }
+                    },
+                  }
+                : {}),
             }).then((game) => {
               // Navigating away during the countdown or the renderer's init
               // lands here with nowhere to put a world.
@@ -462,6 +562,7 @@ function mountRace(
               }
               const { world, raceCues, startRaceTone } = game;
               run = game;
+              liveWorld = world;
               raceHud = createRaceHud(mount, opponentName, currentRoom, world.map, raceCues);
               startRaceTone();
               const bootAt = performance.now();
@@ -472,6 +573,7 @@ function mountRace(
                   lives: world.lives,
                   elapsedMs: Math.round(performance.now() - bootAt),
                   ...(document.hidden ? { hidden: true } : {}),
+                  ...(isVersus ? { era: world.era } : {}),
                 };
                 // The layout rides along only when it changed — most frames
                 // carry three numbers, a build frame carries the board.
@@ -529,6 +631,14 @@ interface StartOptions {
    * is no longer a document reload to fall back on.
    */
   restart: () => void;
+  /**
+   * Where a launched sortie goes, and where a landing is reported.
+   *
+   * Absent means the local loopback — you play both sides, which is how the
+   * economy gets tuned. A real match supplies the relay instead. Neither the
+   * sim nor this function knows which it got, and that is the point.
+   */
+  sortieRelay?: (ev: SimEvent) => void;
   /** Fired once, the first frame the run is no longer playing. */
   onEnd?: (w: World) => void;
 }
@@ -550,6 +660,10 @@ async function startGame(
   const rules = opts.rules ?? DEFAULT_RULES;
   const world = createWorld(map, seed, rules);
   const ui = createUiState();
+
+  // A real match passes the relay; solo versus falls back to playing both
+  // sides. Everything else is blind to which of the two it got.
+  const sortieRelay = opts.sortieRelay ?? (rules.sorties ? localSortieRelay(world) : null);
 
   const boardW = tilesToPx(map.cols);
   const boardH = tilesToPx(map.rows);
@@ -627,6 +741,7 @@ async function startGame(
       effects.onEvent(ev, ui.prefs);
       soundscape.onEvent(ev);
       hud.onEvent(ev);
+      sortieRelay?.(ev);
     }
     world.events.length = 0;
 
@@ -716,7 +831,7 @@ async function startGame(
 
   console.info(
     `[td] "${map.name}" ${map.cols}x${map.rows}, ` +
-      `${map.waypoints.length} waypoints, ${map.pathLength} tiles of path — ` +
+      `${map.routes.length} route(s) — ${map.routes.map((r) => `${r.id} ${r.length}t`).join(', ')} — ` +
       `seed ${formatSeed(seed)} (${seed})`,
   );
 
@@ -738,7 +853,9 @@ async function startGame(
       // The N2 fairness gate: run this in two tabs of the same room and diff.
       // Byte-identical or the race is not fair.
       dumpWaves: (n = 20) =>
-        JSON.stringify(Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules))),
+        JSON.stringify(
+          Array.from({ length: n }, (_, i) => planWave(world.seed, i, world.rules, world.map.routes)),
+        ),
       // Auditioning the mix without playing a match out. `td.soundscape.audition
       // ('lance')` for one sound, and `td.soundscape.stress('lance', 120)` for
       // the question that actually matters — what happens at a rate no board can
@@ -759,6 +876,7 @@ async function startGame(
     raceCues: {
       opponentWave: () => void audio.play(RACE_OPPONENT_WAVE),
       leadChange: () => void audio.play(RACE_LEAD_CHANGE),
+      sortieInbound: () => void audio.play(SORTIE_INBOUND),
     },
     startRaceTone: () => void audio.play(RACE_START),
   };

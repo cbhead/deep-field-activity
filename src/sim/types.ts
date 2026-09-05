@@ -8,6 +8,7 @@
  */
 
 import type { EnemyId } from '../content/enemies.ts';
+import type { SortieId } from '../content/sorties.ts';
 import type { TowerId } from '../content/towers.ts';
 import type { TowerStats } from '../content/types.ts';
 
@@ -35,22 +36,35 @@ export interface MapDef {
   readonly tiles: readonly TileKind[];
 
   /**
-   * The route in sim space — tile *centres*, so tile (0,2) is (0.5, 2.5).
-   * Creeps interpolate between consecutive entries.
+   * The lanes, in authoring order. `Creep.route` indexes this.
+   *
+   * At least one. Lanes may share tiles — that is what a merge is — so the
+   * union of them is the road, and no single one of them is.
    */
-  readonly waypoints: readonly Vec2[];
-
-  /**
-   * Where creeps enter, one tile outside the board, so they walk on-screen
-   * rather than popping into existence on the edge tile.
-   */
-  readonly spawn: Vec2;
+  readonly routes: readonly MapRoute[];
 
   /** Centre of the goal tile. A creep reaching it costs a life. */
   readonly goal: Vec2;
+}
 
-  /** Total route length in tiles. Used for progress and for pacing waves. */
-  readonly pathLength: number;
+/** One parsed lane. */
+export interface MapRoute {
+  /** The authoring id, carried through so errors and tools can name a lane. */
+  readonly id: string;
+
+  /**
+   * The lane in sim space — tile *centres*, so tile (0,2) is (0.5, 2.5).
+   * Creeps interpolate between consecutive entries.
+   *
+   * `waypoints[0]` is the off-board entry, one tile outside the board, so
+   * contacts walk on-screen rather than popping into existence on the edge
+   * tile. Every lane carries its own, because lanes may enter from different
+   * spawns.
+   */
+  readonly waypoints: readonly Vec2[];
+
+  /** Length in tiles, entry included. Used for progress and for pacing waves. */
+  readonly length: number;
 }
 
 export type EntityId = number;
@@ -63,12 +77,26 @@ export interface Creep {
   x: number;
   y: number;
 
-  /** Index of the waypoint currently being walked *toward*. */
+  /**
+   * Which lane this contact walks — an index into `MapDef.routes`, never an id.
+   *
+   * An index because the sim is on the hot path and should not be hashing
+   * strings once per creep per tick. The id lives on `MapRoute` for anything
+   * that has to *name* a lane, which is authoring and tooling, not movement.
+   */
+  readonly route: number;
+
+  /** Index of the waypoint currently being walked *toward*, within its lane. */
   leg: number;
 
   /**
-   * Tiles travelled along the route. Targeting defaults to "furthest along"
-   * later, and comparing this is exact where comparing positions is not.
+   * Tiles travelled along its own lane. Targeting compares this, and comparing
+   * it is exact where comparing positions is not.
+   *
+   * Only comparable *across* lanes once it is turned into distance remaining —
+   * see `score()` in `systems/targeting.ts`. Two lanes of different lengths
+   * make raw progress mean different things, and Sluice makes them differ by
+   * 2.5 : 1 on purpose.
    */
   progress: number;
 
@@ -111,15 +139,65 @@ export interface Creep {
   bounty: number;
 
   /**
+   * Lives taken if this reaches the goal. Baked in at spawn exactly like
+   * `bounty`, and for the same reason: it is a property of *this* contact, not
+   * of its type. Every wave contact carries its def's 1; a sortie carries what
+   * the sortie table charged for it, so the same silhouette can be scenery the
+   * arc handed you or a purchase someone made against you.
+   */
+  readonly leakDamage: number;
+
+  /**
    * Which wave this creep belongs to. Because waves overlap, "wave 3 is
    * cleared" cannot be inferred from an empty board — creeps from wave 4 may
    * already be walking. This tag is what keeps clear-rewards and victory exact.
+   *
+   * Meaningless on a `'sortie'`, which belongs to no wave. Read `origin` first.
    */
   readonly wave: number;
+
+  /**
+   * Where this contact came from, and the reason wave settlement is still
+   * correct once a second source starts putting contacts on the board.
+   *
+   * `settleClearedWaves` works from the lowest wave still alive, so anything it
+   * counts can hold a wave open. A sortie tagged with the current wave — which
+   * is what `spawnCreep` would default it to — would do exactly that: one slow
+   * Monolith sent by an opponent would stall the clear reward and freeze
+   * `clearedThrough` for as long as it walked, and `clearedThrough` is what the
+   * Race status pump reports. Settlement, the per-wave tally and the victory
+   * check therefore all skip `'sortie'`, and this flag is how they know.
+   */
+  readonly origin: CreepOrigin;
+
+  /**
+   * What reaching the core pays back to whoever *sent* this. 0 on everything
+   * the wave machine dispatched.
+   *
+   * Carried on the contact rather than recomputed when it lands, because the
+   * kickback is a fraction of what the sender actually paid and a Monolith
+   * walks for the better part of a minute — re-deriving it on arrival would
+   * price it against a board two waves further on than the one it was bought
+   * for. Baked at spawn, exactly like `bounty` and for the same reason.
+   *
+   * This world never credits it to itself. It rides out on a `sortieLanded`
+   * event for the sender's client to collect; see `Command.creditSortie`.
+   */
+  readonly kickback: number;
 
   /** Set during the tick; the cleanup phase removes it from the array. */
   dead: boolean;
 }
+
+/**
+ * Whether a contact was dispatched by the wave machine or sent by an opponent.
+ *
+ * Two values rather than a boolean because the third case — a neutral contact
+ * that belongs to neither side — is a real possibility for the versus board's
+ * midfield spawn, and `origin === 'wave'` reads correctly whichever way that
+ * goes while `!isSortie` would not.
+ */
+export type CreepOrigin = 'wave' | 'sortie';
 
 /**
  * Which creep a tower shoots when several are in reach.
@@ -174,6 +252,22 @@ export interface Tower {
    * upgraded or sold before impact.
    */
   stats: TowerStats;
+
+  /**
+   * Shots per second added by support stations in reach. `0` for a station
+   * nothing is feeding, which is most of them.
+   *
+   * Separate from `stats` rather than folded into it, and that separation is
+   * load-bearing: `stats` is the object projectiles hold as their snapshot, so
+   * writing a buff into it would retroactively change shots already in the air.
+   *
+   * Cached rather than derived per tick, because the only things that can move
+   * it are building, selling and upgrading — all three of which live in
+   * `sim/build.ts` and all three of which call `refreshBuffs`. Deriving it in
+   * the fire loop would be an O(towers²) scan every tick to answer a question
+   * whose answer changes a handful of times a match.
+   */
+  buffShots: number;
 
   targeting: TargetMode;
 
@@ -280,7 +374,36 @@ export type Command =
   | { type: 'sellTower'; id: EntityId }
   | { type: 'setTargeting'; id: EntityId; mode: TargetMode }
   /** Debug scaffolding: drop a single creep on the path. */
-  | { type: 'spawnDebugCreep' };
+  | { type: 'spawnDebugCreep' }
+  /**
+   * Buy the next era. Versus only — `advanceEraError` refuses it outright when
+   * `Rules.eras` is unset, rather than the command silently doing nothing.
+   *
+   * A command like any other, so it drains through `applyCommands` as phase one
+   * of the tick and is re-validated there: the money may be gone between the
+   * click and the tick, which on this purchase is not a hypothetical — it is
+   * the largest single spend in the mode and the wave spawning underneath it
+   * is what makes it expensive.
+   */
+  | { type: 'advanceEra' }
+  /**
+   * Send a contact at the other player, down a lane of your choosing.
+   *
+   * Charges *this* world and produces a `sortieLaunched` event. It puts nothing
+   * on this board — what crosses to the opponent is the caller's business, and
+   * in a local loopback the caller feeds the event straight back as `inbound`.
+   */
+  | { type: 'sortie'; sortie: SortieId; lane: number }
+  /**
+   * A sortie arriving from the other player. Spawns at midfield on their lane.
+   *
+   * Deliberately a separate command from `sortie` rather than a flag on it.
+   * One charges and one spawns, they run in different worlds, and collapsing
+   * them would give the sim a notion of which side of the wire it is on.
+   */
+  | { type: 'inbound'; sortie: SortieId; lane: number; kickback: number }
+  /** Your sortie reached their core. Pays the kickback it carried out. */
+  | { type: 'creditSortie'; amount: number };
 
 /**
  * Why a tower may not go on a tile. `null` means it may.
@@ -304,7 +427,32 @@ export type PlacementError =
   | 'locked';
 
 /** Why an upgrade or sell was refused. `null` means it went through. */
-export type TowerActionError = 'noSuchTower' | 'maxTier' | 'tooPoor';
+/**
+ * `noSuchPath` is distinct from `maxTier` on purpose. A station with no damage
+ * has no damage track at all, which is a different sentence from "you have
+ * bought all of it" — and the inspector acts on the difference, omitting the
+ * button rather than showing it spent.
+ */
+export type TowerActionError = 'noSuchTower' | 'maxTier' | 'noSuchPath' | 'tooPoor';
+
+/**
+ * Why an era advance was refused.
+ *
+ * `noEras` is not dead code and not defensive padding: it is what a campaign or
+ * Race world answers, and having it means the command is *refused out loud* on
+ * a board that has no ladder rather than being quietly dropped. Same posture as
+ * `waveRejected` — a control that does nothing and says nothing reads as broken.
+ */
+export type EraError = 'tooPoor' | 'maxEra' | 'noEras';
+
+/**
+ * Why a sortie was refused.
+ *
+ * `noSorties` is the campaign and Race answering, for the same reason
+ * `EraError` has `noEras`: a board with no sortie deck refuses out loud rather
+ * than dropping the command on the floor.
+ */
+export type SortieError = 'tooPoor' | 'locked' | 'noSuchLane' | 'noSorties';
 
 /**
  * Discrete instants, pushed by the sim and drained by the renderer once per
@@ -313,7 +461,16 @@ export type TowerActionError = 'noSuchTower' | 'maxTier' | 'tooPoor';
  * happened at a moment, and if the renderer misses it the effect never plays.
  */
 export type SimEvent =
-  | { type: 'creepLeaked'; x: number; y: number }
+  /**
+   * `cost` is lives actually taken — see `Creep.leakDamage`. Usually 1.
+   *
+   * `bought` marks a leak somebody *paid for*. Carried here rather than
+   * inferred from the `sortieLanded` that follows in the same tick, because a
+   * consumer that had to correlate two events would be depending on the order
+   * they are pushed in — and the renderer and the mixer both drain forward,
+   * once, with no lookahead.
+   */
+  | { type: 'creepLeaked'; x: number; y: number; cost: number; bought: boolean }
   | { type: 'waveStarted'; wave: number; count: number }
   /**
    * Every landed hit, not just fatal ones — this is what floating damage
@@ -387,6 +544,17 @@ export type SimEvent =
   | { type: 'towerUpgraded'; id: EntityId; path: UpgradePath; tier: number; cost: number }
   | { type: 'towerSold'; id: EntityId; col: number; row: number; refund: number }
   | { type: 'towerActionRejected'; reason: TowerActionError }
+  | { type: 'eraAdvanced'; era: number; cost: number }
+  | { type: 'eraRejected'; reason: EraError }
+  /** Bought and dispatched. The wire turns this into the opponent's `inbound`. */
+  | { type: 'sortieLaunched'; sortie: SortieId; lane: number; cost: number; kickback: number }
+  | { type: 'sortieRejected'; reason: SortieError }
+  /**
+   * One of *their* sorties reached this core. The wire turns this into the
+   * sender's `creditSortie`; `cost` is what it takes off this player, and is
+   * already spent by the time the event is read.
+   */
+  | { type: 'sortieLanded'; kickback: number; cost: number }
   | { type: 'gameOver'; won: boolean };
 
 /** Whole-match state. The sim stops stepping once this leaves 'playing'. */

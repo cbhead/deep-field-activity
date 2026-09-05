@@ -32,7 +32,7 @@ export function beginWave(w: World): void {
   // strictly payment for time the player chose to give up.
   const secondsSaved = Math.max(0, s.timer);
 
-  s.plan = planWave(w.seed, s.index, w.rules);
+  s.plan = planWave(w.seed, s.index, w.rules, w.map.routes);
   s.spawned = 0;
   s.timer = 0;
   s.phase = 'spawning';
@@ -65,6 +65,7 @@ export function updateWaves(w: World, dt: number): void {
           bounty: next.bounty,
           shield: next.shield,
           wave: s.index,
+          route: next.route,
         });
         s.spawned++;
       }
@@ -106,6 +107,11 @@ function settleClearedWaves(w: World): void {
 
   let lowestLive = Infinity;
   for (const c of w.creeps) {
+    // Sorties belong to no wave and must never hold one open. Without this a
+    // single slow contact sent by an opponent would freeze `clearedThrough`
+    // for as long as it walked — no clear reward, and a Race status pump stuck
+    // reporting the same wave. See `Creep.origin`.
+    if (c.origin === 'sortie') continue;
     if (!c.dead && c.wave < lowestLive) lowestLive = c.wave;
   }
 
@@ -118,6 +124,7 @@ function settleClearedWaves(w: World): void {
   // kind: a wave paying out, or a run declaring victory, with contacts about
   // to appear on the board.
   for (const s of w.pendingSplits) {
+    if (s.parent.origin === 'sortie') continue;
     if (s.parent.wave < lowestLive) lowestLive = s.parent.wave;
   }
 

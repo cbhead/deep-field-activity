@@ -27,8 +27,14 @@ import { OFF_ROUTE, routeDistance } from '../render/route.ts';
 export interface BoardFacts {
   /** Tiles of road, counted from the parsed map. */
   readonly road: number;
-  /** Changes of heading along the route, not waypoints. */
+  /**
+   * Changes of heading, not waypoints, and on the *twistiest* lane rather than
+   * summed across them. Summing would print 34 for a four-lane board, which is
+   * not a fact about anything a player walks — no contact makes 34 turns.
+   */
   readonly turns: number;
+  /** How many lanes contacts arrive down. 1 on the boards that have one. */
+  readonly lanes: number;
   readonly cols: number;
   readonly rows: number;
 }
@@ -37,21 +43,22 @@ export function boardFacts(src: MapSource): BoardFacts {
   const map = parseMap(src);
   return {
     road: map.tiles.filter((t) => t === 'path').length,
-    turns: turns(map),
+    turns: Math.max(...map.routes.map(turns)),
+    lanes: map.routes.length,
     cols: map.cols,
     rows: map.rows,
   };
 }
 
 /**
- * Heading changes, which is what a player means by "turn".
+ * Heading changes on one lane, which is what a player means by "turn".
  *
  * `waypoints` holds interior points, and two consecutive segments can share a
  * heading — so counting waypoints over-reports. This compares the direction in
  * and the direction out at each one.
  */
-function turns(map: MapDef): number {
-  const w = map.waypoints;
+function turns(route: MapDef['routes'][number]): number {
+  const w = route.waypoints;
   let n = 0;
   for (let i = 1; i < w.length - 1; i++) {
     const ax = Math.sign(w[i]!.x - w[i - 1]!.x);

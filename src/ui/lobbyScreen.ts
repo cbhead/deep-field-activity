@@ -14,7 +14,7 @@
  * - Readiness is server truth: the button renders from the roster broadcast,
  *   not from a local flag, and un-ready is allowed until the seed is dealt.
  */
-import type { LobbyPlayer, Standing } from '../net/protocol.ts';
+import type { LobbyPlayer, MatchMode, Standing } from '../net/protocol.ts';
 import { fmtTime } from '../net/report.ts';
 import { formatSeed } from '../sim/util/rng.ts';
 import { CAMPAIGN, levelById } from '../content/levels.ts';
@@ -72,6 +72,22 @@ export interface LobbyOptions {
    * debugging a port nothing ever tried to reach.
    */
   relayHost: string;
+  /**
+   * Which game this lobby is hosting, so the invite link deep-links into the
+   * same one.
+   *
+   * Load-bearing, and it was wrong before it was a parameter: a versus host
+   * handed out a `?race=` link, which dropped their friend into a versus room
+   * with Race rules — same seed, same board, but a client that would keep
+   * playing after its core died and be told it lost a match it did not know it
+   * was in. The server settles by the room's mode, so the *link* is what has
+   * to carry it.
+   *
+   * Inside an Activity there is no invite link to get wrong — the instance is
+   * the address — but the mode still rides to the server on the join, so a
+   * channel can host either game.
+   */
+  mode?: MatchMode;
   onSubmit(join: JoinRequest): void;
   onReady(ready: boolean): void;
   /**
@@ -141,7 +157,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       .catch(() => undefined);
   }
 
-  const inviteLink = (room: string): string => `${inviteBase}/?race=${room}`;
+  const inviteParam = opts.mode === 'versus' ? 'versus' : 'race';
+  const inviteLink = (room: string): string => `${inviteBase}/?${inviteParam}=${room}`;
 
   /**
    * "Send to Discord" posts the invite to a channel webhook the user pastes

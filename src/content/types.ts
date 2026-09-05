@@ -21,6 +21,22 @@ export interface EnemyDef {
   readonly radius: number;
 
   /**
+   * Lives taken when this reaches the goal. 1 for everything in the campaign.
+   *
+   * A dial rather than a constant because the versus board's sortie deck needs
+   * one. When every contact costs exactly one life the correct sortie is always
+   * the cheapest hull per dollar, and the expensive end of the roster is never
+   * worth buying — a Monolith costs five Drifters and lands the same single
+   * blow. Weight is what makes "spend up for one that lands hard" a decision
+   * rather than a mistake.
+   *
+   * Deliberately *not* derived from hp or bounty. Both compound per wave, and a
+   * leak cost that compounded with them would make a single late leak fatal on
+   * a board whose whole reserve is fourteen lives at Blackout.
+   */
+  readonly leakDamage: number;
+
+  /**
    * Flat damage subtracted from every individual hit. 0 for everything unarmoured.
    *
    * Flat, not a percentage, and that is the entire design. A percentage cut
@@ -113,14 +129,39 @@ export interface TowerDef {
    * How fast damage ramps while the station holds one target, and the ceiling.
    *
    * `rampPerSecond: 0` is a station that does not ramp, which is most of them.
-   * The ramp resets the instant the target changes — that is the whole design:
-   * it makes a ramping station excellent against one wall of hull and useless
-   * against a crowd, which is the inverse of the chain above, and it is why a
-   * slow that holds something in place is worth pairing with.
+   *
+   * Changing target *cools* the charge by half rather than clearing it; running
+   * out of targets entirely clears it. That split is the design. Clearing on
+   * every switch reads like the same rule and is not: it makes a ramping
+   * station worth having only where contacts arrive in one unbroken file, and
+   * the eight-board sweep priced that at minus eleven lives on the board whose
+   * lanes cross at every rung. Cooling keeps the mechanic — hold a target and
+   * you are rewarded, switch and you are not — without making a whole board
+   * shape a trap. See `RAMP_CARRY` in `sim/systems/targeting.ts`.
    */
   readonly rampPerSecond: number;
   /** Ceiling as a multiple of base damage. `1` means no ramp is possible. */
   readonly rampMax: number;
+
+  /**
+   * Shots per second this station *adds* to every station within `range`.
+   * `0` for the five that fight contacts directly.
+   *
+   * Additive rather than a multiplier on `fireInterval`, and that inversion is
+   * the entire reason a rate buff is safe to add to this roster. A multiplier
+   * pays out most to whatever station already has the highest damage per
+   * second, which amplifies the roster instead of adding to it — the "strictly
+   * correct, and the other two decorative" failure `towers.ts` records the
+   * first roster hitting. A flat `+N/s` pays out most to the *slowest* gun:
+   * +0.35 is +49% on a Nova and +9% on a Filament.
+   *
+   * It also cannot rescue chip damage, because armour is subtracted per hit —
+   * so the buff's weakness is the roster's existing armour axis, at no new
+   * balance cost. See `EnemyDef.armor`.
+   *
+   * Stacks by maximum, never by sum. See `refreshBuffs` in `sim/build.ts`.
+   */
+  readonly buffShotsPerSecond: number;
 
   /**
    * The effect upgrade path: what this station's third upgrade track improves,
@@ -149,6 +190,25 @@ export interface TowerDef {
    * disabled slot naming the wave it opens on.
    */
   readonly unlockWave: number;
+
+  /**
+   * Which era must be bought before this may be built. 1 is available from the
+   * start. Read only when `Rules.eras` is set — versus, and nothing else.
+   *
+   * The second half of the same statement `unlockWave` makes, on a different
+   * clock. The campaign hands stations out on a schedule, which is a teaching
+   * order: by the wave a type matters you have it, and being ready is not
+   * something you can get wrong. Versus replaces the schedule with a purchase,
+   * so the same ladder becomes a decision — bank for the next rung and build
+   * nothing while you do, or spend now and stay a rung behind. That is the
+   * mode's whole tension and it costs exactly this one extra field.
+   *
+   * The era also caps the *upgrade* ceiling: era N allows Mk N on every path.
+   * One number gating both is deliberate. Two ladders would be two things to
+   * read, and the interesting question is "how far up am I", not "how far up am
+   * I in each of two systems".
+   */
+  readonly era: number;
 }
 
 /**
@@ -177,6 +237,9 @@ export type TowerStats = Pick<
   | 'chainFalloff'
   | 'rampPerSecond'
   | 'rampMax'
+  // In `TowerStats` and not merely on the def, so the effect path can deepen it
+  // through the existing `perTier` loop in `computeStats` with no new code.
+  | 'buffShotsPerSecond'
 >;
 
 /** One burst of identical enemies inside a wave. */
@@ -187,10 +250,50 @@ export interface WaveGroup {
   readonly every: number;
   /** Seconds into the wave before this group starts. */
   readonly after: number;
+
+  /**
+   * Which lane this group walks. A `RouteSource.id` pins it to one; `'split'`
+   * deals it round-robin across every route in index order.
+   *
+   * Optional, and absent means route 0 — which is what makes a one-route board
+   * read exactly as it did before this field existed, and why the three shipped
+   * wave tables needed no edit.
+   *
+   * Round-robin rather than random, and that is load-bearing rather than
+   * merely simple: a race replays the same wave plan on two clients, so lane
+   * assignment has to be reproducible from the seed alone. Dealing in index
+   * order needs no RNG stream at all, which is one fewer thing that can drift
+   * — and it means `'split'` on a count of 12 across two lanes is always 6 and
+   * 6, which a designer can reason about.
+   */
+  readonly route?: string | 'split';
 }
 
 export interface WaveDef {
   readonly groups: readonly WaveGroup[];
+}
+
+/**
+ * One lane. An id and a waypoint chain, and deliberately nothing else.
+ *
+ * No per-route speed, no weighting, no priority. Those would all be reasonable
+ * and all be premature: on a multi-lane board the *geometry* is doing the work,
+ * and a second knob on top of it would only hide which one mattered.
+ */
+export interface RouteSource {
+  /** Unique within the map. The authoring handle, and what a wave group names. */
+  readonly id: string;
+
+  /**
+   * The lane as corner tile coords, first = a spawn, last = the goal.
+   *
+   * Authored explicitly rather than traced out of the ASCII: a trace is ambiguous
+   * wherever the path touches itself, and the order of travel isn't recoverable
+   * from painted tiles at all. The cost of a second representation is drift, so
+   * `parseMap()` cross-checks the two — every route tile must be painted path,
+   * and every painted path tile must be on *some* route.
+   */
+  readonly waypoints: readonly TileCoord[];
 }
 
 export interface MapSource {
@@ -202,17 +305,20 @@ export interface MapSource {
    *
    *   `.` buildable ground    `#` path
    *   `x` blocked scenery     `S` spawn (path)    `E` goal (path)
+   *
+   * More than one `S` is legal — a board may have several spawns. More than one
+   * `E` is not: one goal keeps a board about coverage, where two goals with
+   * different life costs would be a different game, about triage.
    */
   readonly rows: readonly string[];
 
   /**
-   * The creep route as corner tile coords, first = spawn, last = goal.
+   * The lanes contacts walk. At least one.
    *
-   * Authored explicitly rather than traced out of the ASCII: a trace is ambiguous
-   * wherever the path touches itself, and the order of travel isn't recoverable
-   * from painted tiles at all. The cost of a second representation is drift, so
-   * `parseMap()` cross-checks the two — every route tile must be painted path,
-   * and every painted path tile must be on the route.
+   * A single-route map is the old shape and reads identically — which is the
+   * whole reason this is a list rather than a `waypoints` field beside an
+   * optional `extraLanes`. Lanes that share tiles are legal and expected: a
+   * merge *is* two routes covering the same road.
    */
-  readonly waypoints: readonly TileCoord[];
+  readonly routes: readonly RouteSource[];
 }

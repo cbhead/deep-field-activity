@@ -10,8 +10,7 @@
  * determinism gate (same seed → byte-identical wave log).
  */
 import { LEVEL01 } from '../src/content/maps/level01.ts';
-import { LEVEL02 } from '../src/content/maps/level02.ts';
-import { LEVEL03 } from '../src/content/maps/level03.ts';
+import { VERSUS } from '../src/content/maps/versus.ts';
 import { GRID_MASK_FLOOR, TILE_PX, gridMaskAt } from '../src/render/constants.ts';
 import { OFF_ROUTE, SPILL_RINGS, routeDistance, routeSpill } from '../src/render/route.ts';
 import { SECTOR_FIELDS, THEME, step } from '../src/render/theme.ts';
@@ -20,22 +19,55 @@ import { STATION_MARKS } from '../src/render/stationShape.ts';
 import { deckKey, renderArmed, renderInspector, renderNextContact, renderPaused, renderSlots } from '../src/ui/hud.ts';
 import { createUiState } from '../src/app/uiState.ts';
 import { boardFacts, boardThumb } from '../src/ui/boardThumb.ts';
-import { CAMPAIGN } from '../src/content/levels.ts';
+import { CAMPAIGN, VERSUS_LEVEL } from '../src/content/levels.ts';
 import { contactGlyphRadius, contactIcon } from '../src/ui/icons.ts';
 import { contactExtent, contactShape } from '../src/render/contactShape.ts';
 import { BALANCE } from '../src/content/balance.ts';
 import { WAVES } from '../src/content/waves.ts';
+import { SORTIES, SORTIE_IDS } from '../src/content/sorties.ts';
+import {
+  PROTOCOL_VERSION,
+  decodeC2S,
+  encode,
+  type C2S,
+  type S2C,
+} from '../src/net/protocol.ts';
+import { sortieCost, sortieUnlocked } from '../src/sim/sortie.ts';
+import {
+  LEAK,
+  SORTIE_INBOUND,
+  SORTIE_LANDED,
+  SORTIE_SENT,
+} from '../src/audio/palette.ts';
 import { planWave, scaledStats, waveCount } from '../src/sim/wavePlan.ts';
 import { TOWERS, TOWER_IDS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, ENEMY_IDS, type EnemyId } from '../src/content/enemies.ts';
-import { damageAtTier, placementError, upgradeCost, visualTier } from '../src/sim/build.ts';
-import { coverage, formatDamage, toughestArmour } from '../src/sim/analysis.ts';
-import { UPGRADE_PATHS, type TargetMode } from '../src/sim/types.ts';
+import {
+  advanceEraCost,
+  damageAtTier,
+  effectiveInterval,
+  isUnlocked,
+  placementError,
+  tierCeiling,
+  upgradeCost,
+  upgradeError,
+  visualTier,
+} from '../src/sim/build.ts';
+import { coverage, formatDamage, laneCoverage, toughestArmour } from '../src/sim/analysis.ts';
+import {
+  UPGRADE_PATHS,
+  type SimEvent,
+  type TargetMode,
+  type Tower,
+} from '../src/sim/types.ts';
+import { buildOrder, spotFor } from './buildOrder.ts';
+import { rampFactor } from '../src/sim/systems/targeting.ts';
 import { stepWorld } from '../src/sim/step.ts';
 import { damageCreep, effectiveDamage } from '../src/sim/damage.ts';
-import { parseMap, isBuildableTile, tileAt } from '../src/sim/util/grid.ts';
+import { parseMap, isBuildableTile, mergeRunway, tileAt, tileOf } from '../src/sim/util/grid.ts';
 import { mulberry32, streamFor, STREAM, hashSeed } from '../src/sim/util/rng.ts';
-import { createWorld, spawnCreep } from '../src/sim/world.ts';
+import { createWorld, spawnCreep, type World } from '../src/sim/world.ts';
+import { DEFAULT_RULES, versusRules, type Rules } from '../src/sim/rules.ts';
 import { advance, DT, TICK_HZ, type Accumulator } from '../src/app/loop.ts';
 import {
   idleGesture,
@@ -62,7 +94,12 @@ const map = parseMap(LEVEL01);
 section('map — parsing');
 
 check(map.tiles.length === map.cols * map.rows, 'tile count matches dimensions', `${map.cols}x${map.rows}`);
-check(map.pathLength > 0, 'route has length', `${map.pathLength} tiles, ${map.waypoints.length} waypoints`);
+check(map.routes.length > 0, 'the map has at least one route', `${map.routes.length}`);
+check(
+  map.routes.every((r) => r.length > 0 && r.waypoints.length >= 2),
+  'every route has length and waypoints',
+  map.routes.map((r) => `${r.id} ${r.length}t`).join(', '),
+);
 check(!isBuildableTile(map, 0, 2), 'spawn tile is not buildable');
 check(!isBuildableTile(map, 3, 5), 'scenery is not buildable', `kind=${tileAt(map, 3, 5)}`);
 check(isBuildableTile(map, 0, 0), 'open ground is buildable');
@@ -74,24 +111,438 @@ check(tileAt(map, -1, 0) === undefined, 'off-board lookups return undefined');
 // load rather than produce creeps gliding over grass.
 section('map — drift detection');
 
-function expectReject(label: string, mutate: (rows: string[], waypoints: number[][]) => void): void {
+interface MutantRoute {
+  id: string;
+  waypoints: number[][];
+}
+
+function expectReject(label: string, mutate: (rows: string[], routes: MutantRoute[]) => void): void {
   const rows = [...LEVEL01.rows];
-  const waypoints = LEVEL01.waypoints.map((w) => [...w]);
-  mutate(rows, waypoints);
+  const routes: MutantRoute[] = LEVEL01.routes.map((r) => ({
+    id: r.id,
+    waypoints: r.waypoints.map((w) => [...w]),
+  }));
+  mutate(rows, routes);
   try {
-    parseMap({ id: 'mutant', name: 'mutant', rows, waypoints } as unknown as MapSource);
+    parseMap({ id: 'mutant', name: 'mutant', rows, routes } as unknown as MapSource);
     check(false, label, 'accepted — should have thrown');
   } catch (e) {
     check(true, label, (e as Error).message.replace('map "mutant": ', ''));
   }
 }
 
+const wps = (routes: MutantRoute[]): number[][] => routes[0]!.waypoints;
+
 expectReject('route over an erased path tile', (rows) => { rows[7] = rows[7]!.replace('#######', '#.#####'); });
 expectReject('path art nothing walks on', (rows) => { rows[0] = rows[0]!.replace('..', '##'); });
-expectReject('waypoint moved off the road', (_r, wps) => { wps[3] = [14, 8]; });
+expectReject('waypoint moved off the road', (_r, rs) => { wps(rs)[3] = [14, 8]; });
 expectReject('ragged row length', (rows) => { rows[4] = rows[4]! + '.'; });
 expectReject('missing spawn', (rows) => { rows[2] = rows[2]!.replace('S', '.'); });
 expectReject('unknown legend character', (rows) => { rows[0] = 'Z' + rows[0]!.slice(1); });
+
+// The three rules multiple lanes added. Each is a way a multi-route board can
+// be wrong that a single-route board could not be, so none of them was reachable
+// before and all three are reachable now.
+expectReject('a map with no routes at all', (_r, rs) => { rs.length = 0; });
+expectReject('two routes sharing an id', (_r, rs) => { rs.push({ id: rs[0]!.id, waypoints: wps(rs).map((w) => [...w]) }); });
+expectReject('a route starting somewhere that is not a spawn', (_r, rs) => { wps(rs)[0] = [7, 2]; });
+expectReject('a route stopping short of the goal', (_r, rs) => { wps(rs).pop(); });
+expectReject('a painted spawn no route leaves', (rows) => { rows[0] = 'S' + rows[0]!.slice(1); });
+expectReject('a second goal', (rows) => { rows[0] = 'E' + rows[0]!.slice(1); });
+
+// ---------------------------------------------------------------------------
+// LANES.
+//
+// Every gate above runs on a board with one route, where a lane index is always
+// 0 and "furthest along" and "closest to the goal" are the same ordering. None
+// of them can fail the way a multi-lane board fails.
+//
+// So this fixture, rather than a shipped map: two spawns, two lanes of
+// deliberately unequal length — 8 tiles against 13 — merging onto a shared
+// trunk. It is the smallest board that makes every multi-lane rule reachable,
+// and the length ratio is what makes the targeting gate below able to fail.
+//
+//   ........S....      chute:  [8,0] → [8,3] → [12,3]
+//   ........#....      coil:   [0,3] → [12,3]
+//   ........#....
+//   S###########E      the last four tiles are walked by both
+// ---------------------------------------------------------------------------
+section('map — lanes');
+
+const FORKED = {
+  id: 'forked',
+  name: 'Forked',
+  rows: [
+    '........S....',
+    '........#....',
+    '........#....',
+    'S###########E',
+    '.............',
+    '.............',
+    '.............',
+  ],
+  routes: [
+    { id: 'chute', waypoints: [[8, 0], [8, 3], [12, 3]] },
+    { id: 'coil', waypoints: [[0, 3], [12, 3]] },
+  ],
+} as unknown as MapSource;
+
+const forked = parseMap(FORKED);
+
+{
+  check(forked.routes.length === 2, 'a board may carry more than one lane', `${forked.routes.length}`);
+  check(
+    forked.routes[0]!.length === 8 && forked.routes[1]!.length === 13,
+    'each lane measures its own length, lead-in included',
+    forked.routes.map((r) => `${r.id} ${r.length}t`).join(', '),
+  );
+  // The merge is the thing that had to stop being an error. Four tiles of road
+  // carry both lanes, and the old "every tile once" rule rejected exactly this.
+  const painted = forked.tiles.filter((t) => t === 'path').length;
+  check(painted === 16, 'shared tiles are road once, not twice', `${painted} painted`);
+  check(
+    forked.routes[0]!.waypoints[0]!.y === -0.5 && forked.routes[1]!.waypoints[0]!.x === -0.5,
+    'each lane gets its own off-board lead-in',
+    forked.routes.map((r) => `${r.id} enters ${r.waypoints[0]!.x},${r.waypoints[0]!.y}`).join(' · '),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 'split' has to be reproducible from the seed alone, because a race replays
+// the same plan on two machines and a lane that differs is a desync.
+section('waves — lane dealing');
+
+{
+  const laneRules = (route: string, count: number): never =>
+    ({ ...DEFAULT_RULES, waves: [{ groups: [{ enemy: 'drifter', count, every: 0.5, after: 0, route }] }] }) as never;
+
+  const rules = laneRules('split', 12);
+  const plan = planWave(1234, 0, rules, forked.routes);
+  const perLane = [0, 1].map((r) => plan.filter((p) => p.route === r).length);
+  check(perLane[0] === 6 && perLane[1] === 6, "'split' deals 12 across two lanes as 6 and 6", perLane.join(' / '));
+
+  const again = planWave(1234, 0, rules, forked.routes);
+  check(
+    JSON.stringify(plan) === JSON.stringify(again),
+    'and deals the same lanes on a replay of the same seed',
+  );
+
+  const named = planWave(1234, 0, laneRules('coil', 4), forked.routes);
+  check(named.every((p) => p.route === 1), 'a group naming a lane walks only that lane', `${named.length} on coil`);
+
+  let threw = false;
+  try {
+    planWave(1, 0, laneRules('rim', 1), forked.routes);
+  } catch {
+    threw = true;
+  }
+  check(threw, 'a group naming a lane the board does not have is a crash, not lane 0');
+}
+
+// ---------------------------------------------------------------------------
+section('sim — walking two lanes');
+
+{
+  const w = createWorld(forked, 99);
+  w.wave.phase = 'done';
+
+  const chute = spawnCreep(w, 'drifter', { route: 0 });
+  const coil = spawnCreep(w, 'drifter', { route: 1 });
+  check(
+    chute.route === 0 && coil.route === 1 && chute.x !== coil.x,
+    'contacts enter at their own lane, not the first one',
+    `chute ${chute.x},${chute.y} · coil ${coil.x},${coil.y}`,
+  );
+
+  for (let i = 0; i < 60 * 20 && w.creeps.some((c) => !c.dead); i++) stepWorld(w, DT);
+  check(w.lives === BALANCE.startingLives - 2, 'both lanes reach the same goal', `${w.lives} lives`);
+
+  // The shorter lane must arrive first, and by roughly the length difference.
+  const w2 = createWorld(forked, 99);
+  w2.wave.phase = 'done';
+  spawnCreep(w2, 'drifter', { route: 1 });
+  let coilTime = 0;
+  for (let i = 0; i < 60 * 30 && w2.lives === BALANCE.startingLives; i++) {
+    stepWorld(w2, DT);
+    coilTime = w2.time;
+  }
+  const w3 = createWorld(forked, 99);
+  w3.wave.phase = 'done';
+  spawnCreep(w3, 'drifter', { route: 0 });
+  let chuteTime = 0;
+  for (let i = 0; i < 60 * 30 && w3.lives === BALANCE.startingLives; i++) {
+    stepWorld(w3, DT);
+    chuteTime = w3.time;
+  }
+  check(
+    chuteTime < coilTime,
+    'the short lane arrives first, as its geometry says it must',
+    `chute ${chuteTime.toFixed(2)}s vs coil ${coilTime.toFixed(2)}s`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE ORDERING BUG UNEQUAL LANES INTRODUCE.
+//
+// `first` used to rank by distance *travelled*, which is the same ordering as
+// "closest to the goal" only while every lane is the same length. Here the coil
+// is 13 tiles and the chute is 8, so a contact one tile from the pulsar down the
+// chute has *less* progress than one still six tiles out on the coil — and the
+// old rule shot the wrong one at exactly the moment it mattered.
+// ---------------------------------------------------------------------------
+section('targeting — first means closest to the goal');
+
+{
+  const w = createWorld(forked, 7);
+  w.wave.phase = 'done';
+
+  const nearGoal = spawnCreep(w, 'drifter', { route: 0 });
+  nearGoal.x = 11.5;
+  nearGoal.y = 3.5;
+  nearGoal.leg = 3;
+  nearGoal.progress = 7; //          8-tile lane: 1 tile left
+
+  const farOut = spawnCreep(w, 'drifter', { route: 1 });
+  farOut.x = 7.5;
+  farOut.y = 3.5;
+  farOut.leg = 2;
+  farOut.progress = 9; //            13-tile lane: 4 tiles left
+
+  check(
+    farOut.progress > nearGoal.progress,
+    'the setup is the trap: the further contact has the higher progress',
+    `coil ${farOut.progress} vs chute ${nearGoal.progress}`,
+  );
+
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: 9, row: 4 });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+  t.targeting = 'first' as TargetMode;
+  t.cooldown = 0;
+  stepWorld(w, DT);
+
+  const shot = w.projectiles[0];
+  check(
+    shot !== undefined && Math.abs(shot.tx - nearGoal.x) < 0.6,
+    "'first' shoots the contact nearest the goal, across lanes of different length",
+    shot === undefined ? 'nothing fired' : `aimed at ${shot.tx.toFixed(1)},${shot.ty.toFixed(1)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+section('lanes — coverage and the brightness ramp');
+
+{
+  const w = createWorld(forked, 3);
+  const cov = coverage(w);
+  check(
+    cov.total === forked.tiles.filter((t) => t === 'path').length,
+    'union coverage counts the shared trunk once',
+    `${cov.total} tiles for two lanes of 8 and 13`,
+  );
+  const lanes = laneCoverage(w);
+  check(
+    lanes.length === 2 && lanes[0]!.id === 'chute' && lanes[1]!.id === 'coil',
+    'per-lane coverage names its lanes',
+    lanes.map((l) => `${l.id} ${l.total}`).join(' · '),
+  );
+
+  // The ramp is measured back from the goal, so the goal is 1 on every board
+  // and a *short* lane starts part-lit rather than at 0 — which is the truth:
+  // the chute's entry really is closer to the core than the coil's.
+  const dist = routeDistance(forked);
+  const at = (col: number, row: number): number => dist[row * forked.cols + col]!;
+  check(Math.abs(at(12, 3) - 1) < 1e-6, 'the goal tile sits at exactly 1', at(12, 3).toFixed(4));
+  check(
+    at(8, 0) > at(0, 3) && at(0, 3) >= 0,
+    'the short lane enters part-lit, the long one at the floor',
+    `chute entry ${at(8, 0).toFixed(2)} vs coil entry ${at(0, 3).toFixed(2)}`,
+  );
+  // Monotone *along each lane* — the claim the design actually makes. A single
+  // global ordering is not available once lanes merge, and asserting one would
+  // be asserting something untrue.
+  let monotone = true;
+  for (const route of forked.routes) {
+    let prev = -Infinity;
+    for (let i = 1; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i - 1]!;
+      const b = route.waypoints[i]!;
+      const steps = Math.round(Math.abs(b.x - a.x) + Math.abs(b.y - a.y));
+      const sx = Math.sign(b.x - a.x);
+      const sy = Math.sign(b.y - a.y);
+      for (let s = 0; s <= steps; s++) {
+        const col = Math.floor(a.x + sx * s);
+        const row = Math.floor(a.y + sy * s);
+        if (col < 0 || row < 0 || col >= forked.cols || row >= forked.rows) continue;
+        const v = at(col, row);
+        if (v === OFF_ROUTE || v < prev - 1e-6) monotone = false;
+        prev = Math.max(prev, v);
+      }
+    }
+  }
+  check(monotone, 'brightness rises toward the goal along every lane');
+}
+
+// ---------------------------------------------------------------------------
+section('lanes — splits stay on their parent’s lane');
+
+{
+  const w = createWorld(forked, 5);
+  w.wave.phase = 'done';
+  const parent = spawnCreep(w, 'cluster', { route: 1 });
+  for (let i = 0; i < 120; i++) stepWorld(w, DT);
+  parent.hp = 1;
+  damageCreep(w, parent, 999, undefined);
+  stepWorld(w, DT);
+
+  const kids = w.creeps.filter((c) => !c.dead && c.defId === 'mote');
+  check(kids.length > 0, 'the parent split', `${kids.length} children`);
+  check(
+    kids.every((k) => k.route === 1),
+    'children inherit the lane their parent died on, never lane 0',
+    kids.map((k) => k.route).join(','),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE MAP SPEC PRINTED ITS OWN NUMBERS. THESE ARE THEM.
+//
+// Sectors 04-08 arrived as ASCII rows *and* a table of figures — road tiles,
+// buildable tiles, per-lane length, merge runway. Two of the three earlier
+// design specs shipped arithmetic that was wrong on contact with a real board,
+// so the figures are transcribed here and checked against what `parseMap`
+// actually builds rather than trusted.
+//
+// (See also the ramp gate below, which pins a rule the eight-board sweep priced.)
+//
+// Same argument as the ASCII/waypoint cross-check: a second representation is
+// worth having precisely because it can disagree.
+// ---------------------------------------------------------------------------
+section('combat · the ramp cools, it does not extinguish');
+{
+  // These were one case until the eight-board sweep priced it. Snapping the
+  // charge to zero on any change of target made a ramping station worth having
+  // only where contacts arrive in a single unbroken file — on Braid, where the
+  // lanes cross at every rung and the file breaks about twice a second, a
+  // Filament measured at *minus eleven lives*: not a weak pick but a station a
+  // player was strictly better off never building.
+  //
+  // The two situations are different and now behave differently. Killing
+  // something and moving to the contact behind it never stopped the beam, so it
+  // cools by half. Running out of targets does stop it, and that still clears
+  // the charge — the rule that stops a station idling through an intermission
+  // and opening the next wave at full power.
+  const w = createWorld(map, 31337);
+  w.wave.phase = 'done';
+  w.wave.index = 10; //                                   past every unlock
+  w.money = 5000;
+  w.commands.push({ type: 'placeTower', defId: 'filament', col: 8, row: 3 });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+  check(t !== undefined && t.defId === 'filament', 'a filament is on the board');
+
+  const park = (c: { x: number; y: number }): void => {
+    c.x = 8.5;
+    c.y = 2.5;
+  };
+
+  const held = spawnCreep(w, 'monolith', { hp: 1_000_000 });
+  for (let i = 0; i < 60 * 4; i++) {
+    park(held);
+    stepWorld(w, DT);
+  }
+  const peak = t.focusTime;
+  check(peak > 0, 'holding one target builds a charge', `focusTime ${peak.toFixed(2)}s`);
+  check(
+    Math.abs(rampFactor(t) - t.stats.rampMax) < 1e-6,
+    'and holding it long enough reaches the ceiling',
+    `x${rampFactor(t).toFixed(2)} of x${t.stats.rampMax}`,
+  );
+
+  held.dead = true;
+  const next = spawnCreep(w, 'monolith', { hp: 1_000_000 });
+  for (let i = 0; i < 40 && t.focusId !== next.id; i++) {
+    park(next);
+    stepWorld(w, DT);
+  }
+  check(t.focusId === next.id, 'the station re-targets when its focus dies');
+  check(
+    t.focusTime > 0,
+    'switching targets does not extinguish the charge',
+    `focusTime ${t.focusTime.toFixed(2)}s, was ${peak.toFixed(2)}s`,
+  );
+  check(
+    t.focusTime < peak,
+    'but it does cool it — a switch is never free',
+    `${t.focusTime.toFixed(2)}s < ${peak.toFixed(2)}s`,
+  );
+
+  // A full fire interval, not a couple of ticks. The reset lives on the path
+  // that runs when a station is *ready to fire* and finds nothing in reach, so
+  // one still inside its cooldown has not been asked the question yet — which
+  // this gate got wrong on the first attempt and is worth leaving written down.
+  next.dead = true;
+  for (let i = 0; i < 60; i++) stepWorld(w, DT);
+  check(
+    t.focusTime === 0 && t.focusId === null,
+    'an empty board clears the charge entirely',
+    `focusTime ${t.focusTime}`,
+  );
+  check(rampFactor(t) === 1, 'so a lull cannot be banked into the next wave');
+}
+
+// ---------------------------------------------------------------------------
+section('map spec — the five boards match their own table');
+{
+  const SPEC: Readonly<Record<string, { road: number; build: number; runway: number; lanes: number[] }>> = {
+    Fork: { road: 54, build: 318, runway: 6, lanes: [33, 33] },
+    Delta: { road: 51, build: 325, runway: 9, lanes: [31, 28] },
+    Braid: { road: 65, build: 316, runway: 4, lanes: [43, 43] },
+    Sluice: { road: 65, build: 310, runway: 6, lanes: [20, 50] },
+    Crown: { road: 92, build: 282, runway: 5, lanes: [31, 31, 31, 31] },
+    // Not a campaign sector — the versus board, held to exactly the same
+    // arithmetic. Its lanes are equal on purpose, which is the one figure here
+    // that is a design rule rather than a measurement: a short lane and a long
+    // one would make the sortie's lane choice trivial.
+    'Front Line': { road: 62, build: 311, runway: 5, lanes: [33, 33] },
+  };
+
+  for (const level of [...CAMPAIGN, VERSUS_LEVEL]) {
+    const spec = SPEC[level.name];
+    if (spec === undefined) continue;
+    const m = parseMap(level.map);
+
+    const road = m.tiles.filter((t) => t === 'path').length;
+    const build = m.tiles.filter((t) => t === 'ground').length;
+    // Lane length carries the off-board lead-in; the spec counts tiles walked
+    // on the board, so both sides of this comparison drop one.
+    const lanes = m.routes.map((r) => r.length - 1);
+    const run = mergeRunway(m);
+
+    check(road === spec.road, `${level.name}: ${spec.road} tiles of road`, `${road}`);
+    check(build === spec.build, `${level.name}: ${spec.build} buildable`, `${build}`);
+    check(
+      JSON.stringify(lanes) === JSON.stringify(spec.lanes),
+      `${level.name}: lanes measure ${spec.lanes.join(' / ')}`,
+      lanes.join(' / '),
+    );
+    check(
+      run.tiles === spec.runway,
+      `${level.name}: ${spec.runway} tiles of merge runway`,
+      `${run.tiles} — ${(run.fraction * 100).toFixed(0)}% of the shortest lane`,
+    );
+    check(
+      road + build + m.tiles.filter((t) => t === 'blocked').length === 390,
+      `${level.name}: 26x15 fully accounted for`,
+    );
+  }
+
+  // Sluice is the board the targeting rule was rewritten for. If its lanes ever
+  // become equal that gate stops testing anything, and this is where it shows.
+  const sluice = parseMap(CAMPAIGN.find((l) => l.name === 'Sluice')!.map);
+  const [short, long] = sluice.routes.map((r) => r.length - 1) as [number, number];
+  check(long / short >= 2, 'Sluice keeps the length ratio the targeting rule exists for', `${long} : ${short}`);
+}
 
 // ---------------------------------------------------------------------------
 // Race mode rests entirely on this: both players must face identical waves.
@@ -147,7 +598,7 @@ function soloWorld(): ReturnType<typeof createWorld> {
   const w = soloWorld();
   const c = spawnCreep(w, 'drifter');
   const acc: Accumulator = { debt: 0 };
-  const expected = map.pathLength / c.speed;
+  const expected = map.routes[c.route]!.length / c.speed;
 
   while (w.lives === BALANCE.startingLives && w.time < 60) advance(w, acc, 1000 / TICK_HZ, 1);
 
@@ -155,7 +606,7 @@ function soloWorld(): ReturnType<typeof createWorld> {
   check(w.creeps.length === 0, 'the leaked creep is swept up', `creeps=${w.creeps.length}`);
   check(
     Math.abs(w.time - expected) < DT * 2,
-    'traversal takes pathLength / speed seconds',
+    'traversal takes route length / speed seconds',
     `sim=${w.time.toFixed(4)}s expected=${expected.toFixed(4)}s`,
   );
 }
@@ -382,6 +833,1138 @@ section('waves — sending early');
   const livingWaves = new Set(w.creeps.map((c) => c.wave));
   check(livingWaves.size >= 2, 'two waves can be on the board at once', `waves alive: ${[...livingWaves].join(', ')}`);
   check(w.wave.clearedThrough === -1, 'neither counts as cleared while creeps live');
+}
+
+// ---------------------------------------------------------------------------
+// THE V1 GATE: a sortie is not wave traffic.
+//
+// `settleClearedWaves` works from the lowest wave still alive, and `spawnCreep`
+// defaults a contact's wave tag to whatever is spawning now. Put those two
+// together with a second source of contacts and one slow sortie holds a wave
+// open for as long as it walks: no clear reward, `clearedThrough` frozen, and
+// the Race status pump — which reports `clearedThrough + 1` — stuck. Every
+// assertion here fails without `Creep.origin`.
+section('versus — V1 gate: sorties are outside the wave system');
+
+{
+  const clearOf = (opts: { sortie: boolean }): { cleared: number; reward: number; leaked: number } => {
+    const w = createWorld(map, 4242);
+    w.lives = 1_000_000;
+
+    // Wave 0 out of the door and killed, so the only thing that can keep it
+    // from settling is whatever else is on the board.
+    w.commands.push({ type: 'startWave' });
+    while (w.wave.dispatchedThrough < 0) stepWorld(w, DT);
+
+    // A Monolith is the worst case on purpose: 0.85 tiles/sec over a 43-tile
+    // route is ~50s of walking, far longer than the wave it would otherwise
+    // hold open.
+    if (opts.sortie) spawnCreep(w, 'monolith', { origin: 'sortie' });
+
+    for (const c of w.creeps) if (c.origin === 'wave') c.dead = true;
+
+    let reward = 0;
+    for (let i = 0; i < 60 * 5; i++) {
+      stepWorld(w, DT);
+      for (const ev of w.events) if (ev.type === 'waveCleared') reward += ev.reward;
+      w.events.length = 0;
+    }
+    return {
+      cleared: w.wave.clearedThrough,
+      reward,
+      leaked: w.perWave.reduce((sum, s) => sum + (s?.leaked ?? 0), 0),
+    };
+  };
+
+  const clean = clearOf({ sortie: false });
+  const withSortie = clearOf({ sortie: true });
+
+  check(clean.cleared === 0, 'baseline: wave 1 settles once its own contacts are gone', `clearedThrough=${clean.cleared}`);
+  check(
+    withSortie.cleared === clean.cleared,
+    'a sortie on the board does not stall the clear',
+    `clearedThrough=${withSortie.cleared} vs ${clean.cleared} clean`,
+  );
+  check(
+    withSortie.reward === clean.reward && clean.reward === BALANCE.waveClearReward,
+    'the clear reward is paid on time regardless',
+    `$${withSortie.reward} vs $${clean.reward}`,
+  );
+}
+
+{
+  // The per-wave itemisation must not acquire kills and leaks the wave never
+  // caused — those figures are printed in the clear summary.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.lives = 1_000_000;
+
+  const sortie = spawnCreep(w, 'drifter', { origin: 'sortie' });
+  const before = w.money;
+  damageCreep(w, sortie, 10_000);
+  stepWorld(w, DT);
+
+  check(w.stats.kills === 1, 'a killed sortie counts in the run total', `kills=${w.stats.kills}`);
+  check(
+    w.money === before + sortie.bounty,
+    'the defender collects the bounty for killing a sortie',
+    `+$${w.money - before}`,
+  );
+  check(
+    w.perWave.every((s) => s === undefined || (s.kills === 0 && s.bounty === 0)),
+    'the kill is charged to no wave',
+  );
+}
+
+{
+  // A leaked sortie: costs a life, tallied in the run total, absent from the
+  // per-wave books.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  const acc: Accumulator = { debt: 0 };
+  spawnCreep(w, 'drifter', { origin: 'sortie' });
+  while (w.lives === BALANCE.startingLives && w.time < 60) advance(w, acc, 1000 / TICK_HZ, 1);
+
+  check(w.stats.leaks === 1, 'a leaked sortie counts in the run total', `leaks=${w.stats.leaks}`);
+  check(
+    w.perWave.every((s) => s === undefined || s.leaked === 0),
+    'the leak is charged to no wave',
+  );
+}
+
+{
+  // A Cluster sent as a sortie must not die into three contacts that count as
+  // wave traffic — the children would be tagged with a wave they never joined
+  // and would hold it open exactly as the parent was stopped from doing.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.lives = 1_000_000;
+
+  const parent = spawnCreep(w, 'cluster', { origin: 'sortie' });
+  damageCreep(w, parent, 10_000);
+  stepWorld(w, DT);
+
+  const children = w.creeps.filter((c) => c.defId === 'mote');
+  check(children.length === 3, 'a sortie Cluster still splits', `${children.length} motes`);
+  check(
+    children.every((c) => c.origin === 'sortie'),
+    'the children inherit the sortie origin',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE V2 GATE: leak weight is a dial, and the campaign is not on it.
+//
+// `hpGrowth` is a swept number with a table of evidence behind it, and making
+// a Monolith cost three lives everywhere would relitigate that arc by feel.
+// The field exists so a *sortie* can weigh more than the contact it is drawn
+// from; every contact the wave machine dispatches still costs exactly one.
+section('versus — V2 gate: leakDamage');
+
+{
+  check(
+    ENEMY_IDS.every((id) => ENEMIES[id].leakDamage === 1),
+    'every campaign contact costs exactly one life',
+    ENEMY_IDS.map((id) => `${id}=${ENEMIES[id].leakDamage}`).join(' '),
+  );
+}
+
+{
+  // The weight is carried by the contact, not looked up from its def — which
+  // is what lets the same silhouette be scenery or a purchase.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  const acc: Accumulator = { debt: 0 };
+
+  spawnCreep(w, 'drifter', { origin: 'sortie', leakDamage: 3 });
+  const before = w.lives;
+  let cost = 0;
+  while (w.lives === before && w.time < 60) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    for (const ev of w.events) if (ev.type === 'creepLeaked') cost = ev.cost;
+    w.events.length = 0;
+  }
+
+  check(w.lives === before - 3, 'a weighted leak takes its full weight', `${before} → ${w.lives}`);
+  check(cost === 3, 'the event reports what it cost', `cost=${cost}`);
+
+  const sameDef = spawnCreep(w, 'drifter');
+  check(sameDef.leakDamage === 1, 'the def is unchanged by the override', `leakDamage=${sameDef.leakDamage}`);
+}
+
+{
+  // Lives floor at zero rather than going negative, so a heavy contact landing
+  // on a thin reserve reads as a loss and not as a debt.
+  const w = createWorld(map, 4242);
+  w.wave.phase = 'done';
+  w.lives = 2;
+  const acc: Accumulator = { debt: 0 };
+  spawnCreep(w, 'drifter', { origin: 'sortie', leakDamage: 9 });
+  while (w.phase === 'playing' && w.time < 60) advance(w, acc, 1000 / TICK_HZ, 1);
+
+  check(w.lives === 0, 'lives floor at zero, never negative', `lives=${w.lives}`);
+  check(w.phase === 'lost', 'and the run ends');
+}
+
+// ---------------------------------------------------------------------------
+// THE V3 GATE: the endless arc.
+//
+// Composition wraps around the table; difficulty does not. That split is the
+// whole mechanism — wrap the RNG stream too and wave 25 would be a byte-
+// identical replay of wave 13, jitter and lane deal included, and the board
+// would visibly loop. Scaling on the true index is also what makes this a
+// terminator rather than a missing one: a versus match ends when a core does,
+// because compounding hp eventually beats every defence.
+section('versus — V3 gate: the endless arc');
+
+const ENDLESS: Rules = { ...DEFAULT_RULES, endless: true };
+
+{
+  check(waveCount() === WAVES.length, 'a finite arc still counts its table', `${waveCount()} waves`);
+  check(waveCount(ENDLESS) === Infinity, 'an endless arc never runs out');
+
+  const far = 40;
+  check(
+    JSON.stringify(planWave(4242, far, ENDLESS)) === JSON.stringify(planWave(4242, far, ENDLESS)),
+    'a wave past the table is still a pure function of (seed, index)',
+    `wave ${far + 1}`,
+  );
+  check(
+    planWave(4242, far, ENDLESS).length > 0,
+    'and it is not empty, the way a finite arc past its end is',
+  );
+  check(
+    planWave(4242, far, DEFAULT_RULES).length === 0,
+    'the finite arc is unchanged past its end',
+  );
+
+  // Same shape, different roll: composition repeats, the arrival pattern does
+  // not. Comparing the enemy sequence catches the wrap; comparing the whole
+  // plan would fail on jitter, which is the point.
+  const shapeOf = (i: number): string => planWave(4242, i, ENDLESS).map((s) => s.enemy).join(',');
+  const timesOf = (i: number): string => planWave(4242, i, ENDLESS).map((s) => s.at.toFixed(4)).join(',');
+  const wrapped = WAVES.length * 4;
+  check(shapeOf(wrapped) === shapeOf(0), 'composition wraps around the table', `wave ${wrapped + 1} draws wave 1's shape`);
+  check(timesOf(wrapped) !== timesOf(0), 'but the arrival pattern does not repeat');
+
+  const scale = planWave(4242, far, ENDLESS)[0]!.hp / planWave(4242, 0, ENDLESS)[0]!.hp;
+  const expected = Math.pow(BALANCE.hpGrowth, far);
+  check(
+    Math.abs(scale - expected) / expected < 0.02,
+    'hp compounds on the true index, not the wrapped one',
+    `wave ${far + 1} is ${scale.toExponential(2)}x wave 1`,
+  );
+}
+
+{
+  // No won state at all. An endless run that kills everything must keep going
+  // rather than declaring victory at the end of the table.
+  const w = createWorld(map, 4242, ENDLESS);
+  const acc: Accumulator = { debt: 0 };
+  for (let i = 0; i < 60 * 600 && w.phase === 'playing'; i++) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    for (const c of w.creeps) c.dead = true;
+    w.events.length = 0;
+  }
+  check(w.phase === 'playing', 'killing everything never wins an endless arc', `phase=${w.phase}`);
+  check(w.wave.phase !== 'done', 'and the wave machine never parks', `wave phase=${w.wave.phase}`);
+  check(
+    w.wave.index > WAVES.length,
+    'it is past the end of the table and still dispatching',
+    `wave ${w.wave.index + 1} of a ${WAVES.length}-wave table`,
+  );
+}
+
+// The horizon probe. Not an assertion about a number — the assertion is that a
+// horizon *exists*, which is what makes "endless" a terminator rather than a
+// stalemate. The figure is printed so a balance change that moves it is visible
+// rather than silent.
+{
+  const build: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
+  const w = createWorld(map, 4242, ENDLESS);
+  w.money = 1_000_000;
+  w.wave.index = 6; // past every unlockWave, so the whole roster places
+  const spots = rankedSpots(Math.max(...build.map((b) => TOWERS[b].range))).slice(0, 20);
+  spots.forEach(([col, row], i) => {
+    w.commands.push({ type: 'placeTower', defId: build[i % build.length]!, col, row });
+  });
+  stepWorld(w, DT);
+  const placed = w.towers.length;
+
+  // Every path upgraded to the ceiling, so this is a genuinely strong defence
+  // and the horizon it measures is an upper bound rather than a typical run.
+  for (const t of w.towers) {
+    for (const path of ['damage', 'range', 'effect'] as const) {
+      for (let tier = 1; tier < BALANCE.upgrade.maxTier; tier++) {
+        w.commands.push({ type: 'upgradeTower', id: t.id, path });
+      }
+    }
+  }
+  stepWorld(w, DT);
+
+  w.wave.index = 0;
+  const acc: Accumulator = { debt: 0 };
+  for (let i = 0; i < 60 * 3_600 && w.phase === 'playing'; i++) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    w.events.length = 0;
+  }
+
+  check(
+    w.phase === 'lost',
+    'a fully upgraded defence eventually falls to the endless arc',
+    `${placed} stations, all paths Mk ${BALANCE.upgrade.maxTier}`,
+  );
+  check(
+    w.wave.index >= WAVES.length,
+    'and it survives past the end of the authored table first',
+    `fell on wave ${w.wave.index + 1} at ${(w.time / 60).toFixed(1)} min`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE V4 GATE: Front Line's two lanes have to stay two questions.
+//
+// The board's whole read is "which of their two defences is thinner", and that
+// only exists while covering both lanes is materially worse than committing to
+// one. Fork encodes the same rule by blocking its centre pocket; this measures
+// it, because on a board with a waist the offending tile is not somewhere you
+// would think to look. The arithmetic below is what chose the scenery — the
+// second assertion runs the same measurement on the board with the blocks
+// removed and requires it to *fail*, so the plug can never be tidied away as
+// decoration.
+section('versus — V4 gate: Front Line coverage');
+
+{
+  const MAX_RANGE =
+    Math.max(...TOWER_IDS.map((id) => TOWERS[id].range)) *
+    Math.pow(BALANCE.upgrade.rangeFactor, BALANCE.upgrade.maxTier - 1);
+
+  /** The tiles one lane walks on the board, dropping the off-board lead-in. */
+  const laneTiles = (route: { waypoints: readonly { x: number; y: number }[] }): Set<string> => {
+    const out = new Set<string>();
+    for (let i = 2; i < route.waypoints.length; i++) {
+      const a = route.waypoints[i - 1]!;
+      const b = route.waypoints[i]!;
+      const steps = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      for (let s = 0; s <= steps; s++) {
+        const [c, r] = tileOf({ x: a.x + ((b.x - a.x) * s) / steps, y: a.y + ((b.y - a.y) * s) / steps });
+        out.add(`${c},${r}`);
+      }
+    }
+    return out;
+  };
+
+  const exclusive = (own: Set<string>, other: Set<string>): [number, number][] =>
+    [...own].filter((k) => !other.has(k)).map((k) => k.split(',').map(Number) as [number, number]);
+
+  const score = (src: MapSource): { hedge: number; commit: number; at: string } => {
+    const m = parseMap(src);
+    const [a, b] = m.routes.map(laneTiles) as [Set<string>, Set<string>];
+    const aOnly = exclusive(a, b);
+    const bOnly = exclusive(b, a);
+
+    let hedge = 0;
+    let commit = 0;
+    let at = '';
+    for (let row = 0; row < m.rows; row++) {
+      for (let col = 0; col < m.cols; col++) {
+        if (!isBuildableTile(m, col, row)) continue;
+        const covers = (list: [number, number][]): number =>
+          list.filter(([c, r]) => (c - col) ** 2 + (r - row) ** 2 <= MAX_RANGE ** 2).length;
+        const ca = covers(aOnly);
+        const cb = covers(bOnly);
+        if (Math.min(ca, cb) > hedge) {
+          hedge = Math.min(ca, cb);
+          at = `${col},${row}`;
+        }
+        commit = Math.max(commit, ca, cb);
+      }
+    }
+    return { hedge, commit, at };
+  };
+
+  const shipped = score(VERSUS);
+  check(
+    shipped.commit > 2 * shipped.hedge,
+    'committing to one lane beats hedging both',
+    `commit ${shipped.commit} vs hedge ${shipped.hedge} @ ${shipped.at} — ${(shipped.commit / shipped.hedge).toFixed(2)}x at range ${MAX_RANGE.toFixed(2)}`,
+  );
+
+  // Same board, scenery removed. This must FAIL the rule above, or the scenery
+  // is not doing the job its comment claims and is merely decoration.
+  const bare = score({ ...VERSUS, rows: VERSUS.rows.map((r) => r.replace(/x/g, '.')) });
+  check(
+    !(bare.commit > 2 * bare.hedge),
+    'and the scenery is what buys that, not the lane shapes',
+    `bare board: commit ${bare.commit} vs hedge ${bare.hedge} @ ${bare.at} — ${(bare.commit / bare.hedge).toFixed(2)}x`,
+  );
+
+  // Both lanes must stay worth defending on their own terms. A lane no tile can
+  // cover well is a lane every sortie goes down, and the read collapses again.
+  const m = parseMap(VERSUS);
+  const [crest, trough] = m.routes.map(laneTiles) as [Set<string>, Set<string>];
+  const bestFor = (own: Set<string>, other: Set<string>): number => {
+    const tiles = exclusive(own, other);
+    let best = 0;
+    for (let row = 0; row < m.rows; row++) {
+      for (let col = 0; col < m.cols; col++) {
+        if (!isBuildableTile(m, col, row)) continue;
+        best = Math.max(
+          best,
+          tiles.filter(([c, r]) => (c - col) ** 2 + (r - row) ** 2 <= MAX_RANGE ** 2).length,
+        );
+      }
+    }
+    return best;
+  };
+  const bc = bestFor(crest, trough);
+  const bt = bestFor(trough, crest);
+  check(
+    Math.min(bc, bt) >= 10 && Math.abs(bc - bt) <= 3,
+    'neither lane is the obviously weaker one to send down',
+    `crest best ${bc}, trough best ${bt}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE V5 GATE: the era ladder.
+//
+// One purchase does two things — it opens a station and it raises the upgrade
+// ceiling on every station already standing. Both halves are asserted here,
+// along with the property that makes the ladder a tempo decision rather than a
+// shop: the campaign must not be able to see any of it.
+section('versus — V5 gate: eras');
+
+const VERSUS_RULES = versusRules(VERSUS_LEVEL, 'standard');
+const versusWorld = (): ReturnType<typeof createWorld> =>
+  createWorld(parseMap(VERSUS), 4242, VERSUS_RULES);
+
+{
+  // Every station sits on exactly one rung, the roster is spread across all
+  // three, and era I can build something — a ladder whose first rung is empty
+  // is a mode that opens on a board you cannot defend.
+  const eras = TOWER_IDS.map((id) => TOWERS[id].era);
+  check(
+    eras.every((e) => Number.isInteger(e) && e >= 1 && e <= BALANCE.upgrade.maxTier),
+    'every station names a real era',
+    TOWER_IDS.map((id) => `${id}=${TOWERS[id].era}`).join(' '),
+  );
+  check(
+    new Set(eras).size === BALANCE.upgrade.maxTier,
+    'the roster spans every rung',
+    `${new Set(eras).size} of ${BALANCE.upgrade.maxTier} rungs used`,
+  );
+  check(
+    eras.filter((e) => e === 1).length >= 2,
+    'era I can build more than one thing',
+    `${eras.filter((e) => e === 1).length} stations at era I`,
+  );
+  check(
+    BALANCE.eras.advanceCost.length === BALANCE.upgrade.maxTier - 1,
+    'there is a price for every rung above the first',
+  );
+  check(
+    BALANCE.eras.advanceCost.every((c, i) => i === 0 || c > BALANCE.eras.advanceCost[i - 1]!),
+    'and the ladder gets more expensive as it goes',
+    BALANCE.eras.advanceCost.join(' → '),
+  );
+}
+
+{
+  // The campaign cannot see the ladder at all: same world, same stations, and
+  // `advanceEra` is refused out loud rather than silently doing nothing.
+  const w = createWorld(map, 4242);
+  w.money = 1_000_000;
+  check(tierCeiling(w) === BALANCE.upgrade.maxTier, 'a campaign world is never era-capped');
+  check(advanceEraCost(w) === null, 'and has no era to buy');
+
+  w.commands.push({ type: 'advanceEra' });
+  stepWorld(w, DT);
+  const rejected = w.events.find((e) => e.type === 'eraRejected');
+  check(
+    rejected?.type === 'eraRejected' && rejected.reason === 'noEras',
+    'advanceEra on a campaign board is refused out loud',
+    rejected?.type === 'eraRejected' ? rejected.reason : 'no event',
+  );
+  check(w.era === 1, 'and changes nothing', `era=${w.era}`);
+}
+
+{
+  // Station gating: era N opens exactly the stations that named era N or less,
+  // and nothing above it, whatever the wave clock says.
+  const w = versusWorld();
+  // Deliberately past every `unlockWave`. Under eras the wave clock must not
+  // be able to open a station on its own — if it can, the two gates are racing
+  // and the campaign's schedule is quietly still in charge.
+  w.wave.index = 20;
+
+  for (let era = 1; era <= BALANCE.upgrade.maxTier; era++) {
+    w.era = era;
+    const open = TOWER_IDS.filter((id) => isUnlocked(w, id));
+    const expected = TOWER_IDS.filter((id) => TOWERS[id].era <= era);
+    check(
+      JSON.stringify(open) === JSON.stringify(expected),
+      `era ${era} opens exactly its own rung and below`,
+      `${open.join(', ') || '(none)'}`,
+    );
+  }
+}
+
+{
+  // The upgrade ceiling moves with the era, and it moves for stations that
+  // were already standing — that second half is what makes the purchase a
+  // tempo decision instead of a shop.
+  const w = versusWorld();
+  w.money = 1_000_000;
+  const spot = rankedSpots(TOWERS['lance'].range).find(
+    ([c, r]: readonly [number, number]) => placementError(w, 'lance', c, r) === null,
+  )!;
+  w.commands.push({ type: 'placeTower', defId: 'lance', col: spot[0], row: spot[1] });
+  stepWorld(w, DT);
+  const t = w.towers[0]!;
+
+  check(tierCeiling(w) === 1, 'era I caps every path at Mk I', `ceiling=${tierCeiling(w)}`);
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
+  stepWorld(w, DT);
+  check(t.tiers.damage === 1, 'so an upgrade at era I is refused', `tier=${t.tiers.damage}`);
+  check(
+    upgradeCost(t, 'damage', tierCeiling(w)) === null,
+    'and the inspector prices it as unavailable',
+  );
+
+  const before = w.money;
+  w.commands.push({ type: 'advanceEra' });
+  stepWorld(w, DT);
+  const advanced = w.events.find((e) => e.type === 'eraAdvanced');
+  check(w.era === 2, 'buying an era advances exactly one rung', `era=${w.era}`);
+  check(
+    advanced?.type === 'eraAdvanced' && advanced.cost === BALANCE.eras.advanceCost[0],
+    'the event names what it cost',
+    advanced?.type === 'eraAdvanced' ? `$${advanced.cost}` : 'no event',
+  );
+  check(
+    w.money === before - BALANCE.eras.advanceCost[0]! && w.eraSpent === BALANCE.eras.advanceCost[0],
+    'and the money actually left',
+    `$${before} → $${w.money}, sunk $${w.eraSpent}`,
+  );
+
+  check(tierCeiling(w) === 2, 'the ceiling rose with it');
+  w.commands.push({ type: 'upgradeTower', id: t.id, path: 'damage' });
+  stepWorld(w, DT);
+  check(
+    t.tiers.damage === 2,
+    'a station built before the advance can now be upgraded',
+    `tier=${t.tiers.damage}`,
+  );
+}
+
+{
+  // Poverty and the top of the ladder are both refusals, and they say
+  // different things — a player who cannot afford it and one who has bought
+  // everything are not in the same situation.
+  const w = versusWorld();
+  w.money = 0;
+  w.commands.push({ type: 'advanceEra' });
+  stepWorld(w, DT);
+  const poor = w.events.find((e) => e.type === 'eraRejected');
+  check(
+    poor?.type === 'eraRejected' && poor.reason === 'tooPoor',
+    'an era you cannot afford is refused as tooPoor',
+    poor?.type === 'eraRejected' ? poor.reason : 'no event',
+  );
+  check(w.era === 1 && w.money === 0, 'and costs nothing', `era=${w.era} $${w.money}`);
+
+  w.money = 1_000_000;
+  for (let i = 0; i < BALANCE.upgrade.maxTier + 3; i++) {
+    w.commands.push({ type: 'advanceEra' });
+    stepWorld(w, DT);
+    w.events.length = 0;
+  }
+  check(w.era === BALANCE.upgrade.maxTier, 'the ladder stops at the top', `era=${w.era}`);
+  check(
+    w.eraSpent === BALANCE.eras.advanceCost.reduce((a, b) => a + b, 0),
+    'having charged for each rung exactly once',
+    `$${w.eraSpent}`,
+  );
+
+  w.commands.push({ type: 'advanceEra' });
+  stepWorld(w, DT);
+  const maxed = w.events.find((e) => e.type === 'eraRejected');
+  check(
+    maxed?.type === 'eraRejected' && maxed.reason === 'maxEra',
+    'and says so, rather than charging for nothing',
+    maxed?.type === 'eraRejected' ? maxed.reason : 'no event',
+  );
+}
+
+{
+  // Re-validated on the tick, not trusted from the click. This is the largest
+  // single spend in the mode and the wave spawning underneath it is exactly
+  // what can empty the bank between the two.
+  const w = versusWorld();
+  w.money = BALANCE.eras.advanceCost[0]!;
+  w.commands.push({ type: 'advanceEra' }, { type: 'advanceEra' });
+  stepWorld(w, DT);
+  check(w.era === 2, 'two advances queued on one tick buy exactly one', `era=${w.era}`);
+  check(w.money === 0, 'and the second is refused for want of money', `$${w.money}`);
+}
+
+// ---------------------------------------------------------------------------
+// THE V6 GATE: the sortie economy.
+//
+// Two rules do all the anti-degenerate work and they are symmetric: the
+// defender collects the bounty for killing a sortie, and the sender collects a
+// kickback when one lands. Everything below is a way of asserting that those
+// two swings are real, opposite, and cannot be gamed into a free lunch.
+section('versus — V6 gate: sorties');
+
+{
+  // Roster shape, before any money moves. A rung with nothing to send is an
+  // era you would never buy for offence, which would quietly make the ladder
+  // half decorative.
+  const eras = SORTIE_IDS.map((id) => SORTIES[id].era);
+  check(
+    new Set(eras).size === BALANCE.upgrade.maxTier,
+    'the sortie table spans every rung',
+    SORTIE_IDS.map((id) => `${id}=${SORTIES[id].era}`).join(' '),
+  );
+  check(
+    [1, 2, 3].every((e) => eras.some((x) => x === e)),
+    'and every rung has something to send',
+  );
+  check(
+    SORTIE_IDS.every((id) => SORTIES[id].weight >= 1),
+    'no sortie is worth less than a leak',
+  );
+  check(
+    SORTIE_IDS.some((id) => SORTIES[id].weight > 1),
+    'and at least one is worth more, or the deck has no expensive end',
+    SORTIE_IDS.map((id) => `${id}×${SORTIES[id].weight}`).join(' '),
+  );
+  check(
+    BALANCE.sortie.markup > 1,
+    'a sortie costs more than the bounty it hands over',
+    `markup ${BALANCE.sortie.markup}`,
+  );
+  check(
+    BALANCE.sortie.kickback > 0 && BALANCE.sortie.kickback < 1,
+    'and landing pays back some of the price, never all of it',
+    `kickback ${BALANCE.sortie.kickback}`,
+  );
+}
+
+{
+  // The campaign has no deck at all, and says so rather than dropping the
+  // command.
+  const w = createWorld(map, 4242);
+  w.money = 1_000_000;
+  w.commands.push({ type: 'sortie', sortie: 'drifter', lane: 0 });
+  stepWorld(w, DT);
+  const ev = w.events.find((e) => e.type === 'sortieRejected');
+  check(
+    ev?.type === 'sortieRejected' && ev.reason === 'noSorties',
+    'a sortie on a campaign board is refused out loud',
+    ev?.type === 'sortieRejected' ? ev.reason : 'no event',
+  );
+  check(w.creeps.length === 0, 'and puts nothing on the board');
+}
+
+{
+  // Era gating on the offensive half, mirroring the station gate.
+  const w = versusWorld();
+  w.money = 1_000_000;
+  for (let era = 1; era <= BALANCE.upgrade.maxTier; era++) {
+    w.era = era;
+    const open = SORTIE_IDS.filter((id) => sortieUnlocked(w, id));
+    const expected = SORTIE_IDS.filter((id) => SORTIES[id].era <= era);
+    check(
+      JSON.stringify(open) === JSON.stringify(expected),
+      `era ${era} can send exactly its own rung and below`,
+      open.join(', '),
+    );
+  }
+  w.era = 1;
+  w.commands.push({ type: 'sortie', sortie: 'monolith', lane: 0 });
+  stepWorld(w, DT);
+  const ev = w.events.find((e) => e.type === 'sortieRejected');
+  check(
+    ev?.type === 'sortieRejected' && ev.reason === 'locked',
+    'sending above your era is refused as locked',
+    ev?.type === 'sortieRejected' ? ev.reason : 'no event',
+  );
+}
+
+{
+  // Launch charges, names its price, and puts nothing on the sender's board.
+  // That last one is the whole shape of the mechanic: `sortie` and `inbound`
+  // run in different worlds, and collapsing them would give the sim a notion
+  // of which side of the wire it is on.
+  const w = versusWorld();
+  w.money = 1_000_000;
+  const price = sortieCost('drifter', w.wave.index, w);
+  const before = w.money;
+
+  w.commands.push({ type: 'sortie', sortie: 'drifter', lane: 1 });
+  stepWorld(w, DT);
+  const launched = w.events.find((e) => e.type === 'sortieLaunched');
+
+  check(launched?.type === 'sortieLaunched', 'launching emits an event');
+  check(
+    launched?.type === 'sortieLaunched' && launched.cost === price,
+    'the event names the price that was charged',
+    launched?.type === 'sortieLaunched' ? `$${launched.cost} vs $${price}` : '-',
+  );
+  check(w.money === before - price, 'and the money left', `$${before} → $${w.money}`);
+  check(w.creeps.length === 0, 'nothing appears on the sender’s own board');
+  check(
+    w.stats.sortiesSent === 1 && w.stats.sortieSpend === price,
+    'the run tallies it',
+    `${w.stats.sortiesSent} sent, $${w.stats.sortieSpend}`,
+  );
+  check(
+    launched?.type === 'sortieLaunched' && launched.lane === 1,
+    'the lane the player picked is the lane on the wire',
+  );
+}
+
+{
+  // Arrival: on the chosen lane, at midfield, scaled to the receiving board,
+  // costing its weight and paying its kickback to nobody here.
+  const w = versusWorld();
+  const kick = 99;
+  w.commands.push({ type: 'inbound', sortie: 'monolith', lane: 1, kickback: kick });
+  stepWorld(w, DT);
+
+  const c = w.creeps[0]!;
+  check(w.creeps.length === 1 && c.defId === 'monolith', 'an inbound sortie spawns');
+  check(c.origin === 'sortie', 'tagged as a sortie, so it never holds a wave open');
+  check(c.route === 1, 'on the lane it was sent down', `route=${c.route}`);
+  check(c.leakDamage === SORTIES['monolith'].weight, 'carrying its table weight', `×${c.leakDamage}`);
+  check(c.kickback === kick, 'and the kickback it owes its sender', `$${c.kickback}`);
+
+  const scaled = scaledStats('monolith', w.wave.index, w.rules);
+  check(
+    c.maxHp === scaled.hp && c.bounty === scaled.bounty,
+    'scaled to the board it landed on, not the one it was bought on',
+    `hp=${c.maxHp} bounty=${c.bounty}`,
+  );
+
+  // A lane the map does not have is clamped, never dropped — somebody paid for
+  // this contact and silently eating it is the worst possible handling.
+  const w2 = versusWorld();
+  w2.commands.push({ type: 'inbound', sortie: 'drifter', lane: 99, kickback: 0 });
+  stepWorld(w2, DT);
+  check(
+    w2.creeps.length === 1 && w2.creeps[0]!.route === w2.map.routes.length - 1,
+    'an impossible lane is clamped rather than dropped',
+    `route=${w2.creeps[0]?.route}`,
+  );
+}
+
+{
+  // Killing a sortie pays the defender exactly its bounty — the anti-spam
+  // valve — and pays the sender nothing.
+  const w = versusWorld();
+  w.wave.phase = 'done';
+  w.commands.push({ type: 'inbound', sortie: 'drifter', lane: 0, kickback: 50 });
+  stepWorld(w, DT);
+  const c = w.creeps[0]!;
+  const before = w.money;
+  damageCreep(w, c, 1_000_000);
+  stepWorld(w, DT);
+
+  check(w.money === before + c.bounty, 'the defender is paid the bounty', `+$${w.money - before}`);
+  check(
+    !w.events.some((e) => e.type === 'sortieLanded'),
+    'and a killed sortie pays its sender nothing',
+  );
+}
+
+{
+  // Landing: costs the defender its weight in lives, and reports the kickback
+  // outward rather than crediting the world it landed on. A sortie that paid
+  // the person it just hit would be the exact inverse of the intended rule.
+  const w = versusWorld();
+  w.wave.phase = 'done';
+  const acc: Accumulator = { debt: 0 };
+  w.commands.push({ type: 'inbound', sortie: 'monolith', lane: 0, kickback: 77 });
+  stepWorld(w, DT);
+
+  const lives = w.lives;
+  const money = w.money;
+  let landed: Extract<SimEvent, { type: 'sortieLanded' }> | undefined;
+  while (landed === undefined && w.time < 200) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    for (const e of w.events) if (e.type === 'sortieLanded') landed = e;
+    w.events.length = 0;
+  }
+
+  check(landed !== undefined, 'a sortie that reaches the core reports it');
+  check(
+    w.lives === lives - SORTIES['monolith'].weight,
+    'costing the defender its full weight',
+    `${lives} → ${w.lives}`,
+  );
+  check(w.money === money, 'the defender is not paid for being hit', `$${w.money}`);
+  check(landed?.kickback === 77, 'and the kickback rides out on the event', `$${landed?.kickback}`);
+  check(w.stats.sortiesTaken === 1, 'tallied apart from ordinary leaks', `taken=${w.stats.sortiesTaken}`);
+  check(w.stats.leaks === 1, 'though it is still a leak', `leaks=${w.stats.leaks}`);
+}
+
+{
+  // The full round trip, the way the loopback and the relay both drive it:
+  // launch → inbound → land → credit. The figures either close or they don't.
+  const w = versusWorld();
+  w.wave.phase = 'done';
+  w.money = 1_000_000;
+  const acc: Accumulator = { debt: 0 };
+  const opened = w.money;
+
+  w.commands.push({ type: 'sortie', sortie: 'drifter', lane: 0 });
+  stepWorld(w, DT);
+  const launch = w.events.find((e) => e.type === 'sortieLaunched')!;
+  const cost = launch.type === 'sortieLaunched' ? launch.cost : 0;
+  const kick = launch.type === 'sortieLaunched' ? launch.kickback : 0;
+  w.events.length = 0;
+
+  w.commands.push({ type: 'inbound', sortie: 'drifter', lane: 0, kickback: kick });
+  let credited = false;
+  while (!credited && w.time < 200) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    for (const e of w.events) {
+      if (e.type === 'sortieLanded') w.commands.push({ type: 'creditSortie', amount: e.kickback });
+    }
+    if (w.stats.sortieEarned > 0) credited = true;
+    w.events.length = 0;
+  }
+
+  check(credited, 'the loopback closes: launch → inbound → land → credit');
+  check(
+    kick === Math.round(cost * BALANCE.sortie.kickback),
+    'the kickback is the configured fraction of the price',
+    `$${kick} of $${cost}`,
+  );
+  // Bought for `cost`, got `kick` back, and took the hit itself because in a
+  // loopback the sender is also the receiver. The net is what a real sender
+  // pays for a landed sortie, and it must be a loss — aggression is never free.
+  check(
+    w.money === opened - cost + kick && kick < cost,
+    'a landed sortie still costs its sender, net',
+    `$${opened} → $${w.money}, net -$${opened - w.money}`,
+  );
+}
+
+{
+  // The economic invariant the whole design rests on: **spam into a wall is a
+  // transfer to your opponent.** Sending N contacts and having every one of
+  // them die must leave the sender down more than the defender is up.
+  const w = versusWorld();
+  w.money = 1_000_000;
+  let spent = 0;
+  let paid = 0;
+  for (let i = 0; i < 12; i++) {
+    w.commands.push({ type: 'sortie', sortie: 'drifter', lane: i % 2 });
+    stepWorld(w, DT);
+    for (const e of w.events) {
+      if (e.type === 'sortieLaunched') {
+        spent += e.cost;
+        // Straight into a defence that kills everything: the receiving world
+        // collects the bounty and the sender collects nothing.
+        w.commands.push({ type: 'inbound', sortie: e.sortie, lane: e.lane, kickback: e.kickback });
+      }
+    }
+    w.events.length = 0;
+    stepWorld(w, DT);
+    for (const c of w.creeps) {
+      if (c.origin === 'sortie' && !c.dead) {
+        paid += c.bounty;
+        damageCreep(w, c, 1_000_000);
+      }
+    }
+    stepWorld(w, DT);
+    w.events.length = 0;
+  }
+  check(
+    spent > paid,
+    'twelve sorties into a wall cost the sender more than they pay the defender',
+    `spent $${spent}, handed over $${paid} — ratio ${(spent / paid).toFixed(2)}`,
+  );
+  check(
+    Math.abs(spent / paid - BALANCE.sortie.markup) < 0.05,
+    'and the ratio is the configured markup',
+    `${(spent / paid).toFixed(2)} vs ${BALANCE.sortie.markup}`,
+  );
+}
+
+{
+  // Sorties must not disturb the wave machine, however many are walking. This
+  // is V1's gate re-run through the real command path rather than a hand-placed
+  // creep, because that path is what a match will actually use.
+  const w = versusWorld();
+  w.lives = 1_000_000;
+  w.commands.push({ type: 'startWave' });
+  while (w.wave.dispatchedThrough < 0) stepWorld(w, DT);
+  for (let i = 0; i < 6; i++) {
+    w.commands.push({ type: 'inbound', sortie: 'monolith', lane: i % 2, kickback: 10 });
+  }
+  stepWorld(w, DT);
+  for (const c of w.creeps) if (c.origin === 'wave') c.dead = true;
+
+  let reward = 0;
+  for (let i = 0; i < 60 * 5; i++) {
+    stepWorld(w, DT);
+    for (const e of w.events) if (e.type === 'waveCleared') reward += e.reward;
+    w.events.length = 0;
+  }
+  check(
+    w.wave.clearedThrough === 0 && reward === BALANCE.waveClearReward,
+    'six Monolith sorties on the board do not stall wave settlement',
+    `clearedThrough=${w.wave.clearedThrough}, paid $${reward}`,
+  );
+  check(
+    w.creeps.filter((c) => c.origin === 'sortie').length === 6,
+    'and they are all still walking',
+    `${w.creeps.filter((c) => c.origin === 'sortie').length} alive`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE V7 GATE: the wire contract.
+//
+// Deliberately about *shape*, not about a running socket — a real match
+// exercises the relay, and a headless test that stood one up would mostly be
+// testing `ws`. What goes wrong silently, and is therefore checked here, is
+// the contract: a frame losing a field in transit, a version skew that is not
+// refused, or a round trip that does not close across two separate worlds.
+section('versus — V7 gate: the wire');
+
+{
+  check(PROTOCOL_VERSION === 2, 'the protocol version was raised', `v${PROTOCOL_VERSION}`);
+
+  // Encode → decode with every field intact. JSON drops `undefined` silently,
+  // which is exactly how an optional field that should have been required goes
+  // missing in a real match.
+  const roundTrip = (msg: C2S | S2C): boolean =>
+    JSON.stringify(decodeC2S(encode(msg))) === JSON.stringify(msg);
+
+  const frames: (C2S | S2C)[] = [
+    { t: 'sortie', sortie: 'monolith', lane: 1, kickback: 45 },
+    { t: 'landed', kickback: 45 },
+    { t: 'inbound', sortie: 'bulwark', lane: 0, kickback: 24 },
+    { t: 'credit', amount: 24 },
+    { t: 'status', wave: 7, lives: 12, elapsedMs: 91_000, era: 3 },
+    { t: 'peer', wave: 7, lives: 12, elapsedMs: 91_000, era: 3 },
+    { t: 'hello', v: PROTOCOL_VERSION, name: 'vega', mode: 'versus' },
+    { t: 'result', winnerId: 'p2', standings: [], reason: 'core' },
+  ];
+  for (const f of frames) check(roundTrip(f), `${f.t} survives the wire intact`);
+
+  // A sortie frame is self-contained on purpose: no tick, no timestamp, no
+  // wave. Nothing in either world depends on the other's state, so there is
+  // nothing two clocks could disagree about — and a wave number on the wire
+  // would be a value one client could put anything into.
+  const sortie = { t: 'sortie', sortie: 'drifter', lane: 0, kickback: 8 } as const;
+  check(
+    !('tick' in sortie) && !('wave' in sortie) && !('at' in sortie),
+    'and carries no clock, because there is nothing to synchronise',
+    Object.keys(sortie).join(', '),
+  );
+}
+
+{
+  // Every sortie the table can produce must name a lane the versus board has,
+  // and survive as an id the receiver can look up. A frame naming a contact
+  // the far side cannot resolve is the one wire failure that would spawn
+  // nothing and say nothing.
+  const m = parseMap(VERSUS);
+  const ok = SORTIE_IDS.every((id) =>
+    m.routes.every((_, lane) => {
+      const decoded = decodeC2S(encode({ t: 'sortie', sortie: id, lane, kickback: 1 }));
+      return (
+        decoded?.t === 'sortie' &&
+        Object.hasOwn(SORTIES, decoded.sortie) &&
+        decoded.lane >= 0 &&
+        decoded.lane < m.routes.length
+      );
+    }),
+  );
+  check(ok, 'every sortie × lane pair resolves on the far side', `${SORTIE_IDS.length} × ${m.routes.length}`);
+}
+
+{
+  // The full relayed round trip across two *separate* worlds — the thing V6's
+  // loopback could not test. Sender charges, receiver spawns and takes the
+  // hit, sender collects. The relay is stubbed as a pair of function calls,
+  // because that is precisely what the socket is.
+  const sender = versusWorld();
+  const receiver = versusWorld();
+  receiver.wave.phase = 'done';
+  sender.money = 1_000_000;
+  // A Monolith is era III on both halves of the ladder. Without this the
+  // launch is refused as `locked` and every figure below reads zero — which is
+  // how this gate caught its own setup the first time it ran.
+  sender.era = BALANCE.upgrade.maxTier;
+  const opened = sender.money;
+  const acc: Accumulator = { debt: 0 };
+
+  // main.ts's relay, in miniature: launch → their inbound, land → our credit.
+  const relay = (from: ReturnType<typeof createWorld>, to: ReturnType<typeof createWorld>): void => {
+    for (const e of from.events) {
+      if (e.type === 'sortieLaunched') {
+        to.commands.push({ type: 'inbound', sortie: e.sortie, lane: e.lane, kickback: e.kickback });
+      } else if (e.type === 'sortieLanded') {
+        to.commands.push({ type: 'creditSortie', amount: e.kickback });
+      }
+    }
+  };
+
+  sender.commands.push({ type: 'sortie', sortie: 'monolith', lane: 1 });
+  stepWorld(sender, DT);
+  const launch = sender.events.find((e) => e.type === 'sortieLaunched');
+  const cost = launch?.type === 'sortieLaunched' ? launch.cost : 0;
+  relay(sender, receiver);
+  sender.events.length = 0;
+
+  check(cost > 0 && sender.money === opened - cost, 'the sender is charged on their own board', `-$${cost}`);
+  check(sender.creeps.length === 0, 'and nothing spawns there');
+
+  const theirLives = receiver.lives;
+  for (let i = 0; i < 60 * 200 && receiver.lives === theirLives; i++) {
+    advance(receiver, acc, 1000 / TICK_HZ, 1);
+    relay(receiver, sender);
+    receiver.events.length = 0;
+  }
+  stepWorld(sender, DT);
+
+  check(
+    receiver.lives === theirLives - SORTIES['monolith'].weight,
+    'the receiver takes the full weight',
+    `${theirLives} → ${receiver.lives}`,
+  );
+  check(
+    receiver.stats.sortiesTaken === 1 && receiver.stats.sortieEarned === 0,
+    'and is paid nothing for being hit',
+    `$${receiver.stats.sortieEarned}`,
+  );
+  check(
+    sender.stats.sortieEarned === Math.round(cost * BALANCE.sortie.kickback),
+    'while the sender collects the kickback across the wire',
+    `+$${sender.stats.sortieEarned} of $${cost}`,
+  );
+  check(
+    sender.money < opened,
+    'a landed sortie is still a net cost to whoever sent it',
+    `$${opened} → $${sender.money}`,
+  );
+  check(
+    sender.lives === sender.rules.startingLives,
+    'and costs the sender no lives — the two boards are genuinely separate',
+    `${sender.lives} lives`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE V8 GATE: the mode says what it is.
+//
+// Every screen in this game was written for a campaign sector, and versus is
+// not one — it cannot be cleared, retried, or advanced from, and half its
+// damage was bought by somebody. The copy gates below exist because that kind
+// of wrongness is invisible to a typechecker and easy to ship: the results
+// screen said "Race over" on a versus match through the whole of V7.
+section('versus — V8 gate: what the screens say');
+
+{
+  // The leak event carries whether it was bought, so a consumer never has to
+  // correlate two events to pick a voice. Asserted because the alternative —
+  // reading the `sortieLanded` that follows — depends on the order they are
+  // pushed in, and both the mixer and the renderer drain forward once.
+  const w = versusWorld();
+  w.wave.phase = 'done';
+  const acc: Accumulator = { debt: 0 };
+  w.commands.push({ type: 'inbound', sortie: 'bulwark', lane: 0, kickback: 12 });
+  stepWorld(w, DT);
+
+  let leak: Extract<SimEvent, { type: 'creepLeaked' }> | undefined;
+  while (leak === undefined && w.time < 200) {
+    advance(w, acc, 1000 / TICK_HZ, 1);
+    for (const e of w.events) if (e.type === 'creepLeaked') leak = e;
+    w.events.length = 0;
+  }
+  check(leak?.bought === true, 'a bought leak says so on the event itself');
+  check(
+    leak?.cost === SORTIES['bulwark'].weight,
+    'and reports the weight it actually took',
+    `cost=${leak?.cost}`,
+  );
+
+  const plain = createWorld(map, 4242);
+  plain.wave.phase = 'done';
+  const acc2: Accumulator = { debt: 0 };
+  spawnCreep(plain, 'drifter');
+  let ordinary: Extract<SimEvent, { type: 'creepLeaked' }> | undefined;
+  while (ordinary === undefined && plain.time < 200) {
+    advance(plain, acc2, 1000 / TICK_HZ, 1);
+    for (const e of plain.events) if (e.type === 'creepLeaked') ordinary = e;
+    plain.events.length = 0;
+  }
+  check(
+    ordinary?.bought === false && ordinary?.cost === 1,
+    'and an ordinary wave leak says the opposite',
+    `bought=${ordinary?.bought} cost=${ordinary?.cost}`,
+  );
+}
+
+{
+  // The three sortie cues must be distinguishable from each other and from the
+  // leak they sit beside. Checked as *properties* rather than literals, the
+  // way the contact-ramp gates are: the send rises, the arrival falls, and the
+  // bought breach sits under the ordinary one.
+  const first = (s: typeof LEAK): { a: number; b: number } => {
+    const l = s.layers[0]!;
+    return { a: l.freq, b: l.freqEnd ?? l.freq };
+  };
+  const sent = first(SORTIE_SENT);
+  const inbound = first(SORTIE_INBOUND);
+  const landed = first(SORTIE_LANDED);
+  const leak = first(LEAK);
+
+  check(sent.b > sent.a, 'the send rises — the one thing you cause off-board', `${sent.a} → ${sent.b}`);
+  check(inbound.b < inbound.a, 'the arrival falls', `${inbound.a} → ${inbound.b}`);
+  check(
+    landed.a < leak.a && landed.b < leak.b,
+    'a bought breach sits under an ordinary one at both ends',
+    `${landed.a}→${landed.b} vs leak ${leak.a}→${leak.b}`,
+  );
+  check(
+    SORTIE_LANDED.priority === LEAK.priority,
+    'and shares its priority band, because it is still a breach',
+  );
+  check(
+    SORTIE_SENT.bus === 'ui' && SORTIE_LANDED.bus === 'impacts',
+    'a purchase is UI, a breach is an impact',
+  );
+}
+
+{
+  // Word budget, the same rule the deck copy is already held to. These strings
+  // are read while a wave is walking.
+  const versusCopy = [
+    'Core lost',
+    'Play it again',
+    'Their core went dark',
+    'Your core went dark',
+    'Sorties taken',
+    'Still standing',
+  ];
+  check(
+    versusCopy.every((c) => c.split(/\s+/).length <= 4),
+    'every versus label is four words or fewer',
+    versusCopy.map((c) => `${c.split(/\s+/).length}`).join(' '),
+  );
+  check(
+    versusCopy.every((c) => !/sector/i.test(c)),
+    'and none of them calls this a sector',
+  );
 }
 
 {
@@ -1032,10 +2615,20 @@ section('stations — upgrade, sell, targeting');
     'coverage partitions the route',
     `${cov.total} tiles`,
   );
+  // The union of the lanes, which on a one-lane board is the lane. Counted
+  // against painted road rather than against a route length, so a board whose
+  // lanes share a trunk cannot report more road than it has.
+  const painted = map.tiles.filter((t) => t === 'path').length;
   check(
-    cov.total === map.pathLength,
-    'and counts every route tile exactly once',
-    `${cov.total} vs ${map.pathLength}`,
+    cov.total === painted,
+    'and counts every painted road tile exactly once',
+    `${cov.total} vs ${painted} painted`,
+  );
+  const lanes = laneCoverage(w);
+  check(
+    lanes.length === map.routes.length && lanes.every((l) => l.covered + l.gaps.length === l.total),
+    'per-lane coverage partitions each lane',
+    lanes.map((l) => `${l.id} ${l.covered}/${l.total}`).join(' · '),
   );
 }
 
@@ -1044,29 +2637,19 @@ section('stations — upgrade, sell, targeting');
  * these tiles by eye; ranking them here means a gate or a probe measures the
  * design rather than my ability to guess coordinates.
  *
- * Module scope because both the determinism gate and the balance probe want a
- * plausible defence, and two copies of this heuristic would be two things to
- * keep in step.
+ * **A thin call into `buildOrder`, which is the point.** This used to be a
+ * hand-rolled second implementation of the same heuristic — same scan, same
+ * `covered` count, same col-then-row tie-break — sitting beside the one
+ * `sweep.ts` and `campaign.ts` share. Two copies of a ranking is exactly what
+ * that module's header says it exists to prevent, and a gate suite grading a
+ * defence by a *different* notion of a good tile than the balance tools use is
+ * the worst possible place for that drift to live.
+ *
+ * A `function` and not a `const`: three call sites above this line rely on
+ * hoisting.
  */
-function rankedSpots(range: number): [number, number][] {
-  const scored: { col: number; row: number; covered: number }[] = [];
-  for (let row = 0; row < map.rows; row++) {
-    for (let col = 0; col < map.cols; col++) {
-      if (map.tiles[row * map.cols + col] !== 'ground') continue;
-      let covered = 0;
-      for (let r = 0; r < map.rows; r++) {
-        for (let c = 0; c < map.cols; c++) {
-          if (map.tiles[r * map.cols + c] !== 'path') continue;
-          const dx = c - col;
-          const dy = r - row;
-          if (dx * dx + dy * dy <= range * range) covered++;
-        }
-      }
-      scored.push({ col, row, covered });
-    }
-  }
-  scored.sort((a, b) => b.covered - a.covered || a.col - b.col || a.row - b.row);
-  return scored.map((s) => [s.col, s.row]);
+function rankedSpots(range: number): readonly (readonly [number, number])[] {
+  return buildOrder(map, range, 'cluster');
 }
 
 // ---------------------------------------------------------------------------
@@ -1509,23 +3092,52 @@ section('balance probe (informational)');
   ): { won: boolean; lives: number; towers: number; wave: number; earned: number } => {
     // Rank by the widest range in the build so every strategy shares one notion
     // of "good tile" and none is flattered by its own ordering.
-    const spots = rankedSpots(Math.max(...build.map((b) => TOWERS[b].range)));
+    // Attacking reach only: a support station's radius buffs towers rather than
+    // covering road, so ranking tiles by it would rank them for nothing.
+    const guns = build.filter((b) => TOWERS[b].buffShotsPerSecond === 0);
+    const spots = rankedSpots(Math.max(...(guns.length > 0 ? guns : build).map((b) => TOWERS[b].range)));
     const w = createWorld(map, seed);
     const acc: Accumulator = { debt: 0 };
+    const taken = new Set<number>();
     let next = 0;
 
     for (let i = 0; i < 400_000 && w.phase === 'playing'; i++) {
-      const want = build[next % build.length]!;
-      // `next` advances only when the command can actually succeed. It used to
-      // advance on every attempt, so a station rejected for being locked burned
-      // one of the ranked tiles and the build quietly came out short.
-      if (
-        next < spots.length &&
-        w.money >= TOWERS[want].cost &&
-        w.wave.index >= TOWERS[want].unlockWave
-      ) {
-        w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
-        next++;
+      // **Locked stations are stepped over, not waited on.** This used to hold
+      // the cursor on a locked slot, so the whole build stalled until that
+      // station unlocked — the `filament` row measured 0/5 having built two
+      // towers and earned $1, and `arc+filament` built 3.4, both of which were
+      // facts about this loop rather than about the stations. Shared in spirit
+      // with `sweep.ts` and `campaign.ts`, which carry the same block.
+      //
+      // A local offset that does not advance `next`: advancing it per tick
+      // rotates the cycle thousands of times while a station is locked, making
+      // which station lands on which ranked tile arbitrary.
+      let skip = 0;
+      while (skip < build.length && w.wave.index < TOWERS[build[(next + skip) % build.length]!].unlockWave) {
+        skip++;
+      }
+      if (skip === build.length) {
+        if (rush) w.commands.push({ type: 'startWave' });
+        advance(w, acc, 1000 / TICK_HZ, 1);
+        w.events.length = 0;
+        continue;
+      }
+
+      const want = build[(next + skip) % build.length]!;
+      const def = TOWERS[want];
+      // Support is not placed by rank — it goes where it feeds the most
+      // stations. Same shared rule the balance tools use.
+      const at = spotFor(
+        spots,
+        taken,
+        def.buffShotsPerSecond > 0 ? { range: def.range, towers: w.towers } : null,
+      );
+      // Money still blocks rather than skipping: waiting to afford what the
+      // build asked for is what a player does.
+      if (at >= 0 && w.money >= def.cost) {
+        w.commands.push({ type: 'placeTower', defId: want, col: spots[at]![0], row: spots[at]![1] });
+        taken.add(at);
+        next += skip + 1;
       }
       if (rush) w.commands.push({ type: 'startWave' });
       advance(w, acc, 1000 / TICK_HZ, 1);
@@ -1575,7 +3187,9 @@ section('balance probe (informational)');
     ['filament', ['filament']],
     ['nova+2lance', ['nova', 'lance', 'lance']],
     ['arc+filament', ['arc', 'filament']],
-    ['all five', ['nova', 'lance', 'singularity', 'arc', 'filament']],
+    ['overclock', ['overclock']],
+    ['nova+overclock', ['nova', 'overclock']],
+    ['all six', ['nova', 'lance', 'singularity', 'arc', 'filament', 'overclock']],
     ['nova+lance+sing', ['nova', 'lance', 'singularity']],
     ['2nova+sing', ['nova', 'nova', 'singularity']],
   ];
@@ -1602,6 +3216,20 @@ section('balance probe (informational)');
 // ---------------------------------------------------------------------------
 section('front door · derived board facts');
 {
+  /** An independent second implementation, so the gate is a check and not an echo. */
+  const headingChanges = (route: { waypoints: readonly { x: number; y: number }[] }): number => {
+    const w = route.waypoints;
+    let n = 0;
+    for (let i = 1; i < w.length - 1; i++) {
+      const ax = Math.sign(w[i]!.x - w[i - 1]!.x);
+      const ay = Math.sign(w[i]!.y - w[i - 1]!.y);
+      const bx = Math.sign(w[i + 1]!.x - w[i]!.x);
+      const by = Math.sign(w[i + 1]!.y - w[i]!.y);
+      if (ax !== bx || ay !== by) n++;
+    }
+    return n;
+  };
+
   for (const level of CAMPAIGN) {
     const facts = boardFacts(level.map);
     const m = parseMap(level.map);
@@ -1611,10 +3239,16 @@ section('front door · derived board facts');
       `${level.name}: road length is counted, not written`,
       `${facts.road} tiles`,
     );
+    const interior = Math.max(...m.routes.map((r) => r.waypoints.length - 2));
     check(
-      facts.turns < m.waypoints.length - 2,
+      facts.turns < interior,
       `${level.name}: turns are heading changes, not waypoints`,
-      `${facts.turns} turns vs ${m.waypoints.length - 2} interior waypoints`,
+      `${facts.turns} turns vs ${interior} interior waypoints`,
+    );
+    check(
+      facts.lanes === m.routes.length && facts.turns === Math.max(...m.routes.map(headingChanges)),
+      `${level.name}: turns come from the twistiest lane, never summed`,
+      `${facts.lanes} lane(s), ${facts.turns} turns`,
     );
 
     // The thumbnail has to cover the board and draw every road tile, or the
@@ -1964,6 +3598,39 @@ section('hud · build slot states');
   check(unaffordable.includes('short '), 'unaffordable slots name the gap');
   check(renderSlots(rich, armedUi).includes('armed'), 'the armed slot is marked');
 
+  // ---------------------------------------------------------------------------
+  // THE DECK IS A FIXED COMPOSITION, SO SLOT COUNT IS A BUDGET.
+  //
+  // `pixiApp.ts` lays the HUD out at the board's *logical* size — 1040x600 — and
+  // scales the whole thing rather than reflowing it, precisely so narrow widths
+  // shrink the deck instead of clipping the send control. That has one
+  // consequence worth pinning: a slot is a fixed 78px with an 8px gap
+  // (`styles.css`), whatever the viewport, so adding a station never makes the
+  // existing slots smaller — it spends horizontal room.
+  //
+  //   6 slots -> 6*78 + 5*8 = 508px of the 1040 available
+  //   7 slots -> 7*78 + 6*8 = 594px, against a detail panel capped at 430px,
+  //              which leaves 16px for every gap and margin between them
+  //
+  // So six fits comfortably and seven does not, and the failure would appear as
+  // a clipped panel at *every* size rather than only on a phone. This is also
+  // why adding Overclock did not worsen the touch-target problem: slot width is
+  // constant, and that constraint is about the whole-composition scale factor.
+  //
+  // A seventh station is therefore a deck layout task first and a balance task
+  // second. Wrapping the row, scrolling it, or shrinking the detail cap are all
+  // fine answers; discovering the problem from a screenshot is not.
+  const SLOT_PX = 78;
+  const SLOT_GAP = 8;
+  const DETAIL_CAP = 430;
+  const LOGICAL_W = 1040;
+  const slotsWidth = TOWER_IDS.length * SLOT_PX + (TOWER_IDS.length - 1) * SLOT_GAP;
+  check(
+    slotsWidth + DETAIL_CAP <= LOGICAL_W,
+    'the deck row fits the logical board width',
+    `${TOWER_IDS.length} slots = ${slotsWidth}px + ${DETAIL_CAP}px detail vs ${LOGICAL_W}px`,
+  );
+
   // The shortfall is arithmetic, not decoration: it has to be the real number.
   const first = TOWERS[TOWER_IDS[0]!];
   const partial = createWorld(map, 4242);
@@ -2153,6 +3820,61 @@ section('board · contrast order');
 }
 
 // ---------------------------------------------------------------------------
+// NO TWO STATIONS MAY WEAR THE SAME COLOUR.
+//
+// `theme.ts` states the requirement — "a fourth blue would be unreadable in a
+// crowd; the damage numbers are tinted by station, so these have to separate at
+// a glance and at 13px" — and nothing enforced it. The gate above checks each
+// tint against the *board*, which is a different question: two stations can both
+// clear the route and be indistinguishable from each other.
+//
+// It was not hypothetical. Overclock's first tint was a warm yellow picked to
+// sit far from Singularity, and it landed 64.6 from Nova against a roster whose
+// worst pair was 91.2 — the least legible colour in the game, shipped without
+// anything noticing.
+//
+// Redmean rather than CIE Lab: it is four lines, it is the standard cheap
+// approximation, and the failure being caught is "these two are obviously the
+// same colour", which does not need a colorimeter. The floor is set just under
+// the roster's tightest surviving pair, so it pins today's design and fails on
+// a regression rather than encoding an aspiration.
+// ---------------------------------------------------------------------------
+section('board · stations are told apart by colour');
+{
+  const MIN_SEPARATION = 85;
+  const chan = (h: number): [number, number, number] => [(h >> 16) & 255, (h >> 8) & 255, h & 255];
+  const separation = (a: number, b: number): number => {
+    const [r1, g1, b1] = chan(a);
+    const [r2, g2, b2] = chan(b);
+    const rm = (r1 + r2) / 2;
+    const dr = r1 - r2;
+    const dg = g1 - g2;
+    const db = b1 - b2;
+    return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db);
+  };
+
+  let worst = Infinity;
+  let worstPair = '';
+  for (let i = 0; i < TOWER_IDS.length; i++) {
+    for (let j = i + 1; j < TOWER_IDS.length; j++) {
+      const a = TOWER_IDS[i]!;
+      const b = TOWER_IDS[j]!;
+      const sep = separation(THEME.towers[a], THEME.towers[b]);
+      if (sep < worst) {
+        worst = sep;
+        worstPair = `${a} vs ${b}`;
+      }
+    }
+  }
+
+  check(
+    worst >= MIN_SEPARATION,
+    `every pair of station tints separates by at least ${MIN_SEPARATION}`,
+    `worst ${worst.toFixed(1)} · ${worstPair}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // THE ROUTE RAMP AGREES WITH THE MAP.
 //
 // The corridor's fill, its spill and its centre line all key off
@@ -2164,7 +3886,7 @@ section('board · contrast order');
 // ---------------------------------------------------------------------------
 section('board · route ramp');
 {
-  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+  for (const src of CAMPAIGN.map((l) => l.map)) {
     const m = parseMap(src);
     const dist = routeDistance(m);
 
@@ -2217,7 +3939,7 @@ section('board · grid legibility');
     [1, 0.5],
   ];
 
-  for (const src of [LEVEL01, LEVEL02, LEVEL03] as const) {
+  for (const src of CAMPAIGN.map((l) => l.map)) {
     const m = parseMap(src);
     const w = m.cols * TILE_PX;
     const h = m.rows * TILE_PX;
@@ -2431,6 +4153,298 @@ section('input — touch placement');
     !deckStay.fx.some((f) => f.k === 'arm') && placed(deckStay.fx).length === 0,
     'a press that never leaves the slot defers to the DOM click',
   );
+}
+
+// ---------------------------------------------------------------------------
+// SUPPORT THAT BUFFS TOWERS RATHER THAN DEBUFFING CONTACTS.
+//
+// Overclock is the first station whose target is a tower, and that makes it the
+// first one whose effect nothing on the board can show. Every other station is
+// checkable by watching a contact; this one is only checkable by watching
+// another station's rate, which is exactly why it needs gates rather than a
+// play-test.
+//
+// The buff is authored as `+shots per second`, additively, and the arithmetic
+// below is what pins that: a multiplier on `fireInterval` would pass a "does it
+// fire faster" check just as well, and would be a different — and much more
+// dangerous — station. See `TowerDef.buffShotsPerSecond`.
+// ---------------------------------------------------------------------------
+section('combat · support feeds rate, additively');
+{
+  /** A board past every unlock with money to burn, and nothing spawning. */
+  const rig = (): World => {
+    const w = createWorld(map, 31337);
+    w.wave.phase = 'done';
+    w.wave.index = 10;
+    w.money = 5000;
+    return w;
+  };
+
+  const place = (w: World, defId: TowerId, col: number, row: number): Tower => {
+    w.commands.push({ type: 'placeTower', defId, col, row });
+    stepWorld(w, DT);
+    return w.towers[w.towers.length - 1]!;
+  };
+
+  /**
+   * Seconds between shots, measured from the sim rather than read off a stat.
+   *
+   * First-to-last over the gaps between them, so the partial interval at each
+   * end does not bias the mean — the same reason the fire-rate drift gate above
+   * measures the way it does. `towerFired` carries no id, but it carries the
+   * position, and towers are tile-aligned so the position *is* an id here.
+   */
+  const measure = (w: World, t: Tower, seconds: number): number => {
+    const fires: number[] = [];
+    let clock = 0;
+    for (let i = 0; i < seconds * 60; i++) {
+      for (const c of w.creeps) {
+        c.x = 9.5;
+        c.y = 2.5;
+      }
+      stepWorld(w, DT);
+      clock += DT;
+      for (const e of w.events) {
+        if (e.type === 'towerFired' && e.x === t.x && e.y === t.y) fires.push(clock);
+      }
+      w.events.length = 0;
+    }
+    if (fires.length < 2) return Infinity;
+    return (fires[fires.length - 1]! - fires[0]!) / (fires.length - 1);
+  };
+
+  const held = (w: World): void => {
+    spawnCreep(w, 'monolith', { hp: 1_000_000 });
+  };
+
+  // -- 1. A station with no interval never fires. -----------------------------
+  {
+    const w = rig();
+    const o = place(w, 'overclock', 8, 3);
+    held(w);
+    const interval = measure(w, o, 10);
+    check(interval === Infinity, 'an overclock never fires', 'no towerFired at its tile');
+    check(o.damageDealt === 0 && o.kills === 0, 'and deals nothing');
+    check(o.cooldown === 0, 'its cooldown never drifts', `cooldown ${o.cooldown}`);
+  }
+
+  // -- 2/3. The fed rate is exact, and it is additive. ------------------------
+  //
+  // The two are one gate on purpose. "Fires faster" is satisfied by a
+  // multiplier; only the *figure* distinguishes `+0.35/s` from `−17.5% interval`
+  // on a station that happens to sit at 2.0/s, and the whole design rests on
+  // which of those two it is.
+  {
+    const base = rig();
+    const lonely = place(base, 'lance', 9, 3);
+    held(base);
+    const alone = measure(base, lonely, 30);
+    check(
+      Math.abs(alone - TOWERS.lance.fireInterval) < DT,
+      'an unfed lance fires at its own interval',
+      `${alone.toFixed(4)}s vs ${TOWERS.lance.fireInterval}s`,
+    );
+
+    const w = rig();
+    const lance = place(w, 'lance', 9, 3);
+    place(w, 'overclock', 8, 3);
+    held(w);
+    const want = 1 / (1 / TOWERS.lance.fireInterval + TOWERS.overclock.buffShotsPerSecond);
+    const got = measure(w, lance, 30);
+    check(
+      Math.abs(got - want) < DT,
+      'a fed lance fires at base + the buff, in shots per second',
+      `${got.toFixed(4)}s vs ${want.toFixed(4)}s`,
+    );
+
+    // The additive/multiplicative distinction is measured on a *Nova*, and it
+    // has to be. At Lance's 2.0/s the two units are indistinguishable — +0.35/s
+    // lands on 0.4255s and a −17.5% interval on 0.4125s, inside one tick of each
+    // other, and the first draft of this gate failed for that reason rather than
+    // because anything was wrong. That near-identity at a fast station and the
+    // gulf below at a slow one *is* the design: the buff pays out to whatever
+    // fires slowest, which is what stops it amplifying whatever is already best.
+    const slow = rig();
+    const nova = place(slow, 'nova', 9, 3);
+    place(slow, 'overclock', 8, 3);
+    held(slow);
+    const novaWant = 1 / (1 / TOWERS.nova.fireInterval + TOWERS.overclock.buffShotsPerSecond);
+    const novaGot = measure(slow, nova, 60);
+    check(
+      Math.abs(novaGot - novaWant) < DT,
+      'a fed nova gains the same shots per second, not the same fraction',
+      `${novaGot.toFixed(4)}s vs ${novaWant.toFixed(4)}s`,
+    );
+    // What the same buff would have been worth as a multiplier tuned to Lance.
+    const asMultiplier = TOWERS.nova.fireInterval * (1 - 0.175);
+    check(
+      Math.abs(novaGot - asMultiplier) > DT * 4,
+      'and the two units are far apart where it matters',
+      `additive ${novaWant.toFixed(3)}s vs multiplicative ${asMultiplier.toFixed(3)}s`,
+    );
+  }
+
+  // -- 4. Two sources stack by maximum, not by sum. ---------------------------
+  //
+  // The pathology this station most plausibly has is a lattice of support, and
+  // summing is what would create it. Both overclocks sit exactly one tile from
+  // the lance, so a sum would be unmistakable: 2.7/s against 2.35/s.
+  {
+    const w = rig();
+    const lance = place(w, 'lance', 9, 3);
+    place(w, 'overclock', 8, 3);
+    held(w);
+    const one = measure(w, lance, 30);
+
+    place(w, 'overclock', 10, 3);
+    const two = measure(w, lance, 30);
+    check(
+      Math.abs(one - two) < DT,
+      'a second overclock on the same station adds nothing',
+      `${one.toFixed(4)}s then ${two.toFixed(4)}s`,
+    );
+    check(lance.buffShots === TOWERS.overclock.buffShotsPerSecond, 'the buff is the max, not the sum');
+  }
+
+  // -- 5. Selling the support takes the buff with it. -------------------------
+  //
+  // The `refreshBuffs` invariant, and the one a future feature is most likely
+  // to break by mutating `w.towers` somewhere new.
+  {
+    const w = rig();
+    const lance = place(w, 'lance', 9, 3);
+    const o = place(w, 'overclock', 8, 3);
+    held(w);
+    check(lance.buffShots > 0, 'the lance is fed while the overclock stands');
+
+    w.commands.push({ type: 'sellTower', id: o.id });
+    stepWorld(w, DT);
+    check(lance.buffShots === 0, 'and unfed the moment it is sold');
+    const after = measure(w, lance, 30);
+    check(
+      Math.abs(after - TOWERS.lance.fireInterval) < DT,
+      'the rate returns to base, not to somewhere between',
+      `${after.toFixed(4)}s vs ${TOWERS.lance.fireInterval}s`,
+    );
+  }
+
+  // -- 6. Widening the reach feeds someone new. -------------------------------
+  //
+  // Two tiles apart: outside Mk I's 1.8 and inside Mk II's 2.07. That gap is
+  // why the base reach is 1.8 and not 1.5 — at 1.5 the range path's first tier
+  // would buy nothing at all, the next tile out sitting at exactly 2.0.
+  {
+    const w = rig();
+    const lance = place(w, 'lance', 10, 3);
+    const o = place(w, 'overclock', 8, 3);
+    check(lance.buffShots === 0, 'a station two tiles out is beyond Mk I reach');
+
+    w.commands.push({ type: 'upgradeTower', id: o.id, path: 'range' });
+    stepWorld(w, DT);
+    check(lance.buffShots > 0, 'and inside Mk II reach', `range ${o.stats.range.toFixed(2)}tl`);
+  }
+
+  // -- 7. A fed ramp still ramps in real seconds. -----------------------------
+  //
+  // `focusTime` advances by the interval as a stand-in for elapsed wall time.
+  // Read the *unbuffed* interval there while firing on the buffed one and a fed
+  // filament credits itself 0.25s of spin-up every 0.23s of real time — it hits
+  // its ceiling early and the rate buff silently becomes a ramp accelerator on
+  // top, which is two buffs bought with one purchase.
+  {
+    const ceiling = (fed: boolean): number => {
+      const w = rig();
+      const f = place(w, 'filament', 9, 3);
+      if (fed) place(w, 'overclock', 8, 3);
+      held(w);
+      for (let i = 0; i < 60 * 8; i++) {
+        for (const c of w.creeps) {
+          c.x = 9.5;
+          c.y = 2.5;
+        }
+        stepWorld(w, DT);
+        if (rampFactor(f) >= f.stats.rampMax) return (i + 1) * DT;
+      }
+      return Infinity;
+    };
+
+    const cold = ceiling(false);
+    const warm = ceiling(true);
+    check(
+      Math.abs(warm - cold) < 0.1,
+      'a fed filament reaches its ceiling in the same wall-clock time',
+      `${cold.toFixed(2)}s unfed vs ${warm.toFixed(2)}s fed`,
+    );
+  }
+
+  // -- 8. A station with no damage has no damage path. ------------------------
+  //
+  // `damageAtTier` multiplies the def's damage, so on an Overclock every tier
+  // of that track is a purchase that provably cannot move a number the sim
+  // reads. Left priced, it is a money sink that looks like a decision.
+  {
+    const w = rig();
+    const o = place(w, 'overclock', 8, 3);
+    check(upgradeCost(o, 'damage') === null, 'the damage track is unavailable, not merely maxed');
+    check(
+      upgradeError(w, o, 'damage') === 'noSuchPath',
+      'and says so in its own words',
+      `got ${upgradeError(w, o, 'damage')}`,
+    );
+
+    const before = w.money;
+    w.commands.push({ type: 'upgradeTower', id: o.id, path: 'damage' });
+    stepWorld(w, DT);
+    check(w.money === before, 'and buying it takes no money', `$${before} → $${w.money}`);
+    check(o.tiers.damage === 1, 'and buys no tier');
+
+    // The other two tracks are real, or the station has nothing to buy at all.
+    check(upgradeCost(o, 'range') !== null, 'the range track is real');
+    check(upgradeCost(o, 'effect') !== null, 'the effect track is real');
+  }
+
+  // -- 9. The inspector prices the buff, and prices it from the sim. ----------
+  //
+  // A station quietly firing faster than its own stat block says is the number
+  // a player reads as a bug. The panel has to show both halves — what it does
+  // alone and what it does fed — or an Overclock cannot be priced before it is
+  // bought, which is the whole decision the station exists to pose.
+  {
+    const w = rig();
+    const lance = place(w, 'lance', 9, 3);
+    const before = renderInspector(w, lance);
+    // `class="fed"`, not a bare `→`: the upgrade cards already use that arrow
+    // for "what the next tier buys", so asserting on the glyph alone failed
+    // against a panel that was perfectly correct.
+    check(!before.includes('class="fed"'), 'an unfed station shows one rate, unmarked');
+
+    place(w, 'overclock', 8, 3);
+    const after = renderInspector(w, lance);
+    const base = (1 / TOWERS.lance.fireInterval).toFixed(1);
+    const fed = (1 / effectiveInterval(lance)).toFixed(1);
+    check(
+      after.includes(`${base}<i class="fed">→${fed}</i>`),
+      'a fed station shows base and fed rate together',
+      `${base}→${fed}/s`,
+    );
+    // The figure must be the sim's, not the panel's own arithmetic — the same
+    // discipline `effectiveDamage` and `rampFactor` are held to.
+    check(
+      Math.abs(Number(fed) - (1 / TOWERS.lance.fireInterval + TOWERS.overclock.buffShotsPerSecond)) < 0.05,
+      'and the fed figure is the one the sim fires at',
+      `${fed}/s`,
+    );
+
+    // Both halves are numerals, so the inspector's ten-word budget is untouched
+    // — but the budget gate never builds two stations, so it cannot see this
+    // panel and the claim has to be checked here.
+    const shown = after
+      .replace(/<[^>]*>/g, ' ')
+      .split(/[\s·—–|,]+/)
+      .filter((t) => /[A-Za-z]/.test(t) && !/\d/.test(t) && !/^[IVX]+$/.test(t))
+      .filter((t) => !['tl', 's', 'ehp', 'hp', 'kills'].includes(t.toLowerCase()));
+    check(shown.length <= 10, 'and the fed panel still fits the word budget', `${shown.length} words`);
+  }
 }
 
 // ---------------------------------------------------------------------------

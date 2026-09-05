@@ -5,6 +5,7 @@ import type { PlannedSpawn } from './wavePlan.ts';
 import type {
   Command,
   Creep,
+  CreepOrigin,
   EntityId,
   MapDef,
   MatchPhase,
@@ -54,6 +55,16 @@ export interface RunStats {
   bounty: number;
   /** Cash spent on building and upgrading, before any sell refunds. */
   spent: number;
+
+  /** Sorties bought and dispatched at the other player, and what they cost. */
+  sortiesSent: number;
+  sortieSpend: number;
+  /** Kickbacks collected — sorties of yours that reached their core. */
+  sortieEarned: number;
+  /** Their sorties that reached yours. Counted apart from `leaks` on purpose:
+   *  a wave you failed to hold and a blow somebody paid for are different
+   *  failures, and a results screen that merged them would say neither. */
+  sortiesTaken: number;
 }
 
 /** The same three figures, per wave, so a clear can be itemised. */
@@ -91,6 +102,19 @@ export interface World {
   phase: MatchPhase;
   lives: number;
   money: number;
+
+  /**
+   * How far up the era ladder this player has bought, 1..3.
+   *
+   * Always present, and always 1 outside versus. A field that only existed
+   * when `rules.eras` was set would make every reader ask whether it is there
+   * before asking what it says, and the sim has no notion of "which mode am I"
+   * anywhere else. Era 1 with nothing able to advance it is exactly the
+   * campaign's behaviour, so the campaign needs no branch at all.
+   */
+  era: number;
+  /** Total sunk into advancing. Reported at the end; never read by a rule. */
+  eraSpent: number;
   wave: WaveState;
 
   creeps: Creep[];
@@ -125,6 +149,8 @@ export function createWorld(map: MapDef, seed: number, rules: Rules = DEFAULT_RU
     phase: 'playing',
     lives: rules.startingLives,
     money: rules.startingMoney,
+    era: 1,
+    eraSpent: 0,
     wave: {
       index: 0,
       phase: 'intermission',
@@ -138,7 +164,16 @@ export function createWorld(map: MapDef, seed: number, rules: Rules = DEFAULT_RU
     towers: [],
     projectiles: [],
     pendingSplits: [],
-    stats: { kills: 0, leaks: 0, bounty: 0, spent: 0 },
+    stats: {
+      kills: 0,
+      leaks: 0,
+      bounty: 0,
+      spent: 0,
+      sortiesSent: 0,
+      sortieSpend: 0,
+      sortieEarned: 0,
+      sortiesTaken: 0,
+    },
     perWave: [],
     commands: [],
     events: [],
@@ -176,20 +211,47 @@ export interface SpawnOptions {
   hp?: number;
   bounty?: number;
   shield?: number;
+  /**
+   * Lives this costs if it lands. Defaults to the def's 1; the sortie table is
+   * the only caller that overrides it.
+   */
+  leakDamage?: number;
   wave?: number;
   /**
-   * Start partway along the route instead of at the entry.
+   * Defaults to `'wave'`, which is what every caller that predates sorties
+   * wants and is why none of them had to change.
+   */
+  origin?: CreepOrigin;
+  /**
+   * What this pays its sender if it lands. Defaults to 0, which is what every
+   * wave contact is worth to nobody.
+   */
+  kickback?: number;
+  /**
+   * Which lane to walk, as an index into `map.routes`. Defaults to the first,
+   * which on a one-route board is the only one.
+   *
+   * Ignored when `at` is given: a split inherits its parent's lane, and the
+   * lane is part of where the parent was standing.
+   */
+  route?: number;
+  /**
+   * Start partway along a lane instead of at its entry.
    *
    * Used by splits: children appear where the parent died, not back at the
    * spawn. Without this a Cluster killed at the goal would hand the player
    * three fresh Motes with the whole route to walk, which is a reward.
    */
-  at?: { x: number; y: number; leg: number; progress: number };
+  at?: { x: number; y: number; route: number; leg: number; progress: number };
 }
 
 export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): Creep {
   const def = ENEMIES[defId];
-  const start = opts.at ?? { ...w.map.spawn, leg: 1, progress: 0 };
+  const route = opts.at?.route ?? opts.route ?? 0;
+  const lane = w.map.routes[route];
+  if (lane === undefined) throw new Error(`spawn on route ${route}, which this map does not have`);
+
+  const start = opts.at ?? { ...lane.waypoints[0]!, leg: 1, progress: 0 };
   const health = opts.hp ?? def.hp;
   const shield = opts.shield ?? def.shield;
 
@@ -198,6 +260,7 @@ export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): C
     defId,
     x: start.x,
     y: start.y,
+    route,
     // waypoints[0] is the off-board entry the creep is standing on, so the
     // first leg is walking toward waypoints[1].
     leg: start.leg,
@@ -212,7 +275,10 @@ export function spawnCreep(w: World, defId: EnemyId, opts: SpawnOptions = {}): C
     maxShield: shield,
     shieldTimer: 0,
     bounty: opts.bounty ?? def.bounty,
+    leakDamage: opts.leakDamage ?? def.leakDamage,
     wave: opts.wave ?? w.wave.index,
+    origin: opts.origin ?? 'wave',
+    kickback: opts.kickback ?? 0,
     dead: false,
   };
   w.creeps.push(creep);

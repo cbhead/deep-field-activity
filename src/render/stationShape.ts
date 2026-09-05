@@ -103,6 +103,21 @@ export const STATION_MARKS: Readonly<Record<TowerId, StationMark>> = {
     ],
   },
 
+  /**
+   * Provisional. Two short strokes feeding a longer one — the station handing
+   * its neighbours something rather than pointing at anything down the route,
+   * which is the one thing this mark has to say that no other station's does.
+   */
+  overclock: {
+    ...NONE,
+    lines: [
+      [{ x: 0.28, y: 0.38 }, { x: 0.5, y: 0.5 }],
+      [{ x: 0.28, y: 0.62 }, { x: 0.5, y: 0.5 }],
+      [{ x: 0.5, y: 0.5 }, { x: 0.76, y: 0.5 }],
+    ],
+    discs: [{ cx: 0.76, cy: 0.5, r: 0.042 }],
+  },
+
   /** Time on target, unrolled from the spin-up arc into rising bars. */
   filament: {
     ...NONE,

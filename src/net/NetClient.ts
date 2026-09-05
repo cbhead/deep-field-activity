@@ -6,7 +6,15 @@
  * network. Runs identically in the browser and Node ≥22 (global WebSocket),
  * which is what lets the smoke test drive the real client headlessly.
  */
-import { PROTOCOL_VERSION, WS_PATH, decodeS2C, encode, type C2S, type S2C } from './protocol.ts';
+import {
+  PROTOCOL_VERSION,
+  WS_PATH,
+  decodeS2C,
+  encode,
+  type C2S,
+  type MatchMode,
+  type S2C,
+} from './protocol.ts';
 
 /**
  * Derive the socket URL from wherever the page came from, so dev (Vite on one
@@ -35,7 +43,14 @@ export class NetClient {
   connect(
     url: string,
     name: string,
-    opts: { room?: string; resume?: string; level?: string; diff?: string; instance?: string } = {},
+    opts: {
+      room?: string;
+      resume?: string;
+      level?: string;
+      diff?: string;
+      instance?: string;
+      mode?: MatchMode;
+    } = {},
   ): Promise<{ playerId: string; room: string }> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
@@ -45,6 +60,7 @@ export class NetClient {
         ws.send(encode({
           t: 'hello', v: PROTOCOL_VERSION, name,
           ...(opts.room === undefined ? {} : { room: opts.room }),
+          ...(opts.mode === undefined ? {} : { mode: opts.mode }),
           ...(opts.resume === undefined ? {} : { resume: opts.resume }),
           ...(opts.level === undefined ? {} : { level: opts.level }),
           ...(opts.diff === undefined ? {} : { diff: opts.diff }),

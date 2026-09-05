@@ -1,4 +1,6 @@
 import {
+  advanceEra,
+  advanceEraError,
   buildTower,
   placementError,
   sellTower,
@@ -6,6 +8,7 @@ import {
   upgradeError,
   upgradeTower,
 } from '../build.ts';
+import { launchSortie, receiveSortie, sortieCost, sortieError, sortieKickback } from '../sortie.ts';
 import { spawnCreep, towerById, type World } from '../world.ts';
 import { beginWave } from './waves.ts';
 
@@ -22,6 +25,56 @@ export function applyCommands(w: World): void {
     switch (cmd.type) {
       case 'startWave':
         beginWave(w);
+        break;
+
+      case 'advanceEra': {
+        const reason = advanceEraError(w);
+        if (reason !== null) {
+          w.events.push({ type: 'eraRejected', reason });
+          break;
+        }
+        const cost = advanceEra(w);
+        w.events.push({ type: 'eraAdvanced', era: w.era, cost });
+        break;
+      }
+
+      case 'sortie': {
+        const reason = sortieError(w, cmd.sortie, cmd.lane);
+        if (reason !== null) {
+          w.events.push({ type: 'sortieRejected', reason });
+          break;
+        }
+        // Priced before charging, so the event carries the figure the kickback
+        // will be a fraction of. Re-deriving it when the contact lands would
+        // read the wave index at the wrong moment.
+        const cost = sortieCost(cmd.sortie, w.wave.index, w);
+        launchSortie(w, cmd.sortie);
+        w.events.push({
+          type: 'sortieLaunched',
+          sortie: cmd.sortie,
+          lane: cmd.lane,
+          cost,
+          kickback: sortieKickback(cost),
+        });
+        break;
+      }
+
+      case 'inbound':
+        // No validation and no charge: this is not a purchase, it is a contact
+        // the other player already paid for. The lane is clamped rather than
+        // refused, because dropping it would silently eat something somebody
+        // spent money on.
+        receiveSortie(
+          w,
+          cmd.sortie,
+          Math.min(Math.max(0, Math.trunc(cmd.lane)), w.map.routes.length - 1),
+          cmd.kickback,
+        );
+        break;
+
+      case 'creditSortie':
+        w.money += cmd.amount;
+        w.stats.sortieEarned += cmd.amount;
         break;
 
       case 'placeTower': {

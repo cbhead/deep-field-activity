@@ -1,4 +1,8 @@
 import type { TowerStats } from '../../content/types.ts';
+// `effectiveInterval` lives in `build.ts`, not here beside the loop that uses
+// it: the inspector prints the same figure and presentation may not import
+// `sim/systems/**`. See its comment there.
+import { effectiveInterval } from '../build.ts';
 import type { Creep, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
@@ -19,6 +23,12 @@ import type { World } from '../world.ts';
  */
 export function fireTowers(w: World, dt: number): void {
   for (const t of w.towers) {
+    // A station with no interval does not shoot. That is Overclock's whole
+    // behaviour on this side — what it does happened in `refreshBuffs`, to
+    // everyone else's `buffShots`. Checked before the decrement below so a
+    // support station's cooldown never drifts negative across a whole match.
+    if (t.stats.fireInterval <= 0) continue;
+
     t.cooldown -= dt;
     if (t.cooldown > 0) continue;
 
@@ -38,6 +48,9 @@ export function fireTowers(w: World, dt: number): void {
     }
 
     const s = t.stats;
+    // Support included, and used for *both* the cooldown and the focus advance
+    // below. See the note on `focusTime` there.
+    const interval = effectiveInterval(t);
 
     // Focus advances here rather than every tick, and that is deliberate.
     // Re-targeting every tick is affordable; doing it for every station
@@ -46,10 +59,30 @@ export function fireTowers(w: World, dt: number): void {
     // next one. Adding the interval that just elapsed gives the same answer
     // sampling continuously would, for a fraction of the work.
     if (t.focusId === best.id) {
-      t.focusTime = Math.min(t.focusTime + s.fireInterval, rampSeconds(s));
+      // `interval`, not `s.fireInterval`, and the difference is a real bug
+      // rather than a tidiness point. `focusTime` advances by the interval as a
+      // stand-in for elapsed wall time; reading the *unbuffed* interval while
+      // firing on the buffed one credits a fed Filament 0.25s of spin-up every
+      // 0.23s of real time, so it reaches its ceiling sooner than the clock
+      // allows and a rate buff silently becomes a ramp accelerator too.
+      t.focusTime = Math.min(t.focusTime + interval, rampSeconds(s));
     } else {
+      // Switching targets *cools* the beam, it does not extinguish it. Losing
+      // the charge entirely is still the rule for losing the target list — see
+      // the reset above — and that is the rule that stops a station opening a
+      // wave at full power.
+      //
+      // The two are different situations and used to be treated as one. A
+      // station that has just killed something and moved to the contact behind
+      // it never stopped firing; snapping it to zero made a ramp worth having
+      // only where contacts arrive in a single unbroken file, which is one
+      // board. On Braid the lanes cross every rung, so the file breaks roughly
+      // twice a second and the charge never left the floor — and a Filament
+      // there measured at *minus eleven lives*, not merely weak but a station
+      // you were better off never building. A specialist should be the wrong
+      // answer on some boards; it should not be a trap on them.
       t.focusId = best.id;
-      t.focusTime = 0;
+      t.focusTime *= RAMP_CARRY;
     }
 
     const aim = aimPoint(t, best, s.pierce > 0);
@@ -87,7 +120,7 @@ export function fireTowers(w: World, dt: number): void {
     // `+=`, not `=`. Assigning would round every tower's fire rate up to a
     // multiple of the tick, so a 0.5s interval would silently become 0.5167s
     // and every balance number would be quietly wrong.
-    t.cooldown += s.fireInterval;
+    t.cooldown += interval;
   }
 }
 
@@ -99,6 +132,23 @@ export function fireTowers(w: World, dt: number): void {
  */
 export const rampSeconds = (s: TowerStats): number =>
   s.rampPerSecond > 0 ? (s.rampMax - 1) / s.rampPerSecond : 0;
+
+/**
+ * How much of the spin-up survives a change of target.
+ *
+ * Half, and the halving is the whole design: a beam that kept everything would
+ * make target switching free and turn Filament into a station with no downside,
+ * which is the outcome `towers.ts` records the sweep rejecting once already. A
+ * beam that keeps nothing is what shipped, and it made the ramp worth having on
+ * exactly one board shape.
+ *
+ * Half means a station working a steady stream settles at a real fraction of
+ * its ceiling rather than at the floor, and a station that switches constantly
+ * still ends up well under one that holds — the mechanic still says "hold a
+ * target", it just no longer says "hold a target or you have wasted your
+ * money".
+ */
+const RAMP_CARRY = 0.5;
 
 /**
  * Damage multiplier from held focus, `1` for everything that does not ramp.
@@ -143,19 +193,30 @@ function aimPoint(t: Tower, target: Creep, piercing: boolean): { x: number; y: n
  *
  * `close` negates the squared distance rather than taking a root — ordering is
  * all that matters and the root would be pure cost in the hot loop.
+ *
+ * **`first` means closest to the goal, not furthest travelled.** Those are the
+ * same ordering only while every lane is the same length. The moment they are
+ * not — Sluice runs a 20-tile chute against a 50-tile coil on purpose — raw
+ * progress ranks a contact two tiles from the pulsar *below* one thirty tiles
+ * out, and the station shoots the wrong one at exactly the moment it matters.
+ * Distance remaining is the quantity a player means, and it is comparable
+ * across lanes because every lane ends at the same goal.
  */
-function score(mode: TargetMode, c: Creep, d2: number): number {
+function score(w: World, mode: TargetMode, c: Creep, d2: number): number {
   switch (mode) {
     case 'first':
-      return c.progress;
+      return -remaining(w, c);
     case 'last':
-      return -c.progress;
+      return remaining(w, c);
     case 'strong':
       return c.hp;
     case 'close':
       return -d2;
   }
 }
+
+/** Tiles left between a contact and the goal, along its own lane. */
+const remaining = (w: World, c: Creep): number => w.map.routes[c.route]!.length - c.progress;
 
 function pickTarget(w: World, t: Tower): Creep | undefined {
   const r2 = t.stats.range * t.stats.range;
@@ -194,7 +255,7 @@ function pickTarget(w: World, t: Tower): Creep | undefined {
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
 
-    const s = score(t.targeting, c, d2);
+    const s = score(w, t.targeting, c, d2);
     // Strictly greater, so ties go to the creep found first. That keeps the
     // choice deterministic given a deterministic creep array, which is what
     // Race-mode fairness rests on.

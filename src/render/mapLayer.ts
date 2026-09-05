@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, TilingSprite } from 'pixi.js';
-import type { MapDef } from '../sim/types.ts';
+import type { MapDef, Vec2 } from '../sim/types.ts';
 import { mulberry32 } from '../sim/util/rng.ts';
 import { TILE_PX, gridMaskAt } from './constants.ts';
 import { OFF_ROUTE, SPILL_FALLOFF, SPILL_RINGS, routeDistance, routeSpill } from './route.ts';
@@ -40,9 +40,10 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): M
 
   // Below the tiles, so a bloom can never dim ground the player has to build on.
   layer.addChild(halo(tex, map.goal.x, map.goal.y, PULSAR_REACH, field.goal, field.bloomAlpha));
-  layer.addChild(
-    halo(tex, map.spawn.x, map.spawn.y, PULSAR_REACH, field.spawn, field.bloomAlpha * SPAWN_SHARE),
-  );
+  const entries = spawnPoints(map);
+  for (const e of entries) {
+    layer.addChild(halo(tex, e.x, e.y, PULSAR_REACH, field.spawn, field.bloomAlpha * SPAWN_SHARE));
+  }
 
   const dist = routeDistance(map);
   layer.addChild(buildTileField(map, tex, field, dist, routeSpill(map, dist, SPILL_RINGS)));
@@ -51,7 +52,9 @@ export function buildMapLayer(map: MapDef, tex: Textures, field: SectorField): M
   // arrive at `1 - groundAlpha` and be most of a layer you paid for and cannot
   // see. Above, it lands at the value it was authored at.
   layer.addChild(wash(tex, map, map.goal, WASH_REACH, field.lit, field.litAlpha));
-  layer.addChild(wash(tex, map, map.spawn, HAZE_REACH, field.haze, field.hazeAlpha));
+  for (const e of entries) {
+    layer.addChild(wash(tex, map, e, HAZE_REACH, field.haze, field.hazeAlpha));
+  }
 
   // Over the tiles, under the lattice — see `buildNebula` for why this is not
   // where the design put it.
@@ -98,33 +101,47 @@ const STREAM_WIDTH = 0.44;
  */
 function buildStream(map: MapDef, tex: Textures, field: SectorField): TilingSprite[] {
   const runs: TilingSprite[] = [];
-  const wp = map.waypoints;
-  if (wp.length < 2) return runs;
 
-  let start = wp[0]!;
-  for (let i = 1; i < wp.length; i++) {
-    const here = wp[i]!;
-    const next = wp[i + 1];
+  map.routes.forEach((route, lane) => {
+    const wp = route.waypoints;
+    if (wp.length < 2) return;
 
-    // Keep extending while the heading does not change.
-    if (
-      next !== undefined &&
-      Math.sign(here.x - start.x) === Math.sign(next.x - here.x) &&
-      Math.sign(here.y - start.y) === Math.sign(next.y - here.y)
-    ) {
-      continue;
+    let start = wp[0]!;
+    for (let i = 1; i < wp.length; i++) {
+      const here = wp[i]!;
+      const next = wp[i + 1];
+
+      // Keep extending while the heading does not change.
+      if (
+        next !== undefined &&
+        Math.sign(here.x - start.x) === Math.sign(next.x - here.x) &&
+        Math.sign(here.y - start.y) === Math.sign(next.y - here.y)
+      ) {
+        continue;
+      }
+
+      const dx = here.x - start.x;
+      const dy = here.y - start.y;
+      const len = Math.hypot(dx, dy) * TILE_PX;
+      if (len > 0) runs.push(strip(tex, field, start.x, start.y, Math.atan2(dy, dx), len, lane));
+
+      start = here;
     }
-
-    const dx = here.x - start.x;
-    const dy = here.y - start.y;
-    const len = Math.hypot(dx, dy) * TILE_PX;
-    if (len > 0) runs.push(strip(tex, field, start.x, start.y, Math.atan2(dy, dx), len));
-
-    start = here;
-  }
+  });
 
   return runs;
 }
+
+/**
+ * How far each lane's current is offset from the first, in tiles.
+ *
+ * Without it, two lanes sharing a trunk lay identical strips on identical
+ * tiles: the shared road would show one current at double alpha and read as a
+ * single lane, which is precisely the fact a merge board needs the player to
+ * see. A phase offset is enough — the strips are the same texture at the same
+ * speed, so offsetting is the only way to tell them apart that costs nothing.
+ */
+const STREAM_LANE_PHASE = 0.37;
 
 function strip(
   tex: Textures,
@@ -133,6 +150,7 @@ function strip(
   tileY: number,
   rotation: number,
   length: number,
+  lane: number,
 ): TilingSprite {
   const s = new TilingSprite({ texture: tex.stream, width: length, height: STREAM_WIDTH * TILE_PX });
 
@@ -143,7 +161,32 @@ function strip(
   s.rotation = rotation;
   s.tint = field.lineFar;
   s.alpha = STREAM_ALPHA;
+  // Lane 0 is unshifted, so a single-lane board is untouched by this.
+  s.tilePosition.x = lane * STREAM_LANE_PHASE * TILE_PX;
   return s;
+}
+
+/**
+ * The distinct off-board entries, deduped by position.
+ *
+ * By entry rather than by lane: Crown runs four lanes out of two spawns, and
+ * lighting a spawn twice only makes it brighter than the board it shares a
+ * palette with. Each *place* contacts arrive from gets one haze and one halo,
+ * at the alpha it was authored at — two hazy corners is what a two-spawn board
+ * should look like.
+ */
+function spawnPoints(map: MapDef): Vec2[] {
+  const seen = new Set<string>();
+  const out: Vec2[] = [];
+  for (const route of map.routes) {
+    const e = route.waypoints[0];
+    if (e === undefined) continue;
+    const key = `${e.x},${e.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
 }
 
 /**
@@ -429,28 +472,35 @@ function buildNebula(map: MapDef, field: SectorField): Graphics {
  */
 function buildRouteLine(map: MapDef, field: SectorField): Graphics {
   const g = new Graphics();
-  const wp = map.waypoints;
-  let travelled = 0;
+  // One normaliser for the board, matching `routeDistance` — see the argument
+  // there for why the ramp is measured back from the goal rather than forward
+  // from a spawn, and why a short lane starting part-lit is the truth.
+  const longest = Math.max(...map.routes.map((r) => r.length));
 
-  for (let i = 1; i < wp.length; i++) {
-    const a = wp[i - 1]!;
-    const b = wp[i]!;
-    const steps = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+  for (const route of map.routes) {
+    const wp = route.waypoints;
+    let travelled = 0;
 
-    // The midpoint's position along the route sets the segment's colour, so the
-    // ramp follows the road rather than the screen.
-    const t = (travelled + steps / 2) / map.pathLength;
-    travelled += steps;
+    for (let i = 1; i < wp.length; i++) {
+      const a = wp[i - 1]!;
+      const b = wp[i]!;
+      const steps = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
 
-    g.moveTo(a.x * TILE_PX, a.y * TILE_PX)
-      .lineTo(b.x * TILE_PX, b.y * TILE_PX)
-      .stroke({
-        width: 2,
-        cap: 'round',
-        join: 'round',
-        color: mixColor(field.lineNear, field.lineFar, t),
-        alpha: field.lineNearAlpha + (field.lineFarAlpha - field.lineNearAlpha) * t,
-      });
+      // The midpoint's distance from the goal sets the segment's colour, so the
+      // ramp follows the road rather than the screen.
+      const t = longest > 0 ? 1 - (route.length - travelled - steps / 2) / longest : 0;
+      travelled += steps;
+
+      g.moveTo(a.x * TILE_PX, a.y * TILE_PX)
+        .lineTo(b.x * TILE_PX, b.y * TILE_PX)
+        .stroke({
+          width: 2,
+          cap: 'round',
+          join: 'round',
+          color: mixColor(field.lineNear, field.lineFar, t),
+          alpha: field.lineNearAlpha + (field.lineFarAlpha - field.lineNearAlpha) * t,
+        });
+    }
   }
 
   return g;
@@ -627,25 +677,37 @@ const PULSAR_RINGS: readonly (readonly [number, number, number])[] = [
   [0.46, 2, 0.34],
 ];
 
-/** Spawn chevron and goal pulsar. Two markers, so plain Graphics is fine here. */
+/** Spawn chevrons and goal pulsar. A handful of markers, so plain Graphics is fine. */
 function buildEndMarkers(map: MapDef, field: SectorField): Graphics {
   const g = new Graphics();
 
-  // The spawn point sits one tile off-board; draw the chevron on the first
-  // on-board tile instead, pointing the way creeps will travel.
-  const entry = map.waypoints[0]!;
-  const first = map.waypoints[1]!;
-  const dx = Math.sign(first.x - entry.x);
-  const dy = Math.sign(first.y - entry.y);
-  const ax = first.x * TILE_PX;
-  const ay = first.y * TILE_PX;
-  const r = TILE_PX * 0.3;
+  // One chevron per *entry tile*, not per lane. Crown runs four lanes out of
+  // two spawns, and stacking two chevrons on one tile just draws it darker.
+  const drawn = new Set<string>();
 
-  // Tip points along travel; the base is the perpendicular through the centre.
-  g.moveTo(ax + dx * r, ay + dy * r)
-    .lineTo(ax - dx * r + dy * r, ay - dy * r + dx * r)
-    .lineTo(ax - dx * r - dy * r, ay - dy * r - dx * r)
-    .fill({ color: field.spawn, alpha: 0.85 });
+  for (const route of map.routes) {
+    // The spawn point sits one tile off-board; draw the chevron on the first
+    // on-board tile instead, pointing the way creeps will travel.
+    const entry = route.waypoints[0]!;
+    const first = route.waypoints[1];
+    if (first === undefined) continue;
+
+    const key = `${first.x},${first.y}`;
+    if (drawn.has(key)) continue;
+    drawn.add(key);
+
+    const dx = Math.sign(first.x - entry.x);
+    const dy = Math.sign(first.y - entry.y);
+    const ax = first.x * TILE_PX;
+    const ay = first.y * TILE_PX;
+    const r = TILE_PX * 0.3;
+
+    // Tip points along travel; the base is the perpendicular through the centre.
+    g.moveTo(ax + dx * r, ay + dy * r)
+      .lineTo(ax - dx * r + dy * r, ay - dy * r + dx * r)
+      .lineTo(ax - dx * r - dy * r, ay - dy * r - dx * r)
+      .fill({ color: field.spawn, alpha: 0.85 });
+  }
 
   const gx = map.goal.x * TILE_PX;
   const gy = map.goal.y * TILE_PX;

@@ -23,6 +23,7 @@
  */
 import { CAMPAIGN, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
+import type { MatchMode } from '../net/protocol.ts';
 
 export type Route =
   /** The front door. */
@@ -41,11 +42,22 @@ export type Route =
       readonly seed: string | null;
       readonly bank: number | null;
     }
-  /** The race lobby; a room code deep-links into one. */
-  | { readonly k: 'race'; readonly room: string | null };
+  /**
+   * The lobby, and the match it becomes. A room code deep-links into one.
+   *
+   * `mode` rides on this route rather than getting a route of its own, because
+   * `?versus` is `?race` with the mode flipped and shares every line of the
+   * screen behind it — the lobby, room codes, the invite link, resume and
+   * forfeit are one problem, solved once.
+   *
+   * It has to be part of the *address*: the invite link is what carries the mode
+   * to the other player, and a versus host handing out a `?race=` link drops
+   * their friend into the right room playing the wrong game.
+   */
+  | { readonly k: 'race'; readonly room: string | null; readonly mode: MatchMode };
 
 /** Keys this module owns. Everything else in the query belongs to somebody else. */
-const OWNED = ['race', 'level', 'difficulty', 'seed', 'bank', 'sectors'] as const;
+const OWNED = ['race', 'versus', 'level', 'difficulty', 'seed', 'bank', 'sectors'] as const;
 
 /**
  * Three entries, and the order matters — unchanged from the URL contract this
@@ -56,8 +68,14 @@ const OWNED = ['race', 'level', 'difficulty', 'seed', 'bank', 'sectors'] as cons
 export function parseRoute(search: string): Route {
   const p = new URLSearchParams(search);
 
+  // Versus is checked first so that a URL carrying both is unambiguous rather
+  // than order-of-parameters dependent. `?versus` wins because it is the more
+  // specific request — nobody types both by accident, but a rewritten link can.
+  const versus = p.get('versus');
+  if (versus !== null) return { k: 'race', room: versus === '' ? null : versus, mode: 'versus' };
+
   const race = p.get('race');
-  if (race !== null) return { k: 'race', room: race === '' ? null : race };
+  if (race !== null) return { k: 'race', room: race === '' ? null : race, mode: 'race' };
 
   const named = p.get('level');
   const level = named !== null ? levelById(named) : p.has('seed') ? CAMPAIGN[0] : undefined;
@@ -102,7 +120,7 @@ export function toSearch(route: Route, current: string): string {
       p.set('sectors', '');
       break;
     case 'race':
-      p.set('race', route.room ?? '');
+      p.set(route.mode === 'versus' ? 'versus' : 'race', route.room ?? '');
       break;
     case 'run':
       p.set('level', route.level);

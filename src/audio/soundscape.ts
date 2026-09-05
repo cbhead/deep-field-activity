@@ -12,6 +12,8 @@ import {
   DEFEAT,
   FIRE,
   LEAK,
+  SORTIE_LANDED,
+  SORTIE_SENT,
   PLACED,
   REJECTED,
   SELECT,
@@ -162,7 +164,13 @@ export class Soundscape {
         this.engine.play(SHIELD_BROKE);
         break;
       case 'creepLeaked':
-        this.engine.play(LEAK);
+        // One breach, one voice. A bought hit is the same event with a heavier
+        // sound, not a second sound layered on top — and the event says which
+        // it was, so nothing here has to correlate two of them.
+        this.engine.play(ev.bought ? SORTIE_LANDED : LEAK);
+        break;
+      case 'sortieLaunched':
+        this.engine.play(SORTIE_SENT);
         break;
       case 'waveStarted':
         this.engine.play(WAVE_STARTED);

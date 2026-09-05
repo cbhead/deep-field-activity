@@ -10,7 +10,7 @@
  * clocks are never compared across machines. Each client measures its own
  * elapsedMs from its local start.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const DEFAULT_PORT = 8787;
 export const WS_PATH = '/ws';
 
@@ -18,6 +18,18 @@ export const WS_PATH = '/ws';
 export const STATUS_INTERVAL_MS = 500;
 
 export type LobbyPlayer = { playerId: string; name: string; ready: boolean };
+
+/**
+ * Which game the room is playing.
+ *
+ * The server needs this for exactly one reason: how a match settles. Race ranks
+ * two completed runs; versus ends the moment a core does, so the first `dead`
+ * to arrive loses and the server must not wait for the second. Everything else
+ * it does is mode-blind, and deliberately.
+ *
+ * Absent means `'race'`, which is what a v1 client would have meant.
+ */
+export type MatchMode = 'race' | 'versus';
 
 /** One placed station, for the opponent's minimap. Tile-aligned like the sim. */
 export type TowerPin = { c: number; r: number; k: string; tier: number };
@@ -45,8 +57,12 @@ export type C2S =
        * so it means "put me in the room for this instance, and make one if
        * nobody has yet" — which is what lets two people press play at the same
        * moment and still meet.
+       *
+       * Orthogonal to `mode`. An instance says *which* room; `mode` says what is
+       * played in it. The channel's room can host either game.
        */
       instance?: string;
+      mode?: MatchMode;
     }
   /** ready:false un-readies — allowed until the countdown is dealt. */
   | { t: 'ready'; ready?: boolean }
@@ -61,9 +77,36 @@ export type C2S =
   | { t: 'pick'; level: string; diff: string }
   /** `hidden` rides along on visibility changes: the sim freezes with the tab.
    *  `towers` rides along only when the layout changed since the last frame. */
-  | { t: 'status'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }
+  | {
+      t: 'status';
+      wave: number;
+      lives: number;
+      elapsedMs: number;
+      hidden?: boolean;
+      towers?: TowerPin[];
+      /** Versus only. The rung they are on — the whole tension of the mode, so
+       *  it has to be visible without seeing their board. */
+      era?: number;
+    }
   /** The run is over — defeat or full clear alike. lives>0 means a clear. */
-  | { t: 'dead'; wave: number; lives: number; elapsedMs: number };
+  | { t: 'dead'; wave: number; lives: number; elapsedMs: number }
+  /**
+   * I bought a contact and it is walking at you. Relayed verbatim as `inbound`.
+   *
+   * `kickback` travels with it rather than being recomputed on arrival: it is a
+   * fraction of what the *sender* paid, and a Monolith walks for the better
+   * part of a minute — re-deriving it on the receiving board would price it
+   * against a wave that had not started when it was bought.
+   *
+   * No tick, no timestamp, and none is needed. Nothing in either world depends
+   * on the other's state — a sortie is a one-way event and the only shared
+   * value in the match is the seed — so there is nothing two clocks could
+   * disagree about. It needs to *arrive*, not to arrive at an agreed instant,
+   * and the socket already guarantees that.
+   */
+  | { t: 'sortie'; sortie: string; lane: number; kickback: number }
+  /** One of theirs reached my core. Relayed to its sender as `credit`. */
+  | { t: 'landed'; kickback: number };
 
 /** server → client */
 export type S2C =
@@ -85,10 +128,33 @@ export type S2C =
    */
   | { t: 'watchStatus'; standings: Standing[] }
   | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string }
-  | { t: 'peer'; wave: number; lives: number; elapsedMs: number; hidden?: boolean; towers?: TowerPin[] }
+  | {
+      t: 'peer';
+      wave: number;
+      lives: number;
+      elapsedMs: number;
+      hidden?: boolean;
+      towers?: TowerPin[];
+      era?: number;
+    }
   | { t: 'peerConn'; connected: boolean }
-  | { t: 'result'; winnerId: string | null; standings: Standing[]; reason?: 'forfeit' }
+  /** Their sortie, arriving. The mirror of the sender's `sortie` frame. */
+  | { t: 'inbound'; sortie: string; lane: number; kickback: number }
+  /** One of mine landed on them. Pays back what it carried. */
+  | { t: 'credit'; amount: number }
+  | { t: 'result'; winnerId: string | null; standings: Standing[]; reason?: ResultReason }
   | { t: 'error'; reason: string };
+
+/**
+ * Why the match ended, when it was not simply "both runs finished".
+ *
+ * `'core'` is versus's ordinary ending and not an exception the way `'forfeit'`
+ * is — a core going dark *is* how the mode concludes. It is reported anyway so
+ * the results screen can say "their core went dark" rather than reaching for
+ * the Race ranking, which on an endless arc would be comparing two numbers that
+ * never had a finish line to be measured against.
+ */
+export type ResultReason = 'forfeit' | 'core';
 
 /** Final figures for one player, in ranking order: waves, lives, then time. */
 export type Standing = { playerId: string; name: string; wave: number; lives: number; elapsedMs: number };

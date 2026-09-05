@@ -331,7 +331,7 @@ function firstRun(): string {
   const diff = DIFFICULTIES[/* the default the picker will preselect */ 'standard' as DifficultyId];
   return (
     `<h1>Deep Field</h1>` +
-    `<p class="hm-pitch">A tower defense for your browser. Hold the line through three sectors, ` +
+    `<p class="hm-pitch">A tower defense for your browser. Hold the line through ${CAMPAIGN.length} sectors, ` +
     `or race a friend on the same seed and see who survives longer.</p>` +
     `<div class="hm-actions">` +
     `<button class="hm-primary" data-act="play">Start ${first.name} →</button>` +
@@ -358,7 +358,7 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
 
   return (
     `<div><h1>Deep Field</h1>` +
-    `<p class="hm-pitch">Hold the line through three sectors — or race a friend on the same ` +
+    `<p class="hm-pitch">Hold the line through ${CAMPAIGN.length} sectors — or race a friend on the same ` +
     `seed and see who survives longer.</p></div>` +
     cont +
     `<div class="hm-cards">` +

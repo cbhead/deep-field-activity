@@ -23,6 +23,13 @@ import type { EnemyDef } from './types.ts';
  * - **Bulwark** — flat armour on every hit. Punishes *many small hits*, which
  *   is the one thing the rest of the roster never asked about, and the reason
  *   Lance-plus-Singularity could clear every seed without losing a life.
+ *
+ * **`leakDamage` is 1 on all six and is meant to stay that way.** The field
+ * exists so a *sortie* can weigh more than the contact it is drawn from — see
+ * `SORTIES` in `content/sorties.ts`, which bakes its own weight in at spawn the
+ * way `scaledStats` bakes in hp. Making a Monolith cost three lives everywhere
+ * would be a campaign balance change, and `hpGrowth` is a swept number with a
+ * table of evidence behind it. The duel does not get to relitigate the arc.
  */
 export const ENEMIES = {
   drifter: {
@@ -32,6 +39,7 @@ export const ENEMIES = {
     speed: 1.8,
     bounty: 6,
     radius: 0.3,
+    leakDamage: 1,
     armor: 0,
     shield: 0,
     shieldRegenDelay: 0,
@@ -46,6 +54,7 @@ export const ENEMIES = {
     speed: 2.9,
     bounty: 2,
     radius: 0.17,
+    leakDamage: 1,
     armor: 0,
     shield: 0,
     shieldRegenDelay: 0,
@@ -62,6 +71,7 @@ export const ENEMIES = {
     speed: 0.85,
     bounty: 34,
     radius: 0.46,
+    leakDamage: 1,
     armor: 0,
     shield: 0,
     shieldRegenDelay: 0,
@@ -76,6 +86,7 @@ export const ENEMIES = {
     speed: 1.5,
     bounty: 14,
     radius: 0.33,
+    leakDamage: 1,
     armor: 0,
     shield: 30,
     shieldRegenDelay: 2.2,
@@ -90,6 +101,7 @@ export const ENEMIES = {
     speed: 1.3,
     bounty: 12,
     radius: 0.4,
+    leakDamage: 1,
     armor: 0,
     shield: 0,
     shieldRegenDelay: 0,
@@ -113,6 +125,7 @@ export const ENEMIES = {
     speed: 1.4,
     bounty: 18,
     radius: 0.38,
+    leakDamage: 1,
     // Nova's 22 keeps 77% of its hit, Lance's 8 keeps 38%, and Singularity's 3
     // floors out. "Bad, not useless" is the target for Lance — it should be the
     // wrong tool here, not a wasted purchase.

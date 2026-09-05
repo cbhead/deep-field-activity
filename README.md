@@ -16,16 +16,23 @@
 > until the port actually lands, and each section gets rewritten as the thing it
 > describes is replaced.
 
-A tower defense game for your browser — hold the line through a three-sector
-campaign, or race a friend head-to-head on the same seed and see who survives
-longer.
+A tower defense game for your browser — hold the line through an eight-sector
+campaign, race a friend head-to-head on the same seed, or fight one directly in
+**Versus**, where the contacts on your board are the ones they paid to send.
 
 ![Switchback under fire: the route lit from dim at the spawn to bright at the pulsar, six stations ringing it, contacts mid-run, and the build deck along the bottom](docs/media/gameplay.png)
 
-Five station types across three sectors — Switchback, Cascade and Pincer, 34
-waves in all — at three difficulty tiers. The simulation is deterministic: a
-seed fixes every wave's composition and timing, which is what makes a fair
-race possible in the first place.
+Five station types across eight sectors, 94 waves in all, at three difficulty
+tiers. The simulation is deterministic: a seed fixes every wave's composition
+and timing, which is what makes a fair race possible in the first place.
+
+The first three boards — Switchback, Cascade and Pincer — each run one road, and
+they ask where the longest stretch you can afford to cover is. The last five ask
+a different question, because a map carries **routes, plural**: Fork splits a
+wave in two around a blocked centre, Delta sends armour up one road and numbers
+up the other, Braid swaps its lanes at every rung so nothing stays lined up,
+Sluice runs a 20-tile chute against a 50-tile coil so one wave arrives twice,
+and Crown runs four lanes into a strong point that covers exactly half of them.
 
 ## Someone sent me an invite link
 
@@ -35,8 +42,9 @@ You don't need to download anything. You need two things:
    network. [Download it](https://tailscale.com/download), then sign in using
    the invite your friend sent you (they'll send it from their Tailscale admin
    page).
-2. **The invite link** — it looks like `http://100.x.y.z:8787/?race=ABCD`.
-   Open it in your browser once Tailscale is running.
+2. **The invite link** — it looks like `http://100.x.y.z:8787/?race=ABCD`, or
+   `?versus=ABCD` if they're hosting a fight rather than a race. Open it in
+   your browser once Tailscale is running.
 
 Type a name, hit **Ready**, and you're racing. That's it — no Node, no
 terminal, no cloning.
@@ -96,6 +104,61 @@ Runs are ranked on waves cleared, then lives kept, then time. Lose your
 connection and you can reclaim the same seat and carry on; walk away and it's a
 forfeit after 90 seconds.
 
+## Versus — Front Line
+
+Race is a comparison: two people playing the same arc, side by side, seeing who
+lasts. **Versus is a fight.** You spend money to put contacts on the other
+person's board, and they spend money putting contacts on yours.
+
+```sh
+npm run play          # then open the URL with ?versus instead of ?race
+```
+
+Everything from Race carries over — room codes, the invite link, resume,
+forfeit. The lobby hands out a `?versus=CODE` link so your friend lands in the
+same game you're hosting.
+
+**One board, and it's half a corridor.** Midfield is the left edge, your core is
+the right. The neutral wave appears at midfield on the shared seed and walks at
+both of you — it's a third party, pressing equally, and it never takes sides.
+Two lanes, *Crest* and *Trough*, the same 33 tiles long and a different shape:
+Crest turns five times and rewards splash, Trough runs one fourteen-tile
+straight and rewards reach. Neither answers the other, so the question a sortie
+asks is which of their two defences is thinner.
+
+**The era ladder.** Stations aren't unlocked by a clock here — you buy them.
+
+| Era | Stations | Upgrades to | Can send |
+|---|---|---|---|
+| I | Lance, Nova, Singularity | Mk I | Drifter, Mote |
+| II | + Arc, + Overclock | Mk II | + Warden, Cluster |
+| III | + Filament | Mk III | + Monolith, Bulwark |
+
+One purchase does two things: it opens new stations *and* raises the upgrade
+ceiling on everything already standing. While you're banking for the next rung
+you're building nothing — that gap is the whole tension, and it's when the other
+side pushes.
+
+**Sending.** Pick a lane, press a contact. It costs a fixed multiple of the
+bounty they'll collect for killing it, so:
+
+- **Into a wall** — they kill it, they collect the bounty, and you're down more
+  than they're up. Spam is a transfer to the person you're spamming.
+- **Into a hole** — it takes lives (a Monolith takes three) and pays you back
+  most of the price.
+
+You never see their board, so a warning strip tells you what's coming and which
+lane it took. Their era shows in the opponent strip — it's the most useful thing
+you can know about someone whose defence is hidden.
+
+**It ends when a core does.** The arc never runs out: composition loops but the
+contacts keep compounding, so a fully upgraded defence falls around wave 21 with
+nobody attacking at all. There's no clock and no sudden death — the escalation
+*is* the terminator.
+
+You can play it solo to learn the economy — `?level=versus` sends your own
+sorties straight back at you.
+
 ## Single-player campaign
 
 No Tailscale, no friend, no setup beyond the clone:
@@ -109,13 +172,13 @@ Continue resumes the sector you last played, at the difficulty you last used:
 
 ![The Deep Field home screen: the game's name over a dimmed board, a Continue button showing the sector it resumes, and Campaign and Race cards side by side](docs/media/home.png)
 
-Three sectors, three difficulties — Recon (30 lives), Standard (20), and
+Eight sectors, three difficulties — Recon (30 lives), Standard (20), and
 Blackout (14 lives and tougher contacts). Each card draws its own board, so you
 can see the shape you are choosing rather than read about it; a locked sector
 shows its board dimmed rather than hiding it. Difficulty is on the card, so
 launching is one click:
 
-![The sector picker: three cards, each showing its real board as a thumbnail, with waves, road length and turn count as numerals, difficulty inline, and the third sector locked but still showing its board](docs/media/sectors.png)
+![The sector picker: cards each showing their real board as a thumbnail, with waves, road length and turn or lane count as numerals, difficulty inline, and locked sectors still showing their boards](docs/media/sectors.png)
 
 Money you finish a sector with carries into the next one.
 
@@ -140,7 +203,34 @@ npm run check       # headless simulation gates — the balance test suite
 npm run campaign    # explore the campaign arc headlessly
 npm run sweep       # balance sweeps
 npm run shots       # re-take the README screenshots (needs `npm run dev` running)
+npm run worktree x  # isolated checkout at .claude/worktrees/x, for a second session
 ```
+
+### Running two sessions at once
+
+Use a worktree. Two sessions in one working tree share an index, a HEAD and a
+set of files, and they will quietly wreck each other — in one afternoon a second
+session committed onto a branch it did not know it was on, switched the branch
+out from under the first mid-task, and pushed a commit the first was still
+writing. Nothing was lost, but only because the two happened to be editing
+disjoint files.
+
+```sh
+npm run worktree audio            # new branch `audio`, checked out in its own tree
+npm run worktree fix origin/main  # branch off a specific base
+npm run worktree versus           # reuse an existing branch
+```
+
+Same repository, same history, same remote; independent index and checkout, so
+branching in one moves nothing in the other. `node_modules` is symlinked rather
+than reinstalled — 170MB a copy, and one known-good install avoids re-tripping
+the stale-npm native-dependency trap below. The script warns if the branch
+changes `package.json`, which is the one case that needs its own install.
+
+Give each session its own dev port (`PORT=5174 npm run dev`), but note `PORT`
+moves only the dev server: Race mode's client dials a hardcoded default, so the
+session hosting a race should keep the default port. Clean up with
+`git worktree remove <path>` and `git branch -d <name>`.
 
 The screenshots above are scripted rather than taken by hand — see
 `tools/shots.ts`. They went stale the moment the board was rebuilt and nothing
@@ -161,7 +251,8 @@ that port is the one case the client has to name explicitly.
 The layout: `src/sim/` is the deterministic game simulation (shared by the
 browser and the headless tools), `src/render/` draws it with Pixi.js,
 `src/ui/` is the HUD and lobby, `src/content/` holds towers/waves/balance
-numbers, `src/net/` is the race wire protocol, and `server/` is a small
+numbers — including `sorties.ts`, the versus send table — `src/net/` is the
+wire protocol shared by both head-to-head modes, and `server/` is a small
 WebSocket relay that also serves the built client. Design rationale lives in
 [docs/design/](docs/design/README.md).
 

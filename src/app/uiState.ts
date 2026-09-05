@@ -119,11 +119,26 @@ export interface UiState {
   deckOpen: boolean;
   /** Explicit player pause. Mirrors `GameLoop.paused`; the HUD reads it here. */
   paused: boolean;
+
+  /**
+   * Which lane the next sortie goes down — an index into `map.routes`.
+   *
+   * Here rather than on the World for exactly the reason this file exists: two
+   * players watching the same replay would have different values for it, and
+   * the sim only ever learns a lane from the command that carries one.
+   *
+   * A *mode* rather than a per-send argument. Sustained pressure down one lane
+   * is the strategy the versus board was shaped to reward, and re-picking on
+   * every send would tax the thing it is meant to encourage. Ignored entirely
+   * outside versus, where nothing renders the picker.
+   */
+  sortieLane: number;
   prefs: UiPrefs;
 }
 
 export const createUiState = (): UiState => ({
   selected: null,
+  sortieLane: 0,
   hover: null,
   inspecting: null,
   touchPreview: false,
