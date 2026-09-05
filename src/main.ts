@@ -229,26 +229,26 @@ async function main(): Promise<void> {
   }
 
   /**
-   * Inside an Activity, Race is the front door.
+   * The front door, inside Discord as everywhere else.
    *
-   * Discord hands the iframe `frame_id`, `instance_id` and `platform`, none of
-   * which this app's router owns, so the query parses to `home` and everyone who
-   * launched together landed on the single-player screen — with nothing saying
-   * that the people they opened it with were one click away. People do not start
-   * an activity in a voice channel in order to play alone.
+   * This used to redirect straight into the Race lobby. The reason was real:
+   * Discord's launch parameters are none that the router owns, so the query
+   * parsed as `home` and everyone who launched together landed on a screen that
+   * offered a single-player campaign and said nothing about the people they
+   * opened it with. Nobody starts an activity in a voice channel to play alone.
    *
-   * Only when the URL says nothing else: an explicit `?level=` or `?sectors=`
-   * still wins, so a link into a specific sector keeps working inside Discord.
-   * `go` rather than `start`, so the front door stays behind it in history and
-   * single player is still reachable — see `leave` for the other way there.
+   * What changed is the front door, not that argument. It now carries Race and
+   * Versus as first-class cards, so the multiplayer modes are on the landing
+   * screen rather than one unmarked click from it — and there are two of them,
+   * which is what makes the redirect actively wrong. Sending everyone to Race
+   * picks one of the two games on their behalf, and Versus becomes reachable
+   * only by going somewhere in order to leave it again.
    *
-   * Keyed on `inActivity()` rather than on a completed handshake, because this
-   * is a question about where the page is, not about who is signed in. A failed
-   * handshake should still land you in the lobby; it costs you a name, not the
-   * mode you came for.
+   * So the router simply starts where the URL says, which inside an Activity is
+   * `home`. The screen knows where it is — see `createHomeScreen`'s `channel` —
+   * and says "this channel's race" rather than "invite a friend".
    */
-  if (inActivity() && router.route.k === 'home') router.go({ k: 'race', room: null, mode: 'race' });
-  else router.start();
+  router.start();
 }
 
 function mountRoute(route: Route, deps: SceneDeps): Promise<Scene> {
@@ -274,6 +274,10 @@ function mountRoute(route: Route, deps: SceneDeps): Promise<Scene> {
  */
 function mountHome({ screens, router }: SceneDeps): Scene {
   const home = createHomeScreen(screens, {
+    // Where the page is, not who is signed in — the same question `main` asks.
+    // A failed handshake still means the two seats are filled by whoever is in
+    // the channel, so the cards should still say so; it costs a name, not a room.
+    channel: inActivity(),
     onPlay: (chosen, difficulty) =>
       router.go({ k: 'run', level: chosen.id, difficulty, seed: null, bank: null }),
     onCampaign: () => router.go({ k: 'sectors' }),
@@ -437,9 +441,10 @@ function mountRace(
   const leave = (): void => {
     // Inside an Activity there is no other lobby to fall back to — the instance
     // is the only room there is — so `remount()` re-entered the very screen the
-    // player was trying to leave, and Leave did nothing at all. It means "out of
-    // Race" here, which is also the only way to reach single player now that the
-    // lobby is the front door.
+    // player was trying to leave, and Leave did nothing at all. It means "back
+    // to the front door" here, which is now also where the launch lands, so
+    // leaving returns you to the screen you came from rather than to one you
+    // had never seen.
     if (inActivity()) router.go({ k: 'home' });
     else if (route.room === null) router.remount();
     // The room's game, not the URL's: if seat one switched us to Versus, the

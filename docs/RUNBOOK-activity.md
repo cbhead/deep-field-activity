@@ -243,13 +243,18 @@ it should now fail.
 
 The run was a success if all of these are true:
 
-- [ ] The front door rendered inside the Discord iframe
+- [ ] The front door rendered inside the Discord iframe, with **both** Race and
+      Versus on it — the launch lands here rather than redirecting into Race,
+      because picking one of the two games for the player is not the app's call
+- [ ] It said "this channel" rather than offering to invite a friend
 - [ ] `[td] Discord activity: …` appeared in the Activity's console
 - [ ] A single-player sector started and was playable
 - [ ] `Race` opened the lobby with **no name prompt and no room code**
 - [ ] A second person — added as an App Tester — took the other seat from the
       same voice channel, with nothing sent between you
 - [ ] A third saw the queue and the race live, rather than being turned away
+- [ ] Seat one switched the room to **Versus** from inside the lobby, the other
+      seat saw it change, and both booted Front Line
 - [ ] Ctrl-C stopped the public URL answering
 
 ---

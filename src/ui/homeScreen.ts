@@ -36,6 +36,16 @@ import { probeRelay } from '../net/relay.ts';
 import { boardThumb } from './boardThumb.ts';
 
 export interface HomeOptions {
+  /**
+   * This is a Discord Activity: the other seat will be filled by somebody in
+   * the voice channel, and there is no link to send them.
+   *
+   * Wording only — both modes work identically either way. But "Invite a
+   * friend" is advice you cannot act on when the people are already there, and
+   * this screen is now where a Discord launch *lands* rather than somewhere it
+   * passed through on its way to the lobby.
+   */
+  channel?: boolean;
   /** Straight into a run: the sector to resume and the difficulty to use. */
   onPlay(level: LevelDef, difficulty: DifficultyId): void;
   /** The sector picker, for choosing something other than the obvious. */
@@ -192,7 +202,11 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
     `<button class="hm-link" data-act="how">How to play</button>` +
     `<button class="hm-link" data-act="settings">Settings</button></span></div>` +
     `<div class="hm-sheet" id="hm-sheet" hidden><div class="hm-sheet-in" id="hm-sheet-in"></div></div>` +
-    `<div class="hm-wrap">${cleared === 0 ? firstRun() : returning(progress, resume, cleared)}</div>`;
+    `<div class="hm-wrap">${
+      cleared === 0
+        ? firstRun(opts.channel === true)
+        : returning(progress, resume, cleared, opts.channel === true)
+    }</div>`;
 
   // Probed when the Race card is first pointed at or focused — never on load.
   // A solo player who never races would otherwise meet a red dot every boot,
@@ -347,27 +361,29 @@ function resumeLevel(p: Progress): LevelDef | undefined {
  * discoverable — on the campaign screen, where a locked card is information
  * rather than a first impression.
  */
-function firstRun(): string {
+function firstRun(channel: boolean): string {
   const first = CAMPAIGN[0]!;
   const diff = DIFFICULTIES[/* the default the picker will preselect */ 'standard' as DifficultyId];
   return (
     `<h1>Deep Field</h1>` +
     `<p class="hm-pitch">A tower defense for your browser. Hold the line through ${CAMPAIGN.length} sectors, ` +
-    `or race a friend on the same seed and see who survives longer.</p>` +
+    (channel
+      ? `or take on whoever else is in this channel.</p>`
+      : `or race a friend on the same seed and see who survives longer.</p>`) +
     `<div class="hm-actions">` +
     `<button class="hm-primary" data-act="play">Start ${first.name} →</button>` +
     // Both two-player modes, even on a first run. Somebody who opened this
     // because a friend told them to should not have to clear a sector first to
     // find the mode they were told about.
-    `<button class="hm-ghost" data-act="race" id="hm-race">Race a friend</button>` +
-    `<button class="hm-ghost" data-act="versus" id="hm-versus">Fight a friend</button>` +
+    `<button class="hm-ghost" data-act="race" id="hm-race">${channel ? 'Race this channel' : 'Race a friend'}</button>` +
+    `<button class="hm-ghost" data-act="versus" id="hm-versus">${channel ? 'Fight this channel' : 'Fight a friend'}</button>` +
     `</div>` +
     `<div class="hm-meta">${diff === undefined ? '' : `${diff.name} difficulty · change on the next screen`}</div>`
   );
 }
 
 /** Returning: resume in one click, and the two modes at equal weight. */
-function returning(p: Progress, resume: LevelDef | undefined, cleared: number): string {
+function returning(p: Progress, resume: LevelDef | undefined, cleared: number, channel: boolean): string {
   const best = bestGrade(p);
   const top = readSeries()[0];
 
@@ -383,8 +399,10 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
 
   return (
     `<div><h1>Deep Field</h1>` +
-    `<p class="hm-pitch">Hold the line through ${CAMPAIGN.length} sectors — or race a friend on the same ` +
-    `seed and see who survives longer.</p></div>` +
+    `<p class="hm-pitch">Hold the line through ${CAMPAIGN.length} sectors — or ` +
+    (channel
+      ? `take on whoever else is in this channel.</p></div>`
+      : `race a friend on the same seed and see who survives longer.</p></div>`) +
     cont +
     `<div class="hm-cards">` +
     `<button class="hm-card" data-act="campaign"><h2>Campaign</h2>` +
@@ -397,7 +415,11 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
     // With no history the card shows the mode's pitch rather than an empty
     // 0–0 — the same rule as first-run Continue: never open on a zero.
     (top === undefined
-      ? `<p>Head to head, same seed</p><span class="hm-score"><em>Invite a friend</em></span>`
+      ? `<p>Head to head, same seed</p><span class="hm-score"><em>${
+          // There is nobody to invite in a voice channel — the other seat is
+          // taken by whoever else opens the activity, and no link changes hands.
+          channel ? 'Whoever joins you' : 'Invite a friend'
+        }</em></span>`
       : `<p>vs ${top.opponent}</p>` +
         `<span class="hm-score" title="${formatSeries(top.opponent, top.rec)}">` +
         `${top.rec.w}–${top.rec.l}${top.rec.t > 0 ? ` <em>· ${top.rec.t} tie${top.rec.t === 1 ? '' : 's'}</em>` : ''}` +

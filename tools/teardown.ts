@@ -108,19 +108,35 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   if (!ready) return;
 
   // That URL carries a `frame_id`, so this is the Activity case: people launch
-  // it together in a voice channel and the lobby is the front door. It used to
-  // land on the single-player screen instead, because Discord's parameters are
-  // none that the router owns and the query therefore parsed as `home` — so an
-  // invited friend arrived at a campaign menu with no sign that the person who
-  // invited them was one click away.
+  // it together in a voice channel.
+  //
+  // This used to assert the opposite — that the launch redirected into the Race
+  // lobby — because the front door was then a single-player screen and landing
+  // on it said nothing about the people you opened the activity with. The front
+  // door now carries Race and Versus as cards, and there being *two* of them is
+  // what makes the redirect wrong: it chose one of the two games on the
+  // player's behalf and left the other reachable only by backing out of it.
   check(
-    'a Discord launch lands in Race, not single player',
-    (await evaluate(cdp, 'tdApp.router.route.k')) === 'race',
+    'a Discord launch lands on the front door',
+    (await evaluate(cdp, 'tdApp.router.route.k')) === 'home',
     `route = ${String(await evaluate(cdp, 'tdApp.router.route.k'))}`,
   );
   check(
-    'and the race lobby is what actually mounted',
-    await until(cdp, 'document.querySelector("#lobby-screen") !== null'),
+    'and the home screen is what actually mounted',
+    await until(cdp, 'document.querySelector("#home-screen") !== null'),
+  );
+  // Both games one click away, which is what the redirect was buying and what
+  // the front door now has to earn on its own.
+  check(
+    'with both multiplayer modes on it',
+    (await evaluate(cdp, 'document.querySelectorAll("[data-act=race],[data-act=versus]").length')) === 2,
+    `${String(await evaluate(cdp, 'document.querySelectorAll("[data-act=race],[data-act=versus]").length'))} entries`,
+  );
+  // The screen knows it is inside Discord even though the handshake failed
+  // below — `channel` is keyed on where the page is, not on who signed in.
+  check(
+    'and it addresses the channel rather than offering an invite',
+    (await evaluate(cdp, 'document.querySelector(".hm-wrap").textContent.includes("this channel")')) === true,
   );
 
   // That URL carries a `frame_id`, so the app just tried the Discord handshake
@@ -136,8 +152,9 @@ async function navigationPhase(cdp: Cdp, thrown: string[]): Promise<void> {
   const before = thrown.length;
   // Baseline from `home`, which is where the round-trip loop below also ends.
   // Taking it on whatever happened to be mounted at boot compared two different
-  // screens and reported the home screen's own Esc handler as a leak — the
-  // Discord default landing on Race is what surfaced that.
+  // screens and reported the home screen's own Esc handler as a leak. A Discord
+  // launch now lands on `home` already, so this is a no-op here — kept because
+  // the invariant is "measure from home", not "the boot screen happens to be it".
   await evaluate(cdp, `tdApp.router.go({ k: 'home' })`);
   await until(cdp, 'document.querySelector("#lobby-screen") === null');
   const winBase = await listeners(cdp, 'window');
