@@ -178,6 +178,16 @@ export const BED_ROOT: Record<SectorFieldId, number> = {
   sluice: 58.3,
   /** The floor. The finale sits deepest, under everything before it. */
   crown: 43.7,
+
+  /**
+   * A tone *above* Pincer, whose teal Front Line steps up from.
+   *
+   * The one root that rises, for the same reason its field does: the campaign
+   * is a descent and versus is not part of it. A board that opened on Crown's
+   * floor would sound like the end of something at the moment two people are
+   * starting.
+   */
+  frontline: 65.4,
 };
 
 /**
@@ -438,6 +448,17 @@ export const SELECT: Record<TowerId, SoundSpec> = {
   singularity: uiBlip(320, 'sine'),
   arc: uiBlip(5000, 'square'),
   filament: uiBlip(1200, 'triangle'),
+  // 640, and the first guess of 220 was wrong in exactly the way its tint was.
+  // It was placed low to stay clear of Singularity and landed *inside*
+  // Singularity's own 150–400 Hz band, wedged between Nova at 160 and
+  // Singularity at 320 — the most crowded stretch of this table.
+  //
+  // Overclock never fires, so it is the one station with no combat band to be
+  // pitched into, and the only constraint left is that arming it is
+  // distinguishable by ear from arming the other five. 320 → 1200 is the widest
+  // gap in this table and 640 is its midpoint; square rather than sine keeps it
+  // off the two neighbours below it, which are both sine.
+  overclock: uiBlip(640, 'square'),
 };
 
 function uiBlip(freq: number, wave: OscillatorType): SoundSpec {
@@ -591,6 +612,104 @@ export const RACE_OPPONENT_WAVE: SoundSpec = {
   ],
   priority: P.ui,
   bus: 'ui',
+};
+
+/**
+ * You bought a contact and sent it. Versus only.
+ *
+ * Rising, where every other cue in this file that means "something is coming"
+ * falls. That inversion is the whole design: a rise is the sound of something
+ * *leaving*, and this is the one event in the game the player causes at the
+ * far end of the board rather than on it. It has to be distinguishable from
+ * `SORTIE_INBOUND` at a glance while the two can overlap — you can be sending
+ * while one of theirs is arriving — and pitch direction separates them more
+ * reliably at speed than timbre does.
+ *
+ * Quiet, and on the ui bus: sending is a purchase, and a purchase that shouted
+ * would be exhausting at the rate this deck is pressed.
+ */
+export const SORTIE_SENT: SoundSpec = {
+  layers: [
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freq: 262,
+      freqEnd: 392,
+      gain: 0.13,
+      attack: 0.008,
+      decay: 0.22,
+      filter: { type: 'lowpass', freq: 1600, q: 0.9 },
+    },
+  ],
+  priority: P.ui,
+  bus: 'ui',
+  pitchJitter: 0.03,
+};
+
+/**
+ * One of theirs has entered your midfield.
+ *
+ * Falling, and pitched under the send so the pair reads as a question and an
+ * answer. Louder than `SORTIE_SENT` because it is the only warning the mode
+ * gives: their board is hidden, so without this a contact simply appears with
+ * no account of where it came from.
+ *
+ * Deliberately *not* on the alarm band. It is news, not a breach — the breach
+ * sound is `SORTIE_LANDED`, and spending the alarm here would leave nothing in
+ * reserve for the moment it actually lands.
+ */
+export const SORTIE_INBOUND: SoundSpec = {
+  layers: [
+    {
+      kind: 'tone',
+      wave: 'triangle',
+      freq: 349,
+      freqEnd: 233,
+      gain: 0.17,
+      attack: 0.006,
+      decay: 0.3,
+      filter: { type: 'lowpass', freq: 1400, q: 0.9 },
+    },
+    {
+      kind: 'noise',
+      freq: 900,
+      gain: 0.06,
+      attack: 0.004,
+      decay: 0.2,
+      filter: { type: 'bandpass', freq: 900, q: 1.6, freqEnd: 500 },
+    },
+  ],
+  priority: P.ui,
+  bus: 'ui',
+  pitchJitter: 0.04,
+};
+
+/**
+ * A contact somebody *paid for* reached your core.
+ *
+ * `LEAK` with the bottom dropped further and a longer tail. It has to be the
+ * same family — this is still a breach and the player has already learned what
+ * a breach sounds like — while being unmistakably worse, because it is the one
+ * kind of damage that had an author. It also lands for two or three lives at
+ * once where an ordinary leak costs one, so a cue of the same weight would be
+ * under-reporting.
+ */
+export const SORTIE_LANDED: SoundSpec = {
+  layers: [
+    { kind: 'tone', wave: 'sawtooth', freq: 165, freqEnd: 52, gain: 0.44, attack: 0.005, decay: 0.72 },
+    {
+      kind: 'noise',
+      freq: 260,
+      gain: 0.24,
+      attack: 0.005,
+      decay: 0.6,
+      filter: { type: 'lowpass', freq: 420, q: 1.4, freqEnd: 120 },
+    },
+  ],
+  priority: P.alarm,
+  bus: 'impacts',
+  pitchJitter: 0.02,
+  duck: 0.9,
 };
 
 /** The lead changed hands. The one race cue allowed to actually interrupt you. */

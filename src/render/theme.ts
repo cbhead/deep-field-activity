@@ -591,6 +591,40 @@ const CROWN: SectorField = {
   starCount: 330,
 };
 
+/**
+ * Front Line, the versus board: Pincer's teal opened back up.
+ *
+ * Derived rather than authored, under the same no-new-hues rule as the five
+ * campaign steps above, and paired by what the board *does* — Front Line is a
+ * two-lane board with a tight waist, which is Pincer's family. It steps
+ * *brighter* rather than deeper, which none of the campaign fields do: the
+ * campaign is a descent into the dark and this is not part of it, so reading
+ * fractionally more open is the difference doing useful work.
+ *
+ * The core is warmer than any campaign goal on purpose. It is the one thing on
+ * this board that belongs to the player rather than to the sector, and in a
+ * mode where losing it is the entire loss condition it should not read as
+ * scenery.
+ */
+const FRONTLINE: SectorField = {
+  ...PINCER,
+  id: 'frontline',
+  bg: 0x060b0c,
+  ground: 0x0c1a16,
+  groundAlt: 0x081210,
+  gridLine: 0x1f3a32,
+  blocked: 0x1a2b25,
+  blockedEdge: 0x264238,
+  nebulaPerTile: 4,
+  path: 0x152826,
+  pathLit: 0x22463f,
+  goal: 0xffc98a,
+  lit: 0xffc98a,
+  litAlpha: 0.19,
+  haze: 0x24463c,
+  starCount: 240,
+};
+
 export const SECTOR_FIELDS: Readonly<Record<SectorFieldId, SectorField>> = {
   switchback: SWITCHBACK,
   cascade: CASCADE,
@@ -600,6 +634,7 @@ export const SECTOR_FIELDS: Readonly<Record<SectorFieldId, SectorField>> = {
   braid: BRAID,
   sluice: SLUICE,
   crown: CROWN,
+  frontline: FRONTLINE,
 };
 
 /** What Race mode and any unknown level get. Race passes no level at all. */
@@ -638,6 +673,21 @@ export const DEEP_FIELD: Theme = {
     // by station, so these have to separate at a glance and at 13px.
     arc: 0x86e39b,
     filament: 0xc4a6ff,
+    // Chartreuse, and picked by measurement rather than by eye — the first
+    // guess was a warm yellow chosen to sit far from Singularity's pale cyan,
+    // on the theory that the two support stations are the pair most likely to
+    // be confused. It cleared Singularity comfortably and collided with *Nova*
+    // instead, at a separation of 64.6 against a roster whose previous worst
+    // pair was 91.2. It was the least legible tint in the game.
+    //
+    // The roster occupies five hues — Nova 28°, Arc 134°, Singularity 189°,
+    // Lance 210°, Filament 260° — and the two real gaps are 128° from Filament
+    // round to Nova, and 105° from Nova to Arc. The first is magenta, which is
+    // spoken for: contacts are the only warm-pink thing on the board and the
+    // whole contrast hierarchy rests on that. So this sits at the midpoint of
+    // the second, 53° clear of both neighbours, at 121.0 separation — no longer
+    // the tightest pair in the roster.
+    overclock: 0xb4c868,
   },
 
   // Contacts share one warm family so "something is coming" reads before "what

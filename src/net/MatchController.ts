@@ -10,7 +10,15 @@
  * headless gate scripts.
  */
 import { NetClient } from './NetClient.ts';
-import { STATUS_INTERVAL_MS, type LobbyPlayer, type S2C, type Standing, type TowerPin } from './protocol.ts';
+import {
+  STATUS_INTERVAL_MS,
+  type LobbyPlayer,
+  type MatchMode,
+  type ResultReason,
+  type S2C,
+  type Standing,
+  type TowerPin,
+} from './protocol.ts';
 
 /** What each side reports about itself, and hears about the other. */
 export interface RaceStatus {
@@ -23,6 +31,8 @@ export interface RaceStatus {
   hidden?: boolean;
   /** Tower layout, present only on frames where it changed. */
   towers?: TowerPin[];
+  /** Versus only: the rung they are on. */
+  era?: number;
 }
 
 export interface RaceHooks {
@@ -36,8 +46,19 @@ export interface RaceHooks {
   boot(seed: number, level: string, diff: string): void;
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
   onPeer?(status: RaceStatus): void;
+  /**
+   * A contact the opponent bought, arriving. Versus only.
+   *
+   * The caller turns this into an `inbound` command; the controller never
+   * touches a world. That boundary is the reason this mode needed no lockstep
+   * and no clock sync — a sortie is a one-way event, so the only requirement
+   * is that it arrives, and the socket already guarantees that.
+   */
+  onInbound?(sortie: string, lane: number, kickback: number): void;
+  /** One of ours reached their core. Pays back what it carried. */
+  onCredit?(amount: number): void;
   /** Both runs are over; standings arrive already in ranking order. */
-  onResult?(winnerId: string | null, standings: Standing[], reason?: 'forfeit'): void;
+  onResult?(winnerId: string | null, standings: Standing[], reason?: ResultReason): void;
   /** The opponent's socket dropped (false) or they resumed their seat (true). */
   onPeerConn?(connected: boolean): void;
   /** Our own socket dropped and we're retrying (false), or we're back (true). */
@@ -52,6 +73,8 @@ export interface RaceOptions {
   room?: string;
   /** Creator's sector/difficulty pick; ignored by the server when joining. */
   choice?: { level: string; diff: string };
+  /** Which game this room plays. Only the server's settlement rule reads it. */
+  mode?: MatchMode;
   hooks: RaceHooks;
   /**
    * N2 has no ready button, so the controller readies up as soon as it joins.
@@ -69,13 +92,14 @@ export class MatchController {
   }
 
   async run(): Promise<void> {
-    const { url, name, room, choice, hooks, autoReady = true } = this.opts;
+    const { url, name, room, choice, mode, hooks, autoReady = true } = this.opts;
     this.client.onMessage = (msg) => this.handle(msg);
     this.client.onClose = () => this.onDropped();
     try {
       const joined = await this.client.connect(url, name, {
         ...(room === undefined ? {} : { room }),
         ...(room === undefined && choice !== undefined ? { level: choice.level, diff: choice.diff } : {}),
+        ...(mode === undefined ? {} : { mode }),
       });
       // NetClient consumes `joined` to resolve connect(), so the room code
       // must be captured here — handle() will never see that message. The
@@ -146,6 +170,29 @@ export class MatchController {
     this.pump = null;
   }
 
+  /**
+   * Send a contact at the opponent.
+   *
+   * Fire-and-forget by design. There is no ack because there is nothing to
+   * acknowledge — the sender has already been charged by their own sim, and a
+   * frame that fails to arrive is a lost purchase either way. Adding a
+   * confirmation would buy a retry path whose only honest behaviour is to send
+   * a second contact, which is worse than losing one.
+   *
+   * Dropped after the match settles, so a click landing on the results screen
+   * cannot post to a finished room.
+   */
+  sendSortie(sortie: string, lane: number, kickback: number): void {
+    if (this.finished || this.resulted) return;
+    this.client.send({ t: 'sortie', sortie, lane, kickback });
+  }
+
+  /** Report that one of *theirs* landed here, so the server can pay them. */
+  reportLanded(kickback: number): void {
+    if (this.resulted) return;
+    this.client.send({ t: 'landed', kickback });
+  }
+
   /** The run ended (defeat or full clear). Reports final figures exactly once. */
   finish(status: RaceStatus): void {
     if (this.finished) return;
@@ -181,7 +228,14 @@ export class MatchController {
           wave: msg.wave, lives: msg.lives, elapsedMs: msg.elapsedMs,
           ...(msg.hidden !== undefined ? { hidden: msg.hidden } : {}),
           ...(msg.towers !== undefined ? { towers: msg.towers } : {}),
+          ...(msg.era !== undefined ? { era: msg.era } : {}),
         });
+        break;
+      case 'inbound':
+        hooks.onInbound?.(msg.sortie, msg.lane, msg.kickback);
+        break;
+      case 'credit':
+        hooks.onCredit?.(msg.amount);
         break;
       case 'result':
         this.resulted = true;

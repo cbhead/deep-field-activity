@@ -20,6 +20,7 @@ import { LEVEL05 } from './maps/level05.ts';
 import { LEVEL06 } from './maps/level06.ts';
 import { LEVEL07 } from './maps/level07.ts';
 import { LEVEL08 } from './maps/level08.ts';
+import { VERSUS } from './maps/versus.ts';
 import {
   WAVES_SWITCHBACK,
   WAVES_CASCADE,
@@ -29,6 +30,7 @@ import {
   WAVES_BRAID,
   WAVES_SLUICE,
   WAVES_CROWN,
+  WAVES_FRONTLINE,
 } from './waves.ts';
 import type { SectorFieldId } from './sectors.ts';
 import type { MapSource, WaveDef } from './types.ts';
@@ -138,6 +140,39 @@ export const CAMPAIGN: readonly LevelDef[] = [
   },
 ];
 
-export const levelById = (id: string): LevelDef | undefined => CAMPAIGN.find((l) => l.id === id);
+/**
+ * Front Line: the versus board, and deliberately **not** in `CAMPAIGN`.
+ *
+ * Membership of that array is what defines progression order — the picker
+ * unlocks sector N once N-1 is cleared, and it draws a card per entry. A board
+ * that is not a sector, cannot be cleared and has no place in the unlock chain
+ * would have to be special-cased in every one of those, so it is simpler and
+ * more honest for it to be a `LevelDef` that lives outside the list.
+ *
+ * It is still a `LevelDef` rather than a type of its own, because everything
+ * downstream of the menu — `resolveRules`, the renderer, the board thumbnail —
+ * wants a map, an arc and a field, and a parallel type would be those three
+ * fields again under different names.
+ */
+export const VERSUS_LEVEL: LevelDef = {
+  id: 'versus',
+  name: VERSUS.name,
+  kicker: 'Versus',
+  blurb:
+    'One half of a corridor: midfield on your left, your core on your right. Two lanes the same length and a different shape, and a merge five tiles from home.',
+  map: VERSUS,
+  waves: WAVES_FRONTLINE,
+  field: 'frontline',
+};
+
+/**
+ * Resolve a board id, campaign or otherwise.
+ *
+ * Front Line is checked after the campaign rather than folded into it, so the
+ * eight sectors keep answering first and a future board named `versus` in the
+ * campaign would shadow it loudly rather than silently.
+ */
+export const levelById = (id: string): LevelDef | undefined =>
+  CAMPAIGN.find((l) => l.id === id) ?? (id === VERSUS_LEVEL.id ? VERSUS_LEVEL : undefined);
 
 export const levelIndex = (id: string): number => CAMPAIGN.findIndex((l) => l.id === id);

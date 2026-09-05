@@ -37,6 +37,11 @@ export function resolveSplits(w: World): void {
         // — paying the clear reward early and, at the end of a run, declaring
         // victory with contacts on the board.
         wave: parent.wave,
+        // Inherited for the same reason the wave tag is. A Cluster sent as a
+        // sortie must not die into three contacts that count as wave traffic —
+        // they would be tagged with a wave they never belonged to and would
+        // hold it open exactly the way the parent was stopped from doing.
+        origin: parent.origin,
         at: {
           x: parent.x,
           y: parent.y,

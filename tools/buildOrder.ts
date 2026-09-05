@@ -16,6 +16,38 @@ import type { MapDef } from '../src/sim/types.ts';
 
 export type Ranking = 'cluster' | 'spread';
 
+/**
+ * A whole build strategy: how tiles are ranked, and whether the best ones are
+ * held back for stations that have not unlocked yet.
+ *
+ * **Reservation is a strategy, not a rule**, and that is a measured conclusion
+ * rather than a stylistic one. Holding tiles back is plainly right on some
+ * boards and plainly wrong on others: at Blackout it moves Sluice from 0/5 to
+ * 5/5 and Braid from 5/5 to 1/5. Applying it globally would have traded one
+ * board's bad reading for another's, which is not a fix.
+ *
+ * So it joins `cluster` and `spread` on the same terms as the header describes
+ * them — crude strategies that bracket what a player might do, reported
+ * together, with which one wins being itself a fact about the board. A player
+ * on Sluice saves a tile for the Filament; a player on Braid, where the early
+ * waves already bite through a fourteen-life reserve, cannot afford to.
+ */
+export interface Strategy {
+  readonly how: Ranking;
+  /** Hold the best still-free tiles for stations yet to unlock. */
+  readonly hold: boolean;
+}
+
+/** The four crude strategies, in a stable order so reports are comparable. */
+export const STRATEGIES: readonly Strategy[] = [
+  { how: 'cluster', hold: false },
+  { how: 'spread', hold: false },
+  { how: 'cluster', hold: true },
+  { how: 'spread', hold: true },
+];
+
+export const strategyName = (s: Strategy): string => `${s.how}${s.hold ? '+hold' : ''}`;
+
 /** Ground tiles and the road each can reach, computed once per (board, range). */
 function reachable(map: MapDef, range: number): { col: number; row: number; reach: number[] }[] {
   const road: number[] = [];
@@ -105,4 +137,109 @@ export function buildOrder(map: MapDef, range: number, how: Ranking): [number, n
 
   cache.set(key, out);
   return out;
+}
+
+/**
+ * Which tile the next station takes, as an index into `spots`, or `-1` when
+ * every tile is spoken for.
+ *
+ * **An attacking station takes the next unused tile in rank order.** That is
+ * what both harnesses have always done and still do for five of the six.
+ *
+ * **A support station cannot be placed that way.** Overclock's entire effect is
+ * on the stations inside its reach, so handing it whatever tile the build cycle
+ * happened to reach measures where the cursor landed rather than what the
+ * station is worth — and it would usually measure zero. A zero produced that way
+ * is a fact about this harness, not about the station, and it is exactly the
+ * kind of number this module exists to stop the two tools disagreeing about.
+ * Support takes the highest-ranked unused tile with the most already-built
+ * stations in reach instead.
+ *
+ * Ties break by rank: `spots` is already ordered and the scan uses a strict `>`,
+ * so the first and best-ranked candidate wins. Deterministic, which both tools
+ * depend on.
+ *
+ * Still crude, like the two rankings above, and in one way worth naming: it
+ * counts a fed Lance and a fed Nova the same when the buff is worth roughly
+ * three times more to the Nova. So it is a *floor* on what support measures, not
+ * an estimate of it — a real player choosing which stations to feed does better
+ * than this, and the sweep's numbers should be read as the pessimistic end.
+ *
+ * **`reserve` holds the best still-free tiles back for stations that have not
+ * unlocked yet**, and it exists because its absence was measured. The builder
+ * fills tiles in rank order with whatever is available *now*, so Arc (wave 2),
+ * Filament (4) and Overclock (6) could only ever have what was left over. That
+ * is not what a player does — a player knows what is coming and saves a good
+ * tile for it.
+ *
+ * This was invisible until the locked-station stall was fixed, because the stall
+ * had been reserving tiles by accident: it bought three towers, idled, and
+ * handed the 4th and 5th ranked tiles to the two late unlocks. Removing the
+ * stall removed the reservation with it, and on Sluice — two lanes at 21t and
+ * 51t, where placement is most of the game — that alone moved Standard from
+ * 5/5 to 4/5 and Blackout from 5/5 to 0/5. Neither reading was about the
+ * content; both were about which tiles the late stations got.
+ *
+ * Support is excluded from the count on purpose. `spotFor` does not place
+ * support by rank at all, so holding a *rank-premium* tile for an Overclock
+ * would reserve something it has no use for.
+ *
+ * Reservation never stalls a build: if every unreserved tile is taken, the held
+ * ones are released rather than the builder buying nothing.
+ */
+export function spotFor(
+  spots: readonly (readonly [number, number])[],
+  taken: ReadonlySet<number>,
+  support: {
+    readonly range: number;
+    readonly towers: readonly { readonly x: number; readonly y: number }[];
+  } | null,
+  reserve = 0,
+): number {
+  // The top `reserve` still-free tiles, held for stations yet to unlock.
+  const held = new Set<number>();
+  for (let i = 0; i < spots.length && held.size < reserve; i++) {
+    if (!taken.has(i)) held.add(i);
+  }
+
+  if (support === null) {
+    for (let i = 0; i < spots.length; i++) if (!taken.has(i) && !held.has(i)) return i;
+    // Nothing unreserved left. Release the held tiles rather than stalling —
+    // a reservation that stops the build entirely measures far worse than one
+    // that is simply given up on.
+    for (let i = 0; i < spots.length; i++) if (!taken.has(i)) return i;
+    return -1;
+  }
+
+  const r2 = support.range * support.range;
+  let best = -1;
+  let bestFed = -1;
+
+  for (let i = 0; i < spots.length; i++) {
+    if (taken.has(i) || held.has(i)) continue;
+    // Tile centres, matching `tileCentre` — a station's `x`/`y` is the centre,
+    // and comparing a corner against a centre would be off by half a tile in
+    // both axes, which at this range is most of a tile of error.
+    const cx = spots[i]![0] + 0.5;
+    const cy = spots[i]![1] + 0.5;
+
+    let fed = 0;
+    for (const t of support.towers) {
+      const dx = t.x - cx;
+      const dy = t.y - cy;
+      if (dx * dx + dy * dy <= r2) fed++;
+    }
+
+    if (fed > bestFed) {
+      bestFed = fed;
+      best = i;
+    }
+  }
+
+  // Same release as the gun path: a reservation must never be the reason a
+  // station goes unbuilt.
+  if (best < 0) {
+    for (let i = 0; i < spots.length; i++) if (!taken.has(i)) return i;
+  }
+  return best;
 }

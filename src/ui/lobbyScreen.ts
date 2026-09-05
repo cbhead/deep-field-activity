@@ -14,7 +14,7 @@
  * - Readiness is server truth: the button renders from the roster broadcast,
  *   not from a local flag, and un-ready is allowed until the seed is dealt.
  */
-import type { LobbyPlayer } from '../net/protocol.ts';
+import type { LobbyPlayer, MatchMode } from '../net/protocol.ts';
 import { formatSeed } from '../sim/util/rng.ts';
 import { CAMPAIGN, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
@@ -47,6 +47,18 @@ export interface LobbyOptions {
    * debugging a port nothing ever tried to reach.
    */
   relayHost: string;
+  /**
+   * Which game this lobby is hosting, so the invite link deep-links into the
+   * same one.
+   *
+   * Load-bearing, and it was wrong before it was a parameter: a versus host
+   * handed out a `?race=` link, which dropped their friend into a versus room
+   * with Race rules — same seed, same board, but a client that would keep
+   * playing after its core died and be told it lost a match it did not know it
+   * was in. The server settles by the room's mode, so the *link* is what has
+   * to carry it.
+   */
+  mode?: MatchMode;
   /** choice present only when creating — the server ignores it on joins. */
   onSubmit(name: string, room?: string, choice?: RaceChoice): void;
   onReady(ready: boolean): void;
@@ -98,7 +110,8 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     })
     .catch(() => undefined);
 
-  const inviteLink = (room: string): string => `${inviteBase}/?race=${room}`;
+  const inviteParam = opts.mode === 'versus' ? 'versus' : 'race';
+  const inviteLink = (room: string): string => `${inviteBase}/?${inviteParam}=${room}`;
 
   /**
    * "Send to Discord" posts the invite to a channel webhook the user pastes
@@ -347,7 +360,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       el.querySelector('#race-unready')?.addEventListener('click', () => opts.onReady(false));
     }
     el.querySelector('#race-leave')?.addEventListener('click', () => {
-      location.href = '?race';
+      location.href = `?${inviteParam}`;
     });
     if (players.length < 2) wireDiscord(room);
   }

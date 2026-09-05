@@ -21,6 +21,22 @@ export interface EnemyDef {
   readonly radius: number;
 
   /**
+   * Lives taken when this reaches the goal. 1 for everything in the campaign.
+   *
+   * A dial rather than a constant because the versus board's sortie deck needs
+   * one. When every contact costs exactly one life the correct sortie is always
+   * the cheapest hull per dollar, and the expensive end of the roster is never
+   * worth buying — a Monolith costs five Drifters and lands the same single
+   * blow. Weight is what makes "spend up for one that lands hard" a decision
+   * rather than a mistake.
+   *
+   * Deliberately *not* derived from hp or bounty. Both compound per wave, and a
+   * leak cost that compounded with them would make a single late leak fatal on
+   * a board whose whole reserve is fourteen lives at Blackout.
+   */
+  readonly leakDamage: number;
+
+  /**
    * Flat damage subtracted from every individual hit. 0 for everything unarmoured.
    *
    * Flat, not a percentage, and that is the entire design. A percentage cut
@@ -128,6 +144,26 @@ export interface TowerDef {
   readonly rampMax: number;
 
   /**
+   * Shots per second this station *adds* to every station within `range`.
+   * `0` for the five that fight contacts directly.
+   *
+   * Additive rather than a multiplier on `fireInterval`, and that inversion is
+   * the entire reason a rate buff is safe to add to this roster. A multiplier
+   * pays out most to whatever station already has the highest damage per
+   * second, which amplifies the roster instead of adding to it — the "strictly
+   * correct, and the other two decorative" failure `towers.ts` records the
+   * first roster hitting. A flat `+N/s` pays out most to the *slowest* gun:
+   * +0.35 is +49% on a Nova and +9% on a Filament.
+   *
+   * It also cannot rescue chip damage, because armour is subtracted per hit —
+   * so the buff's weakness is the roster's existing armour axis, at no new
+   * balance cost. See `EnemyDef.armor`.
+   *
+   * Stacks by maximum, never by sum. See `refreshBuffs` in `sim/build.ts`.
+   */
+  readonly buffShotsPerSecond: number;
+
+  /**
    * The effect upgrade path: what this station's third upgrade track improves,
    * on top of the damage and range tracks every station shares.
    *
@@ -154,6 +190,25 @@ export interface TowerDef {
    * disabled slot naming the wave it opens on.
    */
   readonly unlockWave: number;
+
+  /**
+   * Which era must be bought before this may be built. 1 is available from the
+   * start. Read only when `Rules.eras` is set — versus, and nothing else.
+   *
+   * The second half of the same statement `unlockWave` makes, on a different
+   * clock. The campaign hands stations out on a schedule, which is a teaching
+   * order: by the wave a type matters you have it, and being ready is not
+   * something you can get wrong. Versus replaces the schedule with a purchase,
+   * so the same ladder becomes a decision — bank for the next rung and build
+   * nothing while you do, or spend now and stay a rung behind. That is the
+   * mode's whole tension and it costs exactly this one extra field.
+   *
+   * The era also caps the *upgrade* ceiling: era N allows Mk N on every path.
+   * One number gating both is deliberate. Two ladders would be two things to
+   * read, and the interesting question is "how far up am I", not "how far up am
+   * I in each of two systems".
+   */
+  readonly era: number;
 }
 
 /**
@@ -182,6 +237,9 @@ export type TowerStats = Pick<
   | 'chainFalloff'
   | 'rampPerSecond'
   | 'rampMax'
+  // In `TowerStats` and not merely on the def, so the effect path can deepen it
+  // through the existing `perTier` loop in `computeStats` with no new code.
+  | 'buffShotsPerSecond'
 >;
 
 /** One burst of identical enemies inside a wave. */

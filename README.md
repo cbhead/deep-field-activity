@@ -1,8 +1,8 @@
 # Deep Field
 
 A tower defense game for your browser — hold the line through an eight-sector
-campaign, or race a friend head-to-head on the same seed and see who survives
-longer.
+campaign, race a friend head-to-head on the same seed, or fight one directly in
+**Versus**, where the contacts on your board are the ones they paid to send.
 
 ![Switchback under fire: the route lit from dim at the spawn to bright at the pulsar, six stations ringing it, contacts mid-run, and the build deck along the bottom](docs/media/gameplay.png)
 
@@ -26,8 +26,9 @@ You don't need to download anything. You need two things:
    network. [Download it](https://tailscale.com/download), then sign in using
    the invite your friend sent you (they'll send it from their Tailscale admin
    page).
-2. **The invite link** — it looks like `http://100.x.y.z:8787/?race=ABCD`.
-   Open it in your browser once Tailscale is running.
+2. **The invite link** — it looks like `http://100.x.y.z:8787/?race=ABCD`, or
+   `?versus=ABCD` if they're hosting a fight rather than a race. Open it in
+   your browser once Tailscale is running.
 
 Type a name, hit **Ready**, and you're racing. That's it — no Node, no
 terminal, no cloning.
@@ -86,6 +87,61 @@ time, and a minimap of the stations they've built — but never their board:
 Runs are ranked on waves cleared, then lives kept, then time. Lose your
 connection and you can reclaim the same seat and carry on; walk away and it's a
 forfeit after 90 seconds.
+
+## Versus — Front Line
+
+Race is a comparison: two people playing the same arc, side by side, seeing who
+lasts. **Versus is a fight.** You spend money to put contacts on the other
+person's board, and they spend money putting contacts on yours.
+
+```sh
+npm run play          # then open the URL with ?versus instead of ?race
+```
+
+Everything from Race carries over — room codes, the invite link, resume,
+forfeit. The lobby hands out a `?versus=CODE` link so your friend lands in the
+same game you're hosting.
+
+**One board, and it's half a corridor.** Midfield is the left edge, your core is
+the right. The neutral wave appears at midfield on the shared seed and walks at
+both of you — it's a third party, pressing equally, and it never takes sides.
+Two lanes, *Crest* and *Trough*, the same 33 tiles long and a different shape:
+Crest turns five times and rewards splash, Trough runs one fourteen-tile
+straight and rewards reach. Neither answers the other, so the question a sortie
+asks is which of their two defences is thinner.
+
+**The era ladder.** Stations aren't unlocked by a clock here — you buy them.
+
+| Era | Stations | Upgrades to | Can send |
+|---|---|---|---|
+| I | Lance, Nova, Singularity | Mk I | Drifter, Mote |
+| II | + Arc, + Overclock | Mk II | + Warden, Cluster |
+| III | + Filament | Mk III | + Monolith, Bulwark |
+
+One purchase does two things: it opens new stations *and* raises the upgrade
+ceiling on everything already standing. While you're banking for the next rung
+you're building nothing — that gap is the whole tension, and it's when the other
+side pushes.
+
+**Sending.** Pick a lane, press a contact. It costs a fixed multiple of the
+bounty they'll collect for killing it, so:
+
+- **Into a wall** — they kill it, they collect the bounty, and you're down more
+  than they're up. Spam is a transfer to the person you're spamming.
+- **Into a hole** — it takes lives (a Monolith takes three) and pays you back
+  most of the price.
+
+You never see their board, so a warning strip tells you what's coming and which
+lane it took. Their era shows in the opponent strip — it's the most useful thing
+you can know about someone whose defence is hidden.
+
+**It ends when a core does.** The arc never runs out: composition loops but the
+contacts keep compounding, so a fully upgraded defence falls around wave 21 with
+nobody attacking at all. There's no clock and no sudden death — the escalation
+*is* the terminator.
+
+You can play it solo to learn the economy — `?level=versus` sends your own
+sorties straight back at you.
 
 ## Single-player campaign
 
@@ -179,7 +235,8 @@ that port is the one case the client has to name explicitly.
 The layout: `src/sim/` is the deterministic game simulation (shared by the
 browser and the headless tools), `src/render/` draws it with Pixi.js,
 `src/ui/` is the HUD and lobby, `src/content/` holds towers/waves/balance
-numbers, `src/net/` is the race wire protocol, and `server/` is a small
+numbers — including `sorties.ts`, the versus send table — `src/net/` is the
+wire protocol shared by both head-to-head modes, and `server/` is a small
 WebSocket relay that also serves the built client. Design rationale lives in
 [docs/design/](docs/design/README.md).
 

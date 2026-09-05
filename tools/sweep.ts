@@ -28,7 +28,9 @@ import { TOWERS, type TowerId } from '../src/content/towers.ts';
 import { ENEMIES, type EnemyId } from '../src/content/enemies.ts';
 import { parseMap } from '../src/sim/util/grid.ts';
 import type { MapDef } from '../src/sim/types.ts';
-import { buildOrder, type Ranking } from './buildOrder.ts';
+// Aliased: this file's own `STRATEGIES` is a list of build *compositions*,
+// where these are placement strategies. Two different axes, one good name.
+import { buildOrder, spotFor, strategyName, STRATEGIES as PLACEMENTS, type Strategy } from './buildOrder.ts';
 import { DEFAULT_RULES, resolveRules, type Rules } from '../src/sim/rules.ts';
 import type { DifficultyId } from '../src/content/difficulty.ts';
 import { createWorld } from '../src/sim/world.ts';
@@ -56,26 +58,81 @@ function run(
   seed: number,
   board: MapDef = map,
   rules: Rules = DEFAULT_RULES,
-  how: Ranking = 'cluster',
+  strategy: Strategy = PLACEMENTS[0]!,
 ): Result {
   // Ranked by the widest reach in the build, so every strategy shares one
-  // notion of a good tile and none is flattered by its own ordering.
-  const spots = buildOrder(board, Math.max(...build.map((b) => TOWERS[b].range)), how);
+  // notion of a good tile and none is flattered by its own ordering — and by
+  // the widest *attacking* reach specifically. Overclock's 1.8 is a buff radius,
+  // not a coverage radius, so letting it into the max would rank tiles for a
+  // reach no station in the build actually shoots at.
+  const guns = build.filter((b) => TOWERS[b].buffShotsPerSecond === 0);
+  const spots = buildOrder(board, Math.max(...(guns.length > 0 ? guns : build).map((b) => TOWERS[b].range)), strategy.how);
   const w = createWorld(board, seed, rules);
+  // `next` cycles the build order; `taken` tracks tiles. They were one counter
+  // until support arrived, which does not take tiles in rank order — see
+  // `spotFor`.
+  const taken = new Set<number>();
   let next = 0;
 
   for (let i = 0; i < 300_000 && w.phase === 'playing'; i++) {
-    const want = build[next % build.length]!;
-    // Locked stations are skipped rather than attempted. Advancing `next` on a
-    // command the sim will reject burns one of the ranked tiles and leaves the
-    // build measuring less coverage than it was asked to.
-    if (
-      next < spots.length &&
-      w.money >= TOWERS[want].cost &&
-      w.wave.index >= TOWERS[want].unlockWave
-    ) {
-      w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
-      next++;
+    // **Locked stations are stepped over, not waited on**, and the difference is
+    // not cosmetic. This used to hold the cursor on a locked slot, so the whole
+    // build stalled until that station unlocked — a five-station cycle bought
+    // three towers and then idled from wave 0 to wave 2 with money piling up,
+    // and Overclock at wave 6 turned the stall into a total loss: `nova+overclock`
+    // measured 0/5 having built exactly one tower. Every figure this harness
+    // produced for a build containing Arc or Filament carried a smaller version
+    // of the same distortion.
+    //
+    // **The skip is a local offset and must not advance `next`.** Advancing it
+    // per tick rotates the cycle thousands of times while a station is locked,
+    // so which station lands on which ranked tile once it unlocks is arbitrary —
+    // and on a board with unequal lanes that assignment is most of the result.
+    // The first draft did exactly that and moved Sluice from 5/5 to 1/5 at
+    // Standard, which looked like a content bug and was an artefact.
+    //
+    // `next` therefore moves only when something is actually bought, so the
+    // build keeps its proportions among whatever is currently available and the
+    // locked station is simply next in line the moment it opens.
+    //
+    // Bounded by the cycle length: a build whose stations are all still locked
+    // buys nothing this tick rather than spinning.
+    let skip = 0;
+    while (skip < build.length && w.wave.index < TOWERS[build[(next + skip) % build.length]!].unlockWave) {
+      skip++;
+    }
+    if (skip === build.length) {
+      if (rush) w.commands.push({ type: 'startWave' });
+      stepWorld(w, 1 / 60);
+      w.events.length = 0;
+      continue;
+    }
+
+    const want = build[(next + skip) % build.length]!;
+    const def = TOWERS[want];
+    // One held tile per *distinct* gun still locked. Deduped because a build
+    // like `nova+2lance` names a station twice and would otherwise reserve
+    // twice for it; guns only, because support is not placed by rank.
+    const reserve = strategy.hold
+      ? new Set(
+          build.filter(
+            (b) => TOWERS[b].buffShotsPerSecond === 0 && w.wave.index < TOWERS[b].unlockWave,
+          ),
+        ).size
+      : 0;
+    const at = spotFor(
+      spots,
+      taken,
+      def.buffShotsPerSecond > 0 ? { range: def.range, towers: w.towers } : null,
+      reserve,
+    );
+    // Money still blocks rather than skipping: waiting to afford the station the
+    // build asked for is what a player does, where skipping to a cheaper one
+    // would quietly rewrite the mix being measured.
+    if (at >= 0 && w.money >= def.cost) {
+      w.commands.push({ type: 'placeTower', defId: want, col: spots[at]![0], row: spots[at]![1] });
+      taken.add(at);
+      next += skip + 1;
     }
     if (rush) w.commands.push({ type: 'startWave' });
     stepWorld(w, 1 / 60);
@@ -94,7 +151,16 @@ const STRATEGIES: [string, TowerId[]][] = [
   ['lance', ['lance']],
   ['nova', ['nova']],
   ['singularity', ['singularity']],
+  // Must be 0/5, for the same structural reason `singularity` is: a station
+  // with no damage cannot answer "can a defence built entirely around this
+  // clear the arc". Here as a dominance check only.
+  ['overclock', ['overclock']],
   ['nova+2lance', ['nova', 'lance', 'lance']],
+  // **The row to watch.** Nova is the +49% case — the slowest gun in the roster
+  // and therefore the one an additive rate buff is worth most to. If this wins
+  // every seed with lives to spare, Overclock is underpriced, and this pair is
+  // where that will show first.
+  ['nova+overclock', ['nova', 'overclock']],
   ['all three', ['nova', 'lance', 'singularity']],
 ];
 
@@ -186,43 +252,74 @@ const apply = (c: Candidate) => () => {
  * the mono-build rows, which is why those rows kept saying Singularity was
  * broken while it was quietly carrying the strongest build in the game.
  *
+ * **The tier is probed, not assumed**, for the reason `boardMarginal` spells
+ * out at length: a lives delta only has resolution inside a band. This block ran
+ * at Standard for its whole life and was fine there while the reference build
+ * was three stations. At four it finishes on 19.6 of 20 — six tenths of a life
+ * from the ceiling — and every column collapses toward zero or toward the whole
+ * reserve, which reads like data and is not. Overclock measured `+0.2` there and
+ * the number meant nothing at all.
+ *
  * `wait` only. Rushing is a separate axis and mixing it in here would fold two
  * questions into one number.
  */
-const REFERENCE: TowerId[] = ['nova', 'lance', 'singularity'];
+const REFERENCE: TowerId[] = ['nova', 'lance', 'singularity', 'overclock'];
 
 function marginal(): void {
-  const score = (build: TowerId[]) => {
-    const rs = SEEDS.map((s) => run(build, false, s));
+  const score = (build: TowerId[], rules: Rules) => {
+    const rs = SEEDS.map((s) => run(build, false, s, map, rules));
     return {
       wins: rs.filter((r) => r.won).length,
       lives: rs.reduce((a, r) => a + r.lives, 0) / rs.length,
     };
   };
 
-  console.log(`\n\x1b[1mmarginal contribution\x1b[0m`);
-  console.log(`  \x1b[2mwhat each station adds to a build that already has the other two\x1b[0m`);
+  // Hardest first, and the same band as `boardMarginal`: the reference build
+  // must still win most seeds and must still bleed. Falling back to whichever
+  // tier won most keeps a row printing rather than vanishing.
+  const level = CAMPAIGN[0]!;
+  type Probe = { tier: DifficultyId; rules: Rules; base: ReturnType<typeof score> };
+  let picked: Probe | null = null;
+  let fallback: Probe | null = null;
 
-  const base = score(REFERENCE);
+  for (const tier of ['blackout', 'standard', 'recon'] as const) {
+    const rules = resolveRules(level, tier);
+    const base = score(REFERENCE, rules);
+    const here = { tier, rules, base };
+    if (fallback === null || base.wins > fallback.base.wins) fallback = here;
+    if (base.wins >= 3 && base.lives < rules.startingLives) {
+      picked = here;
+      break;
+    }
+  }
+
+  const { tier, rules, base } = picked ?? fallback!;
+
+  console.log(`\n\x1b[1mmarginal contribution\x1b[0m`);
   console.log(
-    `  all three${' '.repeat(11)}won ${base.wins}/${SEEDS.length}` +
-      `  lives ${base.lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}`,
+    `  \x1b[2mwhat each station adds to a build that already has the other three ·` +
+      ` ${tier}${picked === null ? ' (no tier gave resolution — read nothing here)' : ''}\x1b[0m`,
+  );
+
+  console.log(
+    `  all four${' '.repeat(12)}won ${base.wins}/${SEEDS.length}` +
+      `  lives ${base.lives.toFixed(1).padStart(5)}/${rules.startingLives}`,
   );
 
   for (const drop of REFERENCE) {
-    const s = score(REFERENCE.filter((t) => t !== drop));
+    const s = score(REFERENCE.filter((t) => t !== drop), rules);
     const delta = base.lives - s.lives;
     console.log(
       `  without ${drop.padEnd(12)}` +
         ` won ${s.wins}/${SEEDS.length}` +
-        `  lives ${s.lives.toFixed(1).padStart(5)}/${BALANCE.startingLives}` +
+        `  lives ${s.lives.toFixed(1).padStart(5)}/${rules.startingLives}` +
         `  \x1b[1m${drop} is worth ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}\x1b[0m`,
     );
   }
 }
 
 /**
- * What each of the five stations is worth, board by board.
+ * What each of the six stations is worth, board by board.
  *
  * The map spec's §4 made five predictions about what routes do to the roster,
  * and said plainly that none of it needs a number changed — that the geometry
@@ -263,18 +360,18 @@ function marginal(): void {
  * keeping the better — a player is allowed to pick the right strategy, and on
  * these boards picking it is most of the game.
  */
-const FIVE: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament'];
+const SIX: TowerId[] = ['nova', 'lance', 'singularity', 'arc', 'filament', 'overclock'];
 
 function boardMarginal(): void {
   console.log(`\n\x1b[1mmarginal contribution across eight boards\x1b[0m`);
-  console.log(`  \x1b[2mlives each station adds to a build that already has the other four\x1b[0m`);
+  console.log(`  \x1b[2mlives each station adds to a build that already has the other five\x1b[0m`);
   console.log(
     `  \x1b[2mmeasured at the hardest tier whose reference build still wins and still bleeds —` +
       ` on the floor or the ceiling every column reads zero\x1b[0m`,
   );
   console.log(
     `  \x1b[2m${'board'.padEnd(11)}${'tier'.padEnd(10)}${'build'.padEnd(8)}` +
-      FIVE.map((t) => t.slice(0, 5).padStart(7)).join('') +
+      SIX.map((t) => t.slice(0, 5).padStart(7)).join('') +
       `\x1b[0m`,
   );
 
@@ -282,7 +379,7 @@ function boardMarginal(): void {
     const board = parseMap(level.map);
     const lanes = board.routes.length;
 
-    const score = (build: TowerId[], rules: Rules, how: Ranking) => {
+    const score = (build: TowerId[], rules: Rules, how: Strategy) => {
       const rs = SEEDS.map((s) => run(build, false, s, board, rules, how));
       return {
         wins: rs.filter((r) => r.won).length,
@@ -294,16 +391,19 @@ function boardMarginal(): void {
     // Hardest first. The band is "wins most seeds" and "does not finish
     // untouched" — the second half is what rejects Recon on the older boards,
     // where the reference build never loses a life and the drops cannot either.
-    type Probe = { tier: DifficultyId; rules: Rules; how: Ranking; base: ReturnType<typeof score> };
+    type Probe = { tier: DifficultyId; rules: Rules; how: Strategy; base: ReturnType<typeof score> };
     let picked: Probe | null = null;
     let fallback: Probe | null = null;
 
     for (const tier of ['blackout', 'standard', 'recon'] as const) {
       const rules = resolveRules(level, tier);
-      const cl = score(FIVE, rules, 'cluster');
-      const sp = score(FIVE, rules, 'spread');
-      const how: Ranking = sp.wins > cl.wins || (sp.wins === cl.wins && sp.lives > cl.lives) ? 'spread' : 'cluster';
-      const base = how === 'spread' ? sp : cl;
+      // Best of all four, same as `campaign.ts` — a player picks their strategy
+      // and the two tools must not disagree about which ones exist.
+      const scored = PLACEMENTS.map((s) => ({ how: s, base: score(SIX, rules, s) }));
+      const pick = scored.reduce((a, b) =>
+        b.base.wins > a.base.wins || (b.base.wins === a.base.wins && b.base.lives > a.base.lives) ? b : a,
+      );
+      const { how, base } = pick;
       const here = { tier, rules, how, base };
 
       if (fallback === null || base.wins > fallback.base.wins) fallback = here;
@@ -315,7 +415,7 @@ function boardMarginal(): void {
 
     const chosen = picked ?? fallback!;
     const { rules, how, base } = chosen;
-    const worth = FIVE.map((drop) => base.lives - score(FIVE.filter((t) => t !== drop), rules, how).lives);
+    const worth = SIX.map((drop) => base.lives - score(SIX.filter((t) => t !== drop), rules, how).lives);
 
     const note =
       picked === null
@@ -325,7 +425,7 @@ function boardMarginal(): void {
         : `${lanes} lane${lanes > 1 ? 's' : ''}`;
 
     console.log(
-      `  ${level.name.padEnd(11)}${chosen.tier.padEnd(10)}${how.padEnd(8)}` +
+      `  ${level.name.padEnd(11)}${chosen.tier.padEnd(10)}${strategyName(how).padEnd(15)}` +
         worth.map((d) => `${d >= 0 ? '+' : ''}${d.toFixed(1)}`.padStart(7)).join('') +
         `   \x1b[2m${note} · base ${base.wins}/${SEEDS.length} won,` +
         ` ${base.cleared.toFixed(1)}/${waveCount(rules)} waves, ${base.lives.toFixed(1)}/${rules.startingLives} lives\x1b[0m`,

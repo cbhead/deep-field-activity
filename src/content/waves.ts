@@ -375,3 +375,53 @@ export const WAVES_CROWN: readonly WaveDef[] = [
     // single file — the count reads bigger than it lands.
     s(10, 0.35, 15, 'mote'),
   ),];
+
+/**
+ * Front Line's neutral arc — a **cycle**, not an arc.
+ *
+ * Versus runs `Rules.endless`, so this table wraps: composition repeats every
+ * ten waves while `hpGrowth` keeps compounding on the true index. Wave 11 is
+ * wave 1's shape at ten times the hull. That changes what a table is for. A
+ * campaign table is a teaching order, introducing each contact one wave before
+ * it matters; this one is a **rhythm**, and it has to read as one from any
+ * entry point because after wave 10 every entry point is the middle.
+ *
+ * Two rules follow from that, and both are why this is not a campaign table
+ * with the serial numbers filed off:
+ *
+ * **Every group is `s()`.** The neutral wave is dealt evenly across both lanes,
+ * always, so it never favours one — it is a third party pressing equally on
+ * two players, not a rubber band. Every asymmetry on this board is bought by
+ * somebody. A lane-pinned neutral group would be the arc taking sides.
+ *
+ * **The tenth wave has to hand back to the first.** A campaign table can end on
+ * a finale because nothing follows it. Here wave 10's stragglers are still
+ * walking when wave 11 — which is wave 1 — starts spawning, so the finale is
+ * followed immediately by the opening at ten times the weight. It is dense but
+ * short, and it front-loads its hull, so what is left on the board when the
+ * cycle turns over is motes rather than Monoliths.
+ *
+ * Lighter than any campaign table by design. Sorties land on top of this, and a
+ * neutral arc tuned to be survivable alone would be unsurvivable with an
+ * opponent. `tools/sweep.ts` re-baselines it; these are pacing guesses.
+ */
+export const WAVES_FRONTLINE: readonly WaveDef[] = [
+  wave(s(6, 1.5)), //                                     the opening, both lanes
+  wave(s(8, 1.3), s(8, 0.9, 5, 'mote')),
+  wave(s(8, 1.2), s(4, 3.4, 4, 'cluster')),
+  wave(s(6, 1.4), s(2, 5.5, 3, 'monolith')), //           first hull
+  wave(s(8, 1.1), s(6, 2.6, 4, 'warden')),
+  wave(s(6, 1.3), s(4, 3, 3, 'bulwark'), s(8, 0.8, 9, 'mote')),
+  wave(s(10, 1), s(4, 3.2, 4, 'cluster'), s(4, 3.6, 9, 'warden')),
+  wave(s(6, 1.4), s(3, 4.6, 2, 'monolith'), s(4, 2.8, 8, 'bulwark')),
+  wave(s(8, 1), s(14, 0.5, 3, 'mote'), s(4, 3.4, 10, 'cluster')),
+  // The turn. Hull first, motes last, so the contacts still walking when this
+  // becomes wave 1 again are the ones a fresh wave can be fought alongside.
+  wave(
+    s(8, 1.1),
+    s(2, 4.8, 3, 'monolith'),
+    s(4, 2.6, 6, 'bulwark'),
+    s(4, 2.8, 9, 'warden'),
+    s(10, 0.45, 13, 'mote'),
+  ),
+];

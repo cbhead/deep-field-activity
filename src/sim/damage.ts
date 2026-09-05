@@ -79,13 +79,23 @@ export function damageCreep(w: World, c: Creep, amount: number, source?: Tower):
   if (c.hp > 0) return;
 
   c.dead = true;
+  // Paid to whoever's board this is, which for a sortie means the *defender*
+  // collects. That is the whole anti-spam valve of the duel economy and it
+  // needs no code of its own: bounty has always been credited to the world the
+  // contact died in, and a sortie dies in the world it was sent to.
   w.money += c.bounty;
   w.stats.kills++;
   w.stats.bounty += c.bounty;
 
-  const wave = waveStats(w, c.wave);
-  wave.kills++;
-  wave.bounty += c.bounty;
+  // Run totals count every kill; the per-wave itemisation counts only what the
+  // wave machine dispatched. A sortie has no wave to be itemised against, and
+  // charging it to whichever wave happened to be spawning would put kills in a
+  // clear summary that the wave never contained.
+  if (c.origin === 'wave') {
+    const wave = waveStats(w, c.wave);
+    wave.kills++;
+    wave.bounty += c.bounty;
+  }
 
   if (source !== undefined) source.kills++;
   w.events.push({ type: 'creepKilled', x: c.x, y: c.y, bounty: c.bounty, defId: c.defId });

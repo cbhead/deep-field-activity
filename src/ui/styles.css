@@ -234,6 +234,35 @@ kbd {
 }
 .top .icon:hover { color: var(--text); border-color: var(--accent); }
 
+/* --------------------------------------------------------------- era rail
+
+   Versus only; `renderEraRail` emits nothing on a campaign board, so none of
+   this applies there.
+
+   The rung sits in a normal `.stat` and the advance is the button beside it,
+   tucked against it by a negative gap so the pair reads as one control rather
+   than as two things that happen to be adjacent. It is deliberately *next to
+   Cash*: the question it poses is "can I afford the next rung right now", and
+   a player whose eyes have to travel to answer that will not ask it while a
+   wave is walking. */
+.top .stat.era { margin-right: -14px; }
+.top .icon.era-up {
+  width: auto;
+  gap: 5px;
+  grid-auto-flow: column;
+  padding: 0 8px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--panel-edge));
+}
+.top .icon.era-up span { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.top .icon.era-up:hover { color: var(--text); border-color: var(--accent); }
+/* Not `disabled`, and not hidden. The price is the information — a player
+   saving for the next era needs to see the number they are saving toward, and
+   the command re-validates on the tick anyway, so a hopeful click costs one
+   `eraRejected` event and nothing else. Same posture as an unaffordable slot,
+   which also stays legible and merely reads as out of reach. */
+.top .icon.era-up.poor { color: var(--dim); border-color: var(--panel-edge); }
+
 /* ----------------------------------------------------------------- deck */
 
 /* The reserved strip beneath the board — see fitCanvas. The deck never
@@ -345,6 +374,63 @@ kbd {
   letter-spacing: .06em;
   color: var(--dim);
 }
+
+/* ------------------------------------------------------------ sortie deck
+
+   Versus only; `renderSortieDeck` emits nothing elsewhere.
+
+   Deliberately *not* built from `.slot`. A build slot and a sortie card are
+   opposite verbs — one spends to keep contacts off your board, the other
+   spends to put them on someone else's — and making them look alike would
+   invite the misclick that costs the most, because a sortie cannot be undone
+   the way a misplaced station can be sold. Half the height, a contact glyph
+   rather than a station one, and the section header says "Send". */
+.sorties { display: flex; flex-direction: column; gap: 7px; }
+.sortie-row { display: flex; gap: 6px; }
+
+.sortie {
+  position: relative;
+  width: 52px; height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--muted);
+}
+.sortie:hover { border-color: var(--danger); color: var(--text); }
+.sortie b { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Weight, top-right, and only drawn above 1 — a "1" on four of six cards is
+   noise that makes the two that matter harder to find. */
+.sortie .w {
+  position: absolute;
+  right: 3px; top: 2px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+/* Same split the build slots make: "can't afford" states the gap, "locked"
+   states the rung. They must not share a signal. */
+.sortie.poor { opacity: .55; }
+.sortie.poor b { color: var(--danger); }
+.sortie.locked {
+  border-style: dashed;
+  background: none;
+  color: var(--dim);
+  text-align: center;
+}
+.sortie.locked .wave { font-size: 9px; letter-spacing: .05em; color: var(--dim); }
+
+/* The lane picker. A segmented control because the lanes are exclusive and
+   named — `crest` and `trough` are the board's own words for them, so the
+   button carries the map's vocabulary rather than an index. */
+.seg.lanes button { text-transform: capitalize; font-size: 10px; padding: 0 9px; }
 
 /* The upgrade-path dial: three collar sectors, the live one bright. Sized and
    coloured to sit inline with the path button's label. */
@@ -736,6 +822,18 @@ button.path:hover { border-color: var(--accent); }
 }
 .mech b { color: currentColor; }
 .axes b { color: var(--muted); }
+
+/* The rate a station is *actually* firing at, when support is feeding it.
+   Rendered as `2.0→2.4/s`: the base stays muted like every other axis and only
+   the gain lifts, so the eye reads "higher than it should be, and something is
+   doing that". A bare `2.4/s` would look like the station's own number and read
+   as a bug the first time a player noticed it disagreeing with the deck.
+   `currentColor` picks up the host station's tint from `.chipline`. */
+.axes i.fed {
+  font-style: normal;
+  font-weight: 700;
+  color: currentColor;
+}
 
 /* Armour as a proportional bar: the sliver IS the fraction that survives, so
    the player reads it instead of doing the subtraction. The contact glyph names

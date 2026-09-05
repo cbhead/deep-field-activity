@@ -38,10 +38,29 @@ export function moveCreeps(w: World, dt: number): void {
       // Ran off the end of the route: the creep reached the goal.
       if (target === undefined) {
         c.dead = true;
-        w.lives = Math.max(0, w.lives - 1);
+        // Floored at zero rather than allowed negative, so a heavy contact
+        // landing on a one-life reserve reads as a loss and not as a debt. The
+        // phase change on the next tick is what ends the run either way.
+        w.lives = Math.max(0, w.lives - c.leakDamage);
         w.stats.leaks++;
-        waveStats(w, c.wave).leaked++;
-        w.events.push({ type: 'creepLeaked', x: c.x, y: c.y });
+        // Only wave contacts are itemised per wave — a sortie belongs to no
+        // wave, and tallying it against whichever one happened to be spawning
+        // would print leaks in a clear summary the wave never caused.
+        if (c.origin === 'wave') waveStats(w, c.wave).leaked++;
+        w.events.push({
+          type: 'creepLeaked',
+          x: c.x,
+          y: c.y,
+          cost: c.leakDamage,
+          bought: c.origin === 'sortie',
+        });
+        // A sortie that lands pays *its sender*, who is not this world. The
+        // event is the only way that money can travel; crediting it here would
+        // pay the person who just took the hit.
+        if (c.origin === 'sortie' && c.kickback > 0) {
+          w.stats.sortiesTaken++;
+          w.events.push({ type: 'sortieLanded', kickback: c.kickback, cost: c.leakDamage });
+        }
         break;
       }
 

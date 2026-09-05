@@ -1,5 +1,6 @@
 import { BALANCE } from '../content/balance.ts';
 import { ENEMIES, type EnemyId } from '../content/enemies.ts';
+import type { WaveDef } from '../content/types.ts';
 import { DEFAULT_RULES, type Rules } from './rules.ts';
 import type { MapRoute } from './types.ts';
 import { randRange, streamFor, STREAM } from './util/rng.ts';
@@ -41,7 +42,17 @@ export function scaledStats(
   };
 }
 
-export const waveCount = (rules: Rules = DEFAULT_RULES): number => rules.waves.length;
+/**
+ * How many waves this run has, or `Infinity` if it never runs out.
+ *
+ * Returning `Infinity` is what makes the endless arc need no other change: the
+ * wave machine's "park in done" test (`index + 1 >= waveCount`) and the victory
+ * test (`clearedThrough >= waveCount - 1`) are both comparisons against this,
+ * and neither can ever hold. A duel therefore has no won state at all — only a
+ * lost one, which is exactly the rule the mode wants.
+ */
+export const waveCount = (rules: Rules = DEFAULT_RULES): number =>
+  rules.endless ? Infinity : rules.waves.length;
 
 /**
  * The complete content of one wave, as a pure function of (seed, waveIndex).
@@ -62,9 +73,13 @@ export function planWave(
   rules: Rules = DEFAULT_RULES,
   routes: readonly MapRoute[] = SINGLE_ROUTE,
 ): PlannedSpawn[] {
-  const def = rules.waves[waveIndex];
+  const def = defFor(rules, waveIndex);
   if (def === undefined) return [];
 
+  // The *true* index, never the wrapped one. This is the whole of the endless
+  // arc: composition repeats, difficulty does not. Wrapping the stream too
+  // would make wave 25 a byte-identical replay of wave 13 — same jitter, same
+  // lane deal — and the board would visibly loop.
   const rng = streamFor(seed, STREAM.WAVE, waveIndex);
 
   const plan: PlannedSpawn[] = [];
@@ -93,6 +108,22 @@ export function planWave(
   // merely tidy.
   plan.sort((a, b) => a.at - b.at);
   return plan;
+}
+
+/**
+ * The composition table entry for a wave index.
+ *
+ * Past the end of a finite table this is `undefined` and the wave is empty,
+ * which is the old behaviour and the reason the campaign is untouched. An
+ * endless arc wraps instead — the table becomes a cycle of shapes rather than a
+ * list, and `scaledStats` on the true index is what stops that cycle from being
+ * a difficulty plateau.
+ */
+function defFor(rules: Rules, waveIndex: number): WaveDef | undefined {
+  if (!rules.endless) return rules.waves[waveIndex];
+  const n = rules.waves.length;
+  if (n === 0) return undefined;
+  return rules.waves[waveIndex % n];
 }
 
 /**

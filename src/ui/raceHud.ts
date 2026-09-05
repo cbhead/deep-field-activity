@@ -18,6 +18,16 @@ export interface RaceHud {
   own(status: RaceStatus): void;
   /** The opponent's latest blob. */
   peer(status: RaceStatus): void;
+  /**
+   * A contact they bought is walking at us. Versus only.
+   *
+   * The one thing in this mode that a player cannot see coming any other way:
+   * their board is hidden, so without a cue here a sortie simply appears at
+   * midfield with no explanation. It names the lane, because which lane is the
+   * entire read and a warning that omitted it would be an alarm without an
+   * answer.
+   */
+  incoming(sortie: string, lane: number): void;
   /** Opponent's socket state: false shows the offline/forfeit badge. */
   peerConn(connected: boolean): void;
   /** Our socket state: false shows the reconnecting badge. */
@@ -26,6 +36,9 @@ export interface RaceHud {
 }
 
 const TOAST_MS = 3000;
+
+/** Matches the HUD's era rail, so the two never disagree about what II means. */
+const ERA_NUMERAL: Readonly<Record<number, string>> = { 1: 'I', 2: 'II', 3: 'III' };
 
 /** Minimap pixels per tile. */
 const TILE_PX = 5;
@@ -51,6 +64,15 @@ const pinColor = (kind: string): string =>
 export interface RaceCues {
   opponentWave(): void;
   leadChange(): void;
+  /**
+   * Something they bought is on your board. Versus only.
+   *
+   * Its own cue rather than reusing `opponentWave`, because the two mean
+   * opposite things: one is news about a board you cannot see, the other is
+   * something that has already entered yours and is walking. Sharing a sound
+   * would teach the player to ignore the more urgent of the two.
+   */
+  sortieInbound?(): void;
 }
 
 export function createRaceHud(
@@ -163,6 +185,11 @@ export function createRaceHud(
     const my = (mine ? `you · wave ${mine.wave} · ${mine.lives} lives` : 'you · —') +
       (selfOnline ? '' : ' · reconnecting…');
     let their = theirs ? `${opponentName} · wave ${theirs.wave} · ${theirs.lives} lives` : `${opponentName} · —`;
+    // The rung, when there is one. In versus this is the single most useful
+    // fact about an opponent whose board you cannot see — it says what they
+    // can build, what they can send, and how much they have just spent not
+    // defending. Absent in Race, where nothing carries an era.
+    if (theirs?.era !== undefined) their += ` · era ${ERA_NUMERAL[theirs.era] ?? theirs.era}`;
     if (!peerOnline) their += ' · OFFLINE — forfeits in 90s';
     else if (theirs?.hidden) their += ' · tab hidden';
     // Ranking order: waves cleared, then lives. Time is the third tiebreak and
@@ -185,6 +212,11 @@ export function createRaceHud(
     own(status) {
       mine = status;
       render();
+    },
+    incoming(sortie, lane) {
+      const lane_ = map.routes[lane]?.id ?? `lane ${lane + 1}`;
+      toast(`${opponentName} sent a ${sortie} up the ${lane_}`);
+      cues?.sortieInbound?.();
     },
     peer(status) {
       if (status.wave > lastPeerWave) {

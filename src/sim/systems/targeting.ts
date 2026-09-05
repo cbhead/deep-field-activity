@@ -1,4 +1,8 @@
 import type { TowerStats } from '../../content/types.ts';
+// `effectiveInterval` lives in `build.ts`, not here beside the loop that uses
+// it: the inspector prints the same figure and presentation may not import
+// `sim/systems/**`. See its comment there.
+import { effectiveInterval } from '../build.ts';
 import type { Creep, TargetMode, Tower } from '../types.ts';
 import type { World } from '../world.ts';
 
@@ -19,6 +23,12 @@ import type { World } from '../world.ts';
  */
 export function fireTowers(w: World, dt: number): void {
   for (const t of w.towers) {
+    // A station with no interval does not shoot. That is Overclock's whole
+    // behaviour on this side — what it does happened in `refreshBuffs`, to
+    // everyone else's `buffShots`. Checked before the decrement below so a
+    // support station's cooldown never drifts negative across a whole match.
+    if (t.stats.fireInterval <= 0) continue;
+
     t.cooldown -= dt;
     if (t.cooldown > 0) continue;
 
@@ -38,6 +48,9 @@ export function fireTowers(w: World, dt: number): void {
     }
 
     const s = t.stats;
+    // Support included, and used for *both* the cooldown and the focus advance
+    // below. See the note on `focusTime` there.
+    const interval = effectiveInterval(t);
 
     // Focus advances here rather than every tick, and that is deliberate.
     // Re-targeting every tick is affordable; doing it for every station
@@ -46,7 +59,13 @@ export function fireTowers(w: World, dt: number): void {
     // next one. Adding the interval that just elapsed gives the same answer
     // sampling continuously would, for a fraction of the work.
     if (t.focusId === best.id) {
-      t.focusTime = Math.min(t.focusTime + s.fireInterval, rampSeconds(s));
+      // `interval`, not `s.fireInterval`, and the difference is a real bug
+      // rather than a tidiness point. `focusTime` advances by the interval as a
+      // stand-in for elapsed wall time; reading the *unbuffed* interval while
+      // firing on the buffed one credits a fed Filament 0.25s of spin-up every
+      // 0.23s of real time, so it reaches its ceiling sooner than the clock
+      // allows and a rate buff silently becomes a ramp accelerator too.
+      t.focusTime = Math.min(t.focusTime + interval, rampSeconds(s));
     } else {
       // Switching targets *cools* the beam, it does not extinguish it. Losing
       // the charge entirely is still the rule for losing the target list — see
@@ -101,7 +120,7 @@ export function fireTowers(w: World, dt: number): void {
     // `+=`, not `=`. Assigning would round every tower's fire rate up to a
     // multiple of the tick, so a 0.5s interval would silently become 0.5167s
     // and every balance number would be quietly wrong.
-    t.cooldown += s.fireInterval;
+    t.cooldown += interval;
   }
 }
 

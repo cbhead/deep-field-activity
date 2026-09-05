@@ -192,7 +192,9 @@ export class Effects {
         break;
       case 'creepLeaked':
         this.spawnedThisFrame++;
-        this.leakRim = 0.6;
+        // Scaled by what it actually cost, capped so a heavy sortie flares
+        // harder than a Drifter without whiting out the board.
+        this.leakRim = Math.min(1, 0.6 + 0.2 * (ev.cost - 1));
         this.addBurst(ev.x, ev.y, THEME.fx.leak);
         break;
       default:

@@ -1,7 +1,7 @@
 import { Graphics, Sprite, Text } from 'pixi.js';
 import { TOWERS, TOWER_IDS, type TowerId } from '../content/towers.ts';
 import { placementError } from '../sim/build.ts';
-import type { EntityId, PlacementError } from '../sim/types.ts';
+import type { EntityId, PlacementError, Tower } from '../sim/types.ts';
 import { towerById, type World } from '../sim/world.ts';
 import { TILE_PX } from './constants.ts';
 import { BAKE_NEUTRAL, THEME } from './theme.ts';
@@ -136,6 +136,11 @@ export class Overlay {
       `${selected}:${hover === null ? '' : `${hover[0]},${hover[1]}`}:${reason}` +
       // Range is in the key so buying the range path redraws the circle live.
       `:${inspected ? `${inspected.id}.${inspected.stats.range}` : ''}` +
+      // Feed links depend on what else is standing, so building or selling
+      // anything has to invalidate them. `buffShots` alone is not enough: a
+      // second station arriving inside an Overclock's reach adds a line without
+      // changing any number already in this key.
+      `:${inspected ? `${inspected.buffShots}.${w.towers.length}` : ''}` +
       `:${callout ? scaleBucket : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -164,6 +169,8 @@ export class Overlay {
       this.gfx
         .rect(inspected.col * TILE_PX, inspected.row * TILE_PX, TILE_PX, TILE_PX)
         .stroke({ width: 2, color: THEME.feedback.selected, alpha: 0.95 });
+
+      this.drawFeedLinks(w, inspected);
     }
 
     if (selected === null || hover === null) {
@@ -232,6 +239,63 @@ export class Overlay {
     this.gfx
       .rect(col * TILE_PX, row * TILE_PX, TILE_PX, TILE_PX)
       .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: tileOutlineAlpha });
+  }
+
+  /**
+   * Lines between a support station and the stations it feeds.
+   *
+   * **Support is the only station whose effect is invisible on the board.** A
+   * Lance's pierce, a Nova's blast and a Singularity's slow all happen where you
+   * can see them; an Overclock changes a number on a station somewhere else and
+   * shows nothing at all. The inspector's `2.0→2.4/s` says *that* a station is
+   * being fed — this says *by which one*, which is the half the panel cannot.
+   *
+   * Drawn both ways round, because the player arrives at the question from both
+   * ends: inspect the Overclock and see its clients, or inspect a station firing
+   * faster than its own stat block and see the cause.
+   *
+   * Only the sources that actually matter are drawn. Buffs stack by *maximum*
+   * (see `refreshBuffs`), so a second Overclock in reach contributes nothing,
+   * and drawing a line from it would claim a contribution the sim does not
+   * give it.
+   */
+  private drawFeedLinks(w: World, inspected: Tower): void {
+    const partners: Tower[] = [];
+    let tint = THEME.feedback.selected;
+
+    if (inspected.stats.buffShotsPerSecond > 0) {
+      // A support station: everything inside its reach that actually fires.
+      const r2 = inspected.stats.range * inspected.stats.range;
+      tint = THEME.towers[inspected.defId];
+      for (const t of w.towers) {
+        if (t === inspected || t.stats.fireInterval <= 0) continue;
+        const dx = t.x - inspected.x;
+        const dy = t.y - inspected.y;
+        if (dx * dx + dy * dy <= r2) partners.push(t);
+      }
+    } else if (inspected.buffShots > 0) {
+      // A fed station: whichever source is the one supplying its buff.
+      for (const src of w.towers) {
+        if (src === inspected) continue;
+        if (src.stats.buffShotsPerSecond !== inspected.buffShots) continue;
+        const dx = src.x - inspected.x;
+        const dy = src.y - inspected.y;
+        if (dx * dx + dy * dy <= src.stats.range * src.stats.range) {
+          partners.push(src);
+          tint = THEME.towers[src.defId];
+        }
+      }
+    }
+
+    for (const p of partners) {
+      this.gfx
+        .moveTo(inspected.x * TILE_PX, inspected.y * TILE_PX)
+        .lineTo(p.x * TILE_PX, p.y * TILE_PX)
+        .stroke({ width: THEME.shape.strokeWidth, color: tint, alpha: 0.55 });
+      // A dot at the far end, so a line running under a station reads as
+      // terminating there rather than passing through it.
+      this.gfx.circle(p.x * TILE_PX, p.y * TILE_PX, 3).fill({ color: tint, alpha: 0.9 });
+    }
   }
 
   private hideCallout(): void {

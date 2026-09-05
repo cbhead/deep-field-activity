@@ -25,7 +25,7 @@ import { DIFFICULTIES, DIFFICULTY_ORDER } from '../src/content/difficulty.ts';
 import { TOWERS, type TowerId } from '../src/content/towers.ts';
 import { parseMap } from '../src/sim/util/grid.ts';
 import type { MapDef } from '../src/sim/types.ts';
-import { buildOrder, type Ranking } from './buildOrder.ts';
+import { buildOrder, spotFor, strategyName, STRATEGIES, type Strategy } from './buildOrder.ts';
 import { createWorld } from '../src/sim/world.ts';
 import { resolveRules } from '../src/sim/rules.ts';
 import { stepWorld } from '../src/sim/step.ts';
@@ -54,26 +54,55 @@ function run(
   rules: ReturnType<typeof resolveRules>,
   seed: number,
   stopBuyingAfter = Infinity,
-  strategy: Ranking = 'cluster',
+  strategy: Strategy = STRATEGIES[0]!,
 ): Result {
-  const reach = Math.max(...BUILD.map((b) => TOWERS[b].range));
-  const spots = buildOrder(map, reach, strategy);
+  // Attacking reach only — Overclock's radius buffs stations rather than
+  // covering road, so ranking tiles by it would rank them for nothing.
+  const reach = Math.max(...BUILD.filter((b) => TOWERS[b].buffShotsPerSecond === 0).map((b) => TOWERS[b].range));
+  const spots = buildOrder(map, reach, strategy.how);
   const w = createWorld(map, seed, rules);
+  const taken = new Set<number>();
   let next = 0;
 
   for (let i = 0; i < 600_000 && w.phase === 'playing'; i++) {
-    const want = BUILD[next % BUILD.length]!;
-    // Locked stations are skipped rather than attempted — advancing `next` on a
-    // rejected command would burn one of the ranked tiles and quietly leave the
-    // build short of the coverage it was supposed to be measuring.
-    if (
-      next < spots.length &&
-      w.money >= TOWERS[want].cost &&
-      w.wave.index >= TOWERS[want].unlockWave &&
-      w.wave.clearedThrough + 1 < stopBuyingAfter
-    ) {
-      w.commands.push({ type: 'placeTower', defId: want, col: spots[next]![0], row: spots[next]![1] });
-      next++;
+    // Step over locked stations rather than waiting on them, as a local offset
+    // that does not burn cycle phase — see the same block in `sweep.ts` for both
+    // what holding the cursor cost and what advancing it per tick cost.
+    let skip = 0;
+    while (skip < BUILD.length && w.wave.index < TOWERS[BUILD[(next + skip) % BUILD.length]!].unlockWave) {
+      skip++;
+    }
+    if (skip === BUILD.length) {
+      stepWorld(w, 1 / 60);
+      w.events.length = 0;
+      continue;
+    }
+
+    const want = BUILD[(next + skip) % BUILD.length]!;
+    const def = TOWERS[want];
+    // Support does not take tiles in rank order, and the best tiles are held
+    // back for stations still locked. Shared with `sweep.ts` rather than
+    // reimplemented, which is this module's whole reason for existing.
+    const reserve = strategy.hold
+      ? new Set(
+          BUILD.filter(
+            (b) => TOWERS[b].buffShotsPerSecond === 0 && w.wave.index < TOWERS[b].unlockWave,
+          ),
+        ).size
+      : 0;
+    const at = spotFor(
+      spots,
+      taken,
+      def.buffShotsPerSecond > 0 ? { range: def.range, towers: w.towers } : null,
+      reserve,
+    );
+    // Money still blocks rather than skipping: waiting to afford what the build
+    // asked for is what a player does, where skipping to a cheaper station
+    // would quietly rewrite the mix being measured.
+    if (at >= 0 && w.money >= def.cost && w.wave.clearedThrough + 1 < stopBuyingAfter) {
+      w.commands.push({ type: 'placeTower', defId: want, col: spots[at]![0], row: spots[at]![1] });
+      taken.add(at);
+      next += skip + 1;
     }
     stepWorld(w, 1 / 60);
     w.events.length = 0;
@@ -90,7 +119,10 @@ function run(
 console.log('\n\x1b[1mcampaign arc\x1b[0m');
 console.log('  \x1b[2mgreedy mixed build (all five stations) · real starting money · 5 seeds · no rushing\x1b[0m');
 console.log(
-  '  \x1b[2mtwo build strategies: "cluster" packs the busiest stretch, "spread" shuts the widest gap\x1b[0m',
+  '  \x1b[2mfour strategies: "cluster" packs the busiest stretch, "spread" shuts the widest gap,\x1b[0m',
+);
+console.log(
+  '  \x1b[2m"+hold" saves the best tiles for stations not yet unlocked. Best of the four is reported.\x1b[0m',
 );
 
 for (const level of CAMPAIGN) {
@@ -104,7 +136,7 @@ for (const level of CAMPAIGN) {
 
   for (const id of DIFFICULTY_ORDER) {
     const rules = resolveRules(level, id);
-    const both = (['cluster', 'spread'] as const).map((strategy) => {
+    const all = STRATEGIES.map((strategy) => {
       const rs = SEEDS.map((s) => run(map, rules, s, Infinity, strategy));
       return {
         strategy,
@@ -123,15 +155,19 @@ for (const level of CAMPAIGN) {
     // the board is built for, was reaching wave 11.
     const better = (x: { wins: number; lives: number; cleared: number }, y: typeof x): boolean =>
       x.wins !== y.wins ? x.wins > y.wins : x.lives !== y.lives ? x.lives > y.lives : x.cleared > y.cleared;
-    const best = both.reduce((a, b) => (better(b, a) ? b : a));
+    const best = all.reduce((a, b) => (better(b, a) ? b : a));
     const { wins, lives, cleared } = best;
+    // Name the runner-up too. "cluster+hold beats cluster by 6 lives" is the
+    // fact about the board; "cluster+hold" alone is just a label.
+    const rest = all.filter((x) => x !== best).reduce((a, b) => (better(b, a) ? b : a));
 
     console.log(
       `    ${DIFFICULTIES[id].name.padEnd(10)}` +
         ` won ${wins}/${SEEDS.length}` +
         `  waves ${cleared.toFixed(1).padStart(4)}/${waveCount(rules)}` +
         `  lives ${lives.toFixed(1).padStart(5)}/${rules.startingLives}` +
-        `  \x1b[2m${best.strategy}${both[0]!.wins === both[1]!.wins ? '' : ` beats ${both[0] === best ? 'spread' : 'cluster'}`}\x1b[0m`,
+        `  \x1b[2m${strategyName(best.strategy)}` +
+        `${best.lives === rest.lives && best.wins === rest.wins ? '' : ` beats ${strategyName(rest.strategy)}`}\x1b[0m`,
     );
   }
 }
@@ -167,13 +203,13 @@ for (const id of DIFFICULTY_ORDER) {
     for (const level of CAMPAIGN) {
       const rules = resolveRules(level, id, bank);
       const map = parseMap(level.map);
-      // Best of the two strategies per leg, exactly as the per-level table
-      // above. Running the whole campaign on `cluster` denied the player a
-      // choice the report grants three lines earlier, and it showed: the run
-      // broke on Sluice, which is a `spread` board, while the same board reads
-      // 5/5 above. A continuous run should be the campaign a player could
-      // actually have, not the campaign of someone who never changes tactics.
-      const r = (['cluster', 'spread'] as const)
+      // Best of every strategy per leg, exactly as the per-level table above.
+      // Running the whole campaign on `cluster` denied the player a choice the
+      // report grants three lines earlier, and it showed: the run broke on
+      // Sluice, which is a `spread+hold` board, while the same board reads 5/5
+      // above. A continuous run should be the campaign a player could actually
+      // have, not the campaign of someone who never changes tactics.
+      const r = STRATEGIES
         .map((strategy) => run(map, rules, seed, STOP_BUYING_AFTER, strategy))
         .reduce((a, b) => (b.won !== a.won ? (b.won ? b : a) : b.money > a.money ? b : a));
       legs.push(`${r.won ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'}${String(r.cleared).padStart(2)}w $${r.money}`);

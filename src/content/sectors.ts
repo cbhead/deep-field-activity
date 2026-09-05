@@ -32,6 +32,12 @@ export const SECTOR_FIELD_IDS = [
   'braid',
   'sluice',
   'crown',
+  /**
+   * Front Line — the versus board, and the only field here that is not a
+   * campaign sector. It shares the list because `LevelDef.field` is one type
+   * and a second parallel one would be two places to add a board.
+   */
+  'frontline',
 ] as const;
 
 export type SectorFieldId = (typeof SECTOR_FIELD_IDS)[number];

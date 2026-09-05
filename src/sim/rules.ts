@@ -35,6 +35,47 @@ export interface Rules {
    */
   readonly hpFactor: number;
   readonly bountyFactor: number;
+
+  /**
+   * Whether the arc runs out, or runs forever.
+   *
+   * False everywhere except versus. A campaign sector is a fixed arc you
+   * either finish or don't, and `waveCount` returning its table's length is
+   * what makes "won" mean something.
+   *
+   * A versus match has no such ending. Two players who both hold would run the table
+   * out and be settled by a ranking rather than by either of them doing
+   * anything — an anticlimax, and one that would need a clock or a sudden-death
+   * rule to fix. Endless is that rule, and it needs no UI: composition wraps
+   * around the table while **scaling stays on the true index**, so
+   * `hpGrowth ** waveIndex` compounds without bound and the neutral wave alone
+   * eventually beats any defence. The match ends when a core does.
+   *
+   * See the horizon probe in `tools/check.ts` for where that actually lands.
+   */
+  readonly endless: boolean;
+
+  /**
+   * Whether stations are unlocked by a wave clock or by a bought era.
+   *
+   * False everywhere except versus, where `TowerDef.unlockWave` is replaced
+   * by `TowerDef.era` and the player pays to advance. That purchase is the
+   * whole tension of the mode: while you are banking for it you are building
+   * nothing, and that is when the other side pushes.
+   */
+  readonly eras: boolean;
+
+  /**
+   * Whether this board has a sortie deck — whether contacts can be *sent*.
+   *
+   * A third flag rather than one `mode: 'versus'`, and deliberately: each of
+   * these three names a mechanism the sim actually branches on, and a mode name
+   * would make every branch a question about identity rather than about
+   * behaviour. It also keeps them separable — an endless campaign board with no
+   * ladder and no deck is a coherent thing to want, and it costs nothing to
+   * leave possible.
+   */
+  readonly sorties: boolean;
 }
 
 /**
@@ -59,6 +100,9 @@ export const DEFAULT_RULES: Rules = {
   },
   hpFactor: 1,
   bountyFactor: 1,
+  endless: false,
+  eras: false,
+  sorties: false,
 };
 
 /**
@@ -101,5 +145,27 @@ export function resolveRules(level: LevelDef, difficulty: DifficultyId, bank?: n
       bank === undefined ? d.startingMoney : Math.max(bank, Math.round(d.startingMoney * BANK_FLOOR)),
     hpFactor: d.hpFactor,
     bountyFactor: d.bountyFactor,
+    // A campaign sector is a fixed arc unlocked by a wave clock. Only versus
+    // opts out, and it builds its rules through `versusRules` rather than here.
+    endless: false,
+    eras: false,
+    sorties: false,
   };
+}
+
+/**
+ * One versus match's rules: the same arc machinery, with no end and with the
+ * era ladder in place of the wave clock.
+ *
+ * Separate from `resolveRules` rather than a flag on it, because every caller
+ * of that function is a campaign or a Race and none of them should have to pass
+ * two falses to say so. The difficulty tier still applies — a versus match on
+ * Blackout is the same fourteen lives against the same tougher contacts.
+ *
+ * Named `versus` and not `duel`: `tools/check.ts` already uses "duel" for its
+ * one-station-against-one-contact matrix, and two meanings of the word in the
+ * file where both are asserted would be genuinely confusing.
+ */
+export function versusRules(level: LevelDef, difficulty: DifficultyId): Rules {
+  return { ...resolveRules(level, difficulty), endless: true, eras: true, sorties: true };
 }
