@@ -278,6 +278,7 @@ function mountHome({ screens, router }: SceneDeps): Scene {
       router.go({ k: 'run', level: chosen.id, difficulty, seed: null, bank: null }),
     onCampaign: () => router.go({ k: 'sectors' }),
     onRace: () => router.go({ k: 'race', room: null, mode: 'race' }),
+    onVersus: () => router.go({ k: 'race', room: null, mode: 'versus' }),
     // Erasing progress rebuilds this same screen from the now-empty record,
     // rather than reloading the document to achieve the same thing.
     onReset: () => router.remount(),

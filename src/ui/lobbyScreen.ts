@@ -260,8 +260,14 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   }
 
   function pickFine(): string {
-    const lv = levelOr01(pickLevel);
     const df = DIFFICULTIES[diffOrStd(pickDiff)];
+    // Versus has no wave count to quote and nothing is ranked — it ends when a
+    // core does. Quoting Front Line's arc length would be naming a finish line
+    // that is not there.
+    if (lastMode === 'versus') {
+      return `endless · ${df.startingLives} lives · settled when a core goes dark, not on waves cleared.`;
+    }
+    const lv = levelOr01(pickLevel);
     return `${lv.waves.length} waves · ${df.startingLives} lives · ranked on waves cleared, then lives kept, then time.`;
   }
 
@@ -270,14 +276,30 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       `<div class="lb-picks" id="${group}">` +
       items.map((i) => `<button class="lb-pick${i.id === on ? ' on' : ''}" data-id="${i.id}">${i.name}</button>`).join('') +
       `</div>`;
-    el.innerHTML = bar('Race', 'Race relay', relayChip) + `<div class="lb-glow"></div>` +
+    // Which game this form creates is settled before it is shown — you got here
+    // from `?race` or `?versus`, or from the button that opened one of them —
+    // so the screen states it rather than offering it. The mode is switchable
+    // from inside the room afterwards, which is where a change of mind belongs.
+    const versusForm = lastMode === 'versus';
+    el.innerHTML = bar(versusForm ? 'Versus' : 'Race', 'Race relay', relayChip) + `<div class="lb-glow"></div>` +
       `<div class="lb-body"><div class="lb-col">` +
       `<div style="display:flex;flex-direction:column;gap:10px">` +
-      `<span class="lb-kicker">Head to head</span><h1 class="lb-title">Race</h1>` +
-      `<span class="lb-lede">Two pilots, one seed. Identical waves on separate skies — you're racing their run, not fighting it.</span></div>` +
+      (versusForm
+        ? `<span class="lb-kicker">Front line</span><h1 class="lb-title">Versus</h1>` +
+          `<span class="lb-lede">One board, no finish line. Buy contacts and send them down their road — ` +
+          `whoever's core goes dark first loses.</span></div>`
+        : `<span class="lb-kicker">Head to head</span><h1 class="lb-title">Race</h1>` +
+          `<span class="lb-lede">Two pilots, one seed. Identical waves on separate skies — you're racing their run, not fighting it.</span></div>`) +
       nameField() +
-      `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Sector</span>` +
-      pills(CAMPAIGN, 'pick-level', pickLevel) + `</div>` +
+      // Versus is fought on Front Line and the server forces it, so a sector
+      // grid here would be eight buttons that change nothing.
+      (versusForm
+        ? `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Board</span>` +
+          `<span class="lb-lede" style="font-size:15px">${escapeHtml(VERSUS_LEVEL.name)}` +
+          `<span class="lb-fine" style="display:block">Versus is fought on one board. Difficulty still applies.</span>` +
+          `</span></div>`
+        : `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Sector</span>` +
+          pills(CAMPAIGN, 'pick-level', pickLevel) + `</div>`) +
       `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Difficulty</span>` +
       pills(DIFFICULTY_ORDER.map((d) => DIFFICULTIES[d]), 'pick-diff', pickDiff) + `</div>` +
       `<div style="display:flex;flex-direction:column;gap:14px">` +
@@ -300,11 +322,20 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       // unreachable by any route at all.
       `<button class="lb-leave" id="race-leave" style="align-self:flex-start">Back to the front door</button>` +
       `</div></div>` +
-      `<div class="lb-how"><span class="lb-label" style="letter-spacing:.18em">How a race works</span>` +
-      `<div class="lb-how-item"><span class="lb-how-n">01</span><span><span class="lb-how-t">One seed, two boards</span>` +
-      `<span class="lb-how-d">The relay hands both pilots the same seed, so every wave arrives in the same order with the same jitter. Nothing about the board is luck.</span></span></div>` +
-      `<div class="lb-how-item"><span class="lb-how-n">02</span><span><span class="lb-how-t">Ahead or behind, live</span>` +
-      `<span class="lb-how-d">Wave, lives and elapsed time cross the wire twice a second. You see their standing, never their board.</span></span></div>` +
+      // Point three is the same in both — resume and forfeit were solved once
+      // and are mode-blind. The first two are not: a race is won by getting
+      // further, a fight by still being there, and describing one while hosting
+      // the other is how somebody ends up surprised by their own defeat.
+      `<div class="lb-how"><span class="lb-label" style="letter-spacing:.18em">How ${versusForm ? 'a fight' : 'a race'} works</span>` +
+      (versusForm
+        ? `<div class="lb-how-item"><span class="lb-how-n">01</span><span><span class="lb-how-t">One board, both ends</span>` +
+          `<span class="lb-how-d">You each hold your own half of Front Line against the same waves. The arc never ends — it only gets heavier.</span></span></div>` +
+          `<div class="lb-how-item"><span class="lb-how-n">02</span><span><span class="lb-how-t">Contacts you paid for</span>` +
+          `<span class="lb-how-d">Spend cash to send a contact down their road. It costs you now and pays you back when it reaches their core, so pressure is an investment.</span></span></div>`
+        : `<div class="lb-how-item"><span class="lb-how-n">01</span><span><span class="lb-how-t">One seed, two boards</span>` +
+          `<span class="lb-how-d">The relay hands both pilots the same seed, so every wave arrives in the same order with the same jitter. Nothing about the board is luck.</span></span></div>` +
+          `<div class="lb-how-item"><span class="lb-how-n">02</span><span><span class="lb-how-t">Ahead or behind, live</span>` +
+          `<span class="lb-how-d">Wave, lives and elapsed time cross the wire twice a second. You see their standing, never their board.</span></span></div>`) +
       `<div class="lb-how-item"><span class="lb-how-n">03</span><span><span class="lb-how-t">Your seat is held</span>` +
       `<span class="lb-how-d">Lose the connection and you can reclaim the same seat and carry on. Walk away and it's a forfeit.</span></span></div>` +
       `<div class="lb-rule"></div>` +

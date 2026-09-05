@@ -42,6 +42,17 @@ export interface HomeOptions {
   onCampaign(): void;
   onRace(): void;
   /**
+   * The other two-player mode: one board, endless, and you buy contacts to send
+   * at each other until a core goes dark.
+   *
+   * Its own entry rather than a toggle inside the Race lobby, because the choice
+   * is made before there is a room to toggle anything in — and because a mode
+   * reachable only by typing `?versus` is a mode most people never find. Inside
+   * a Discord Activity the same choice lives in the lobby instead, since
+   * everyone there arrives at an address nobody chose.
+   */
+  onVersus(): void;
+  /**
    * Progress was erased. The screen is built from progress, so it has to be
    * rebuilt — this was a page reload, and is now a re-entry of the route.
    */
@@ -80,7 +91,12 @@ const STYLE = `
 #home-screen .hm-meta{display:flex;align-items:center;gap:16px;font-size:12px;color:#75798c}
 #home-screen .hm-dot{width:7px;height:7px;border-radius:50%;background:#86e39b;
   box-shadow:0 0 8px #86e39b;display:inline-block;margin-right:7px}
-#home-screen .hm-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px}
+/* auto-fit rather than a fixed count: three cards side by side on a desktop,
+   and they wrap to two-then-one on a narrow phone without a media query. The
+   min is the width at which "Send contacts at each other" still fits on two
+   lines rather than four. */
+#home-screen .hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:14px;max-width:860px}
 #home-screen .hm-card{display:flex;flex-direction:column;gap:5px;padding:15px 17px;
   border:1px solid #23263a;border-radius:12px;background:rgba(18,20,32,.72);
   text-align:left;cursor:pointer;color:inherit;font:inherit}
@@ -184,14 +200,16 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
   // launch feel broken. This still runs comfortably before anyone types a name,
   // which is all "relay honesty" actually asks for.
   let probed = false;
-  const raceCard = el.querySelector<HTMLElement>('#hm-race');
+  // Both two-player modes dial the same relay, so either card is a reason to
+  // ask about it and both carry the answer.
+  const netCards = el.querySelectorAll<HTMLElement>('#hm-race, #hm-versus');
   const checkRelay = (): void => {
     if (probed) return;
     probed = true;
     void probeRelay().then((status) => {
-      const dot = el.querySelector<HTMLElement>('#hm-relay');
+      const dots = el.querySelectorAll<HTMLElement>('.hm-relay');
       const note = el.querySelector<HTMLElement>('#hm-relaynote');
-      if (dot !== null) {
+      for (const dot of dots) {
         dot.className = `hm-relay ${status}`;
         dot.title = status === 'up' ? 'Relay is up' : 'Relay is not answering';
       }
@@ -205,8 +223,10 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
       }
     });
   };
-  raceCard?.addEventListener('pointerenter', checkRelay);
-  raceCard?.addEventListener('focus', checkRelay);
+  for (const card of netCards) {
+    card.addEventListener('pointerenter', checkRelay);
+    card.addEventListener('focus', checkRelay);
+  }
   // There is no hover on a touch screen, and the tap that would focus the card
   // also navigates away from it — so the probe never resolved and the dot
   // stayed grey forever. Probe on idle instead. The objection the hover trigger
@@ -243,6 +263,7 @@ export function createHomeScreen(parent: HTMLElement, opts: HomeOptions): HomeSc
     if (act === undefined) return;
 
     if (act === 'race') opts.onRace();
+    else if (act === 'versus') opts.onVersus();
     else if (act === 'campaign') opts.onCampaign();
     else if (act === 'play') {
       const level = resume ?? CAMPAIGN[0]!;
@@ -335,7 +356,11 @@ function firstRun(): string {
     `or race a friend on the same seed and see who survives longer.</p>` +
     `<div class="hm-actions">` +
     `<button class="hm-primary" data-act="play">Start ${first.name} →</button>` +
-    `<button class="hm-ghost" data-act="race">Race a friend</button>` +
+    // Both two-player modes, even on a first run. Somebody who opened this
+    // because a friend told them to should not have to clear a sector first to
+    // find the mode they were told about.
+    `<button class="hm-ghost" data-act="race" id="hm-race">Race a friend</button>` +
+    `<button class="hm-ghost" data-act="versus" id="hm-versus">Fight a friend</button>` +
     `</div>` +
     `<div class="hm-meta">${diff === undefined ? '' : `${diff.name} difficulty · change on the next screen`}</div>`
   );
@@ -367,7 +392,7 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
     `<span class="hm-score">${cleared} held${best === null ? '' : ` <em>· best ${best}</em>`}</span>` +
     `</button>` +
     `<button class="hm-card hm-race" data-act="race" id="hm-race">` +
-    `<h2>Race <i class="hm-relay" id="hm-relay" title="Checking the relay" ` +
+    `<h2>Race <i class="hm-relay" title="Checking the relay" ` +
     `aria-label="Relay status">·</i></h2>` +
     // With no history the card shows the mode's pitch rather than an empty
     // 0–0 — the same rule as first-run Continue: never open on a zero.
@@ -380,6 +405,16 @@ function returning(p: Progress, resume: LevelDef | undefined, cleared: number): 
         // What happened, not just how it stands. This is the half that makes
         // someone want a rematch.
         (describeLast(top.rec) === null ? '' : `<p class="hm-last">last: ${describeLast(top.rec)}</p>`)) +
+    `</button>` +
+    // Deliberately not carrying the head-to-head line the Race card does. The
+    // series store is one record per opponent across both modes — a rivalry,
+    // not a league table per game — so printing the same 3–2 on both cards
+    // would read as two separate tallies that happen to agree.
+    `<button class="hm-card hm-versus" data-act="versus" id="hm-versus">` +
+    `<h2>Versus <i class="hm-relay" title="Checking the relay" ` +
+    `aria-label="Relay status">·</i></h2>` +
+    `<p>One board, no finish line</p>` +
+    `<span class="hm-score"><em>Send contacts at each other</em></span>` +
     `</button></div>` +
     `<div class="hm-relaynote" id="hm-relaynote"></div>`
   );
