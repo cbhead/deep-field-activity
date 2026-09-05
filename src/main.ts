@@ -41,6 +41,7 @@ import { planWave } from './sim/wavePlan.ts';
 import { serverUrl } from './net/NetClient.ts';
 import { relayHost } from './net/relay.ts';
 import { MatchController } from './net/MatchController.ts';
+import type { MatchMode } from './net/protocol.ts';
 import { createLobbyScreen } from './ui/lobbyScreen.ts';
 import { createRaceHud, type RaceCues, type RaceHud } from './ui/raceHud.ts';
 import { showResults } from './ui/resultsScreen.ts';
@@ -387,10 +388,25 @@ function mountRace(
   // socket is worse than no probe at all.
   const host = relayHost();
 
-  // What differs between the two modes is three things — the rules the world
-  // boots with, where sorties go, and how the server settles — and each is a
-  // branch on this one flag. Everything else on this screen is shared.
-  const isVersus = route.mode === 'versus';
+  /**
+   * What we *asked* to play, from the address. Sent on the join, and it decides
+   * the game only when this client is the one creating the room.
+   *
+   * Not the same question as what the room is playing — see `matchMode`. Joining
+   * `?race=ABCD` when ABCD is a versus room gets you versus, because the room
+   * already existed and had already decided.
+   */
+  const joinMode = route.mode;
+
+  /**
+   * What the room is actually playing, as last told by the server.
+   *
+   * This is the one the game boots from. It cannot be read off our own URL any
+   * more: inside an Activity everyone arrives at the same address and seat one
+   * chooses the game from inside the lobby, so the URL says nothing about what
+   * is being played. `start` carries it, and that is what `boot` receives.
+   */
+  let matchMode: MatchMode = joinMode;
 
   let controller: MatchController | null = null;
   let raceHud: RaceHud | null = null;
@@ -425,7 +441,9 @@ function mountRace(
     // lobby is the front door.
     if (inActivity()) router.go({ k: 'home' });
     else if (route.room === null) router.remount();
-    else router.go({ k: 'race', room: null, mode: route.mode });
+    // The room's game, not the URL's: if seat one switched us to Versus, the
+    // lobby you land back in should be the one you were just in.
+    else router.go({ k: 'race', room: null, mode: matchMode });
   };
 
   const lobby = createLobbyScreen(screens, {
@@ -440,10 +458,10 @@ function mountRace(
           ? { prefillRoom: route.room }
           : {}),
     relayHost: host,
-    ...(isVersus ? { mode: 'versus' as const } : {}),
+    mode: joinMode,
     onLeave: leave,
     onReady: (ready) => controller?.ready(ready),
-    onPick: (level, diff) => controller?.pick(level, diff),
+    onPick: (level, diff, mode) => controller?.pick(level, diff, mode),
     onSubmit: ({ name, room, instance, choice }) => {
       playerName = name;
       const c = new MatchController({
@@ -452,20 +470,23 @@ function mountRace(
         ...(room === undefined ? {} : { room }),
         ...(instance === undefined ? {} : { instance }),
         ...(choice === undefined ? {} : { choice }),
-        ...(isVersus ? { mode: 'versus' as const } : {}),
+        mode: joinMode,
         autoReady: rejoin !== null,
         hooks: {
-          onLobby: (roomCode, players, watchers, level, diff) => {
+          onLobby: (roomCode, players, watchers, level, diff, mode) => {
             currentRoom = roomCode;
+            // Server truth, and it can differ from what we asked for: joining an
+            // existing room means playing whatever that room already decided.
+            matchMode = mode;
             opponentName = players.find((p) => p.playerId !== c.playerId)?.name ?? 'opponent';
             // Seated or watching is decided by one thing — whether the roster
             // has us in it. Being promoted out of the queue therefore needs no
             // message of its own: the next broadcast simply lists us elsewhere,
             // and this switches screens.
             if (players.some((p) => p.playerId === c.playerId)) {
-              lobby.showRoster(roomCode, players, c.playerId, level, diff);
+              lobby.showRoster(roomCode, players, c.playerId, level, diff, mode);
             } else {
-              lobby.showWatching(players, watchers, c.playerId, level, diff);
+              lobby.showWatching(players, watchers, c.playerId, level, diff, mode);
             }
           },
           onWatchStatus: (standings) => lobby.showWatchStatus(standings),
@@ -511,11 +532,16 @@ function mountRace(
               room: currentRoom,
               seed: matchSeed,
               series,
-              ...(isVersus ? { versus: true } : {}),
+              ...(matchMode === 'versus' ? { versus: true } : {}),
               onRematch: () => {
                 pendingRejoin = { name: playerName, room: currentRoom };
                 router.remount();
               },
+              // The same `leave` the lobby uses, so "out of here" means one
+              // thing wherever it is pressed. It was an anchor while Race was
+              // the only mode, which inside an Activity is a document load and
+              // costs the handshake — see ResultsOptions.onLeave.
+              onLeave: leave,
             });
             // No Discord post from here any more. The relay sends the match
             // report, because a browser inside an Activity cannot reach
@@ -523,23 +549,29 @@ function mountRace(
             // without anyone being told to configure only one machine. See
             // net/report.ts.
           },
-          boot: (seed, levelId, diffId) => {
+          boot: (seed, levelId, diffId, mode) => {
             matchSeed = seed;
+            // The server's word on what is being played, not ours. Inside an
+            // Activity the URL never said, and even outside one the room may
+            // have been switched after we joined it — so this arrives with the
+            // seed rather than being read back off `route.mode`.
+            matchMode = mode;
+            const bootVersus = mode === 'versus';
             // The room's pick arrives unvalidated; unknown values fall back to
             // the baseline on BOTH clients, so a version-skewed pair still
             // plays the same board. Versus ignores the pick entirely — there
             // is one board, and letting a stale lobby choice send two players
             // to different maps is a failure with no upside.
-            const level = isVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
+            const level = bootVersus ? VERSUS_LEVEL : (levelById(levelId) ?? CAMPAIGN[0]!);
             const difficulty: DifficultyId =
               Object.hasOwn(DIFFICULTIES, diffId) ? (diffId as DifficultyId) : DEFAULT_DIFFICULTY;
             matchSector = `${level.name} · ${DIFFICULTIES[difficulty].name}`;
             lobby.remove();
             void startGame(mount, hudRoot, seed, {
               level,
-              rules: isVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
+              rules: bootVersus ? versusRules(level, difficulty) : resolveRules(level, difficulty),
               restart: () => router.remount(),
-              ...(isVersus
+              ...(bootVersus
                 ? {
                     // The relay stands in for the loopback: a launch goes out
                     // over the socket instead of straight back at us, and a
@@ -573,7 +605,7 @@ function mountRace(
                   lives: world.lives,
                   elapsedMs: Math.round(performance.now() - bootAt),
                   ...(document.hidden ? { hidden: true } : {}),
-                  ...(isVersus ? { era: world.era } : {}),
+                  ...(bootVersus ? { era: world.era } : {}),
                 };
                 // The layout rides along only when it changed — most frames
                 // carry three numbers, a build frame carries the board.

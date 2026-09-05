@@ -67,14 +67,21 @@ export type C2S =
   /** ready:false un-readies — allowed until the countdown is dealt. */
   | { t: 'ready'; ready?: boolean }
   /**
-   * Change the room's sector and difficulty from inside the lobby. Honoured
-   * only from the first seat, and only before the countdown; the server re-deals
-   * the result to everyone, so the two clients cannot end up disagreeing.
+   * Change the room's sector, difficulty and game from inside the lobby.
+   * Honoured only from the first seat, and only before the countdown; the server
+   * re-deals the result to everyone, so the two clients cannot end up
+   * disagreeing.
    *
    * An instance room has no creation form to make that choice in — you arrive
    * already in the room — so choosing has to be something done from inside it.
+   *
+   * `mode` belongs here for exactly that reason. On a plain URL the game is
+   * chosen by which address you opened, `?race` or `?versus`; inside an Activity
+   * there is no such moment, so Versus was unreachable until it became something
+   * the room could be *set to*. Absent leaves the room's game unchanged, so an
+   * older client picking a sector cannot silently drop a room out of Versus.
    */
-  | { t: 'pick'; level: string; diff: string }
+  | { t: 'pick'; level: string; diff: string; mode?: MatchMode }
   /** `hidden` rides along on visibility changes: the sim freezes with the tab.
    *  `towers` rides along only when the layout changed since the last frame. */
   | {
@@ -120,14 +127,32 @@ export type S2C =
    * no second place for the two to disagree, and being promoted needs no
    * message of its own — the next roster simply has you in a different list.
    */
-  | { t: 'lobby'; players: LobbyPlayer[]; watchers: LobbyPlayer[]; level: string; diff: string }
+  | {
+      t: 'lobby';
+      players: LobbyPlayer[];
+      watchers: LobbyPlayer[];
+      level: string;
+      diff: string;
+      /**
+       * Which game the room is set to, as server truth.
+       *
+       * The client cannot infer this from its own URL once the room can be
+       * switched from inside: in an Activity everybody arrives at the same
+       * address and seat one decides. Carried on every lobby broadcast for the
+       * same reason `level` is — it is what the picker renders from, and the
+       * seat that did not choose has no other way to know.
+       */
+      mode: MatchMode;
+    }
   /**
    * Live figures for both seats, sent only to watchers. Seated players learn
    * about each other through `peer`, which carries one opponent and no names;
    * a watcher needs both sides and has no board of their own to read.
    */
   | { t: 'watchStatus'; standings: Standing[] }
-  | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string }
+  /** `mode` rides along with the seed for the same reason `level` does: what
+   *  boots has to be settled by the server, not re-read from a client's URL. */
+  | { t: 'start'; seed: number; countdownMs: number; level: string; diff: string; mode: MatchMode }
   | {
       t: 'peer';
       wave: number;

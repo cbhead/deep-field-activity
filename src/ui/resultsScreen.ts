@@ -38,6 +38,16 @@ export interface ResultsOptions {
    */
   versus?: boolean;
   onRematch(): void;
+  /**
+   * Out of the match entirely.
+   *
+   * A callback rather than an `<a href>`, for the reason the router exists: an
+   * anchor is a document load, and inside an Activity a document load costs the
+   * SDK handshake and the launch parameters that only arrive once. It was a
+   * plain link here while Race was the only mode — the one screen still
+   * navigating the old way — and Versus made it reachable twice over.
+   */
+  onLeave(): void;
 }
 
 export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
@@ -67,6 +77,9 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
   // level the link replays Switchback on a versus seed, which is a different
   // board and a confusing thing to be handed.
   const replay = opts.versus === true ? `?level=versus&seed=${opts.seed}` : `?seed=${opts.seed}`;
+  // The href is still the honest address of where leaving goes, so copy-link
+  // and middle-click behave — but the plain click is intercepted below and
+  // routed in place. See the same pattern on the lobby's own leave.
   const leave = opts.versus === true ? '?versus' : '?race';
 
   const card = (s: Standing, i: number): string => {
@@ -111,7 +124,7 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
     `<button id="race-rematch" class="lb-btn" style="width:220px;height:50px;font-size:15px">Rematch</button>` +
     // Mode-aware, because leaving a versus match into `?race` would drop you in
     // a lobby for the other game.
-    `<a href="${leave}" style="color:#75798c;text-decoration:none">leave</a>` +
+    `<a id="race-leave-results" href="${leave}" style="color:#75798c;text-decoration:none">leave</a>` +
     // There used to be a "match logged to Discord ✓" line here, written by
     // whichever browser held the webhook. The relay sends the report now and
     // does so after this card is already up, so the page has nothing truthful
@@ -120,4 +133,8 @@ export function showResults(parent: HTMLElement, opts: ResultsOptions): void {
     `</div></div></div>`;
 
   el.querySelector('#race-rematch')!.addEventListener('click', opts.onRematch);
+  el.querySelector('#race-leave-results')!.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    opts.onLeave();
+  });
 }

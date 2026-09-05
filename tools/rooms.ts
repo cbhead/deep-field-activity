@@ -180,6 +180,44 @@ async function main(): Promise<void> {
       afterIgnored === null ? 'no broadcast at all' : `${afterIgnored.level}/${afterIgnored.diff}`,
     );
 
+    console.log('\nthe channel chooses its game');
+    // The gap this closes: on a plain URL you pick the game by opening `?race`
+    // or `?versus`, but inside an Activity everyone arrives at the same address
+    // and there is no such moment. So the game becomes something the room is
+    // *set to*, by the same seat and the same message that sets the board.
+    check('a room opens on Race, as a v1 client would have meant', afterPick?.mode === 'race', afterPick?.mode ?? '—');
+
+    chooser.send({ t: 'pick', level: 'level03', diff: 'standard', mode: 'versus' });
+    const toVersus = await other.settled('lobby');
+    check(
+      "seat one's choice of game reaches the other client",
+      toVersus?.mode === 'versus',
+      toVersus?.mode ?? '—',
+    );
+
+    other.send({ t: 'pick', level: 'level03', diff: 'standard', mode: 'race' });
+    const notTheirs = await chooser.settled('lobby');
+    check(
+      'and seat two cannot switch it back',
+      notTheirs === null || notTheirs.mode === 'versus',
+      notTheirs === null ? 'no broadcast at all' : notTheirs.mode,
+    );
+
+    // The reason `mode` is optional on the wire: a client that predates the
+    // picker sends level and diff only, and must not knock the room out of
+    // Versus by choosing a sector.
+    chooser.send({ t: 'pick', level: 'level02', diff: 'standard' });
+    const modeless = await other.settled('lobby');
+    check(
+      'a pick with no mode leaves the game alone',
+      modeless?.mode === 'versus' && modeless.level === 'level02',
+      `${modeless?.mode ?? '—'} ${modeless?.level ?? '—'}`,
+    );
+
+    // Put it back, so the sections below still describe a race.
+    chooser.send({ t: 'pick', level: 'level03', diff: 'standard', mode: 'race' });
+    await other.settled('lobby');
+
     console.log('\na third and fourth pilot join the queue, not a wall');
     const c = await Client.open();
     const d2 = await Client.open();
@@ -229,6 +267,11 @@ async function main(): Promise<void> {
       startA?.level === 'level03' && startB?.level === 'level03' && startA.diff === startB.diff,
       `${startA?.level ?? '—'} / ${startB?.level ?? '—'}`,
     );
+    check(
+      'and the same game — what boots is settled here, not read off a URL',
+      startA?.mode === 'race' && startB?.mode === 'race',
+      `${startA?.mode ?? '—'} / ${startB?.mode ?? '—'}`,
+    );
 
     console.log('\nthe queue watches the race');
     a.send({ t: 'status', wave: 4, lives: 18, elapsedMs: 30_000 });
@@ -241,6 +284,8 @@ async function main(): Promise<void> {
         (live?.standings ?? []).some((s) => s.name === 'Ada' && s.wave === 4),
       (live?.standings ?? []).map((s) => `${s.name} w${s.wave}`).join(' / '),
     );
+
+    let postedLen = 0;
 
     console.log('\nthe relay files the match report');
     // Both finish, which settles the match and triggers the post.
@@ -276,6 +321,59 @@ async function main(): Promise<void> {
     check(
       'the winner keeps playing',
       (rotated?.players ?? []).some((p) => p.name === 'Ada'),
+    );
+
+    console.log('\na channel that chose Versus plays Versus');
+    // A fresh channel, so none of the rotation above is in the way. This is the
+    // path the Activity actually takes: nobody typed a URL, nobody sent a link,
+    // and the game was decided from inside the room.
+    const e = await Client.open();
+    const f = await Client.open();
+    clients.push(e, f);
+    e.hello('Eve', 'instance-gamma');
+    const joinedE = await e.next('joined');
+    f.hello('Fin', 'instance-gamma');
+    await f.next('joined');
+
+    const vRoster = await e.settled('lobby');
+    const vSeatOne = vRoster?.players[0]?.playerId === joinedE?.playerId ? e : f;
+    vSeatOne.send({ t: 'pick', level: 'level01', diff: 'standard', mode: 'versus' });
+    await f.settled('lobby');
+
+    e.send({ t: 'ready' });
+    f.send({ t: 'ready' });
+    const vStartE = await e.next('start');
+    const vStartF = await f.next('start');
+    check(
+      'both clients are told to boot Versus',
+      vStartE?.mode === 'versus' && vStartF?.mode === 'versus',
+      `${vStartE?.mode ?? '—'} / ${vStartF?.mode ?? '—'}`,
+    );
+
+    // The difference that matters, set up so the two rules disagree: Fin dies on
+    // wave 9 having held longer than Eve, who is only on wave 3. A race would
+    // rank Fin first. Versus ends the instant a core does, and the survivor
+    // wins — so if this returned Fin, the room would have settled as a race.
+    postedLen = posted.length;
+    e.send({ t: 'status', wave: 3, lives: 20, elapsedMs: 110_000 });
+    await sleep(100);
+    f.send({ t: 'dead', wave: 9, lives: 0, elapsedMs: 120_000 });
+    const vResult = await e.next('result');
+    check('one core going dark ends it, without waiting for the other run', vResult !== null);
+    check(
+      'and the survivor wins, though the dead player held the deeper board',
+      vResult?.winnerId !== null && vResult?.winnerId === joinedE?.playerId,
+      `winner=${vResult?.winnerId ?? 'tie'}, Eve=${joinedE?.playerId ?? '—'} (w3) vs Fin (w9, dead)`,
+    );
+    check('settled by the core, and it says so', vResult?.reason === 'core', vResult?.reason ?? '—');
+
+    await sleep(600);
+    const vBody = posted[postedLen] === undefined ? null : (JSON.parse(posted[postedLen]!) as { content?: string });
+    const vContent = vBody?.content ?? '';
+    check(
+      'and the report names Front Line, not the sector the lobby was showing',
+      vContent.includes('Front Line') && !vContent.includes('Switchback'),
+      vContent.split('\n')[1] ?? '(nothing posted)',
     );
 
     console.log(

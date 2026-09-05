@@ -17,16 +17,30 @@
 import type { LobbyPlayer, MatchMode, Standing } from '../net/protocol.ts';
 import { fmtTime } from '../net/report.ts';
 import { formatSeed } from '../sim/util/rng.ts';
-import { CAMPAIGN, levelById } from '../content/levels.ts';
+import { CAMPAIGN, VERSUS_LEVEL, levelById } from '../content/levels.ts';
 import { DIFFICULTIES, DIFFICULTY_ORDER, DEFAULT_DIFFICULTY, type DifficultyId } from '../content/difficulty.ts';
 import { getWebhook, postToDiscord, saveWebhook } from './discord.ts';
 import { ensureRaceStyle, raceBar, hexSvg, escapeHtml, YOU, THEM } from './raceTheme.ts';
 
 export interface LobbyScreen {
   /** level/diff are the room's pick, as re-dealt by the server. */
-  showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void;
+  showRoster(
+    room: string,
+    players: LobbyPlayer[],
+    myId: string,
+    level: string,
+    diff: string,
+    mode: MatchMode,
+  ): void;
   /** You hold no seat: who is playing, who is ahead of you, and how long. */
-  showWatching(players: LobbyPlayer[], watchers: LobbyPlayer[], myId: string, level: string, diff: string): void;
+  showWatching(
+    players: LobbyPlayer[],
+    watchers: LobbyPlayer[],
+    myId: string,
+    level: string,
+    diff: string,
+    mode: MatchMode,
+  ): void;
   /** Live figures while watching. Updates in place — this arrives at 2Hz. */
   showWatchStatus(standings: Standing[]): void;
   showCountdown(ms: number, seed: number): void;
@@ -91,11 +105,11 @@ export interface LobbyOptions {
   onSubmit(join: JoinRequest): void;
   onReady(ready: boolean): void;
   /**
-   * Change the room's sector/difficulty from inside the lobby. Only the first
-   * seat may, and only the server decides that — this fires optimistically and
-   * the authoritative answer arrives back as a lobby broadcast.
+   * Change the room's sector/difficulty/game from inside the lobby. Only the
+   * first seat may, and only the server decides that — this fires optimistically
+   * and the authoritative answer arrives back as a lobby broadcast.
    */
-  onPick(level: string, diff: string): void;
+  onPick(level: string, diff: string, mode: MatchMode): void;
   /**
    * Back to a fresh lobby — from "Leave the room", and from "start your own
    * instead" on a deep link. Both used to assign `location.href`, which is a
@@ -133,6 +147,15 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
   // The room's authoritative pick, as last re-dealt by the server.
   let lastLevel = CAMPAIGN[0]!.id;
   let lastDiff: string = DEFAULT_DIFFICULTY;
+  /**
+   * The room's game, as last re-dealt by the server.
+   *
+   * Seeded from `opts.mode` — what this client asked for — and then owned by the
+   * broadcast. Once the room can be switched from inside, our own URL stops
+   * being evidence of what is being played: in an Activity everybody is at the
+   * same address and seat one decides.
+   */
+  let lastMode: MatchMode = opts.mode ?? 'race';
   // The creator's form selection, remembered across visits.
   let pickLevel = levelOr01(localStorage.getItem('race-level') ?? '').id;
   let pickDiff: string = diffOrStd(localStorage.getItem('race-diff') ?? '');
@@ -151,7 +174,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
       .then((info) => {
         if (info?.tailscaleIp) {
           inviteBase = `http://${info.tailscaleIp}:${info.port}`;
-          if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId, lastLevel, lastDiff);
+          if (el.querySelector('.lb-bigcode') && lastRoom !== '') showRoster(lastRoom, lastPlayers, lastMyId, lastLevel, lastDiff, lastMode);
         }
       })
       .catch(() => undefined);
@@ -363,15 +386,42 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
    * screen — what is being played matters to both, and hiding it from the
    * person who cannot change it would leave them guessing.
    */
-  function roomPicker(level: string, diff: string, mine: boolean): string {
+  function roomPicker(level: string, diff: string, mode: MatchMode, mine: boolean): string {
     const pill = (id: string, label: string, on: boolean): string =>
       `<button class="lb-pick${on ? ' on' : ''}"${mine ? ` data-id="${id}"` : ' disabled style="opacity:.55;cursor:default"'}>${label}</button>`;
+
+    // Versus is one board — the server forces Front Line and both clients boot
+    // it regardless of the room's `level`. Showing eight sector pills that
+    // change nothing would be the screen lying about what the buttons do, so
+    // the row states the board instead of offering a choice that is ignored.
+    const sectorRow =
+      mode === 'versus'
+        ? `<div style="display:flex;flex-direction:column;gap:8px">` +
+          `<span class="lb-label">Board</span>` +
+          `<span class="lb-lede" style="font-size:15px">${escapeHtml(VERSUS_LEVEL.name)}` +
+          `<span class="lb-fine" style="display:block">Versus is fought on one board. Difficulty still applies.</span>` +
+          `</span></div>`
+        : `<div style="display:flex;flex-direction:column;gap:8px">` +
+          `<span class="lb-label">Sector${mine ? '' : ' — seat one chooses'}</span>` +
+          `<div class="lb-picks" id="room-level">` +
+          CAMPAIGN.map((l) => pill(l.id, l.name, l.id === level)).join('') +
+          `</div></div>`;
+
     return (
+      // The game comes first: it decides whether the row below it is a choice
+      // at all, so reading top to bottom matches how the screen behaves.
       `<div style="display:flex;flex-direction:column;gap:8px">` +
-      `<span class="lb-label">Sector${mine ? '' : ' — seat one chooses'}</span>` +
-      `<div class="lb-picks" id="room-level">` +
-      CAMPAIGN.map((l) => pill(l.id, l.name, l.id === level)).join('') +
-      `</div></div>` +
+      `<span class="lb-label">Game${mine ? '' : ' — seat one chooses'}</span>` +
+      `<div class="lb-picks" id="room-mode">` +
+      pill('race', 'Race', mode === 'race') +
+      pill('versus', 'Versus', mode === 'versus') +
+      `</div>` +
+      `<span class="lb-fine">${
+        mode === 'versus'
+          ? 'Buy contacts and send them at each other. Last core standing wins.'
+          : 'Same seed, same board, side by side. Furthest through wins.'
+      }</span></div>` +
+      sectorRow +
       `<div style="display:flex;flex-direction:column;gap:8px"><span class="lb-label">Difficulty</span>` +
       `<div class="lb-picks" id="room-diff">` +
       DIFFICULTY_ORDER.map((d) => pill(d, DIFFICULTIES[d].name, d === diff)).join('') +
@@ -392,7 +442,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         // what the room is playing, and it re-deals to both clients — rendering
         // optimistically here would let the two disagree until the next lobby
         // message, which is exactly the window a countdown can start in.
-        opts.onPick(lastLevel, lastDiff);
+        opts.onPick(lastLevel, lastDiff, lastMode);
       });
     };
     on('room-level', (id) => {
@@ -402,6 +452,13 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     on('room-diff', (id) => {
       lastDiff = id;
       localStorage.setItem('race-diff', id);
+    });
+    // Deliberately not remembered in localStorage, unlike sector and difficulty.
+    // Those are preferences; which game a channel is playing is a decision about
+    // this room, and defaulting a fresh lobby into Versus because somebody chose
+    // it last week would surprise everyone who did not.
+    on('room-mode', (id) => {
+      lastMode = id === 'versus' ? 'versus' : 'race';
     });
   }
 
@@ -429,8 +486,12 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     myId: string,
     level: string,
     diff: string,
+    mode: MatchMode,
   ): void {
-    const lv = levelOr01(level);
+    lastMode = mode;
+    // Versus is fought on Front Line whatever the room's `level` says, so the
+    // queue is told what it is actually watching.
+    const lv = mode === 'versus' ? VERSUS_LEVEL : levelOr01(level);
     const df = DIFFICULTIES[diffOrStd(diff)];
     const place = watchers.findIndex((w) => w.playerId === myId);
     const ahead = place < 0 ? 0 : place;
@@ -481,16 +542,27 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
     }
   }
 
-  function showRoster(room: string, players: LobbyPlayer[], myId: string, level: string, diff: string): void {
+  function showRoster(
+    room: string,
+    players: LobbyPlayer[],
+    myId: string,
+    level: string,
+    diff: string,
+    mode: MatchMode,
+  ): void {
     lastPlayers = players;
     lastMyId = myId;
     lastRoom = room;
     lastLevel = level;
     lastDiff = diff;
+    lastMode = mode;
     const me = players.find((p) => p.playerId === myId);
     const them = players.find((p) => p.playerId !== myId);
 
-    const lv = levelOr01(level);
+    // Versus boots Front Line whatever the room's `level` says — the server
+    // forces it and both clients follow — so the header names the board that
+    // will actually be played rather than a sector nobody will see.
+    const lv = mode === 'versus' ? VERSUS_LEVEL : levelOr01(level);
     const df = DIFFICULTIES[diffOrStd(diff)];
     const inActivityMode = opts.identity !== undefined;
     // Seat order is the server's, and seat one is whoever created the room.
@@ -505,11 +577,11 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<div class="lb-body"><div class="lb-col" style="width:min(560px,90vw)">` +
         (inActivityMode
           ? `<div style="display:flex;flex-direction:column;gap:10px">` +
-            `<span class="lb-kicker">This channel's race</span>` +
+            `<span class="lb-kicker">This channel's ${mode === 'versus' ? 'fight' : 'race'}</span>` +
             `<h1 class="lb-title" style="font-size:40px">Waiting for a second pilot</h1>` +
             `<span class="lb-lede">Anyone in this voice channel can open Deep Field to take the other seat. ` +
             `There is no code to send and no link to copy.</span></div>` +
-            roomPicker(level, diff, isChooser)
+            roomPicker(level, diff, mode, isChooser)
           : `<span class="lb-label" style="letter-spacing:.24em">Room code — click to select</span>` +
             // inputmode=none on both: they are readonly select-on-click handles,
             // and without it iOS raises the on-screen keyboard for a field
@@ -529,12 +601,22 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         `<span style="display:flex;flex-direction:column;gap:2px"><span class="lb-seat-name" style="font-weight:400;color:#9397ab">Empty seat</span>` +
         `<span class="lb-seat-sub">waiting for someone to join…</span></span></div>` +
         `<div class="lb-rule" style="margin:6px 0"></div>` +
+        // Versus is endless and settles by elimination, so three of these five
+        // rows would be describing a race that is not being run — a wave count
+        // for an arc with no end, and a ranking nothing is ranked by.
         `<div class="lb-facts">` +
-        `<div><span>Sector</span><span>${lv.kicker.replace('Sector ', '')} · ${lv.name}</span></div>` +
-        `<div><span>Difficulty</span><span>${df.name}</span></div>` +
-        `<div><span>Waves</span><span>${lv.waves.length}</span></div>` +
-        `<div><span>Starting lives</span><span>${df.startingLives}</span></div>` +
-        `<div><span>Ranked by</span><span>waves · lives · time</span></div></div>` +
+        (mode === 'versus'
+          ? `<div><span>Board</span><span>${escapeHtml(lv.name)}</span></div>` +
+            `<div><span>Difficulty</span><span>${df.name}</span></div>` +
+            `<div><span>Waves</span><span>endless</span></div>` +
+            `<div><span>Starting lives</span><span>${df.startingLives}</span></div>` +
+            `<div><span>Settled by</span><span>last core standing</span></div>`
+          : `<div><span>Sector</span><span>${lv.kicker.replace('Sector ', '')} · ${lv.name}</span></div>` +
+            `<div><span>Difficulty</span><span>${df.name}</span></div>` +
+            `<div><span>Waves</span><span>${lv.waves.length}</span></div>` +
+            `<div><span>Starting lives</span><span>${df.startingLives}</span></div>` +
+            `<div><span>Ranked by</span><span>waves · lives · time</span></div>`) +
+        `</div>` +
         `<button class="lb-leave" id="race-leave">Leave the room</button>` +
         `</div></div>`;
     } else {
@@ -564,7 +646,7 @@ export function createLobbyScreen(parent: HTMLElement, opts: LobbyOptions): Lobb
         // agreeing on the board is a conversation people have after they see
         // who turned up, not before.
         (inActivityMode
-          ? `<div style="display:flex;gap:22px;flex-wrap:wrap">${roomPicker(level, diff, isChooser)}</div>`
+          ? `<div style="display:flex;gap:22px;flex-wrap:wrap">${roomPicker(level, diff, mode, isChooser)}</div>`
           : '') +
         `<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">` +
         (iAmReady

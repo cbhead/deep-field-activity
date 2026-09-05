@@ -219,6 +219,7 @@ const broadcastLobby = (room: Room): void =>
     watchers: room.watchers.map(seatOf),
     level: room.level,
     diff: room.diff,
+    mode: room.mode,
   });
 
 const standingFor = (room: Room, id: string): Standing =>
@@ -620,8 +621,11 @@ wss.on('connection', (ws: WebSocket, req) => {
           // seed, and by the time a result settles the start message is long
           // gone.
           room.seed = seed;
-          console.log(`[start] room ${room.code} seed=${seed} ${room.level}/${room.diff}`);
-          broadcast(room, { t: 'start', seed, countdownMs: COUNTDOWN_MS, level: room.level, diff: room.diff });
+          console.log(`[start] room ${room.code} seed=${seed} ${room.mode} ${room.level}/${room.diff}`);
+          broadcast(room, {
+            t: 'start', seed, countdownMs: COUNTDOWN_MS,
+            level: room.level, diff: room.diff, mode: room.mode,
+          });
         }
         break;
       }
@@ -634,7 +638,11 @@ wss.on('connection', (ws: WebSocket, req) => {
         if (!me || !room || room.started || room.players[0] !== me) return;
         room.level = msg.level;
         room.diff = msg.diff;
-        console.log(`[pick] ${me.name} set room ${room.code} to ${room.level}/${room.diff}`);
+        // Absent leaves the game as it was. A client that predates the mode
+        // picker sends level and diff only, and must not be able to knock a
+        // room out of Versus by choosing a sector.
+        if (msg.mode !== undefined) room.mode = msg.mode;
+        console.log(`[pick] ${me.name} set room ${room.code} to ${room.mode} ${room.level}/${room.diff}`);
         broadcastLobby(room);
         break;
       }

@@ -37,16 +37,25 @@ export interface RaceStatus {
 
 export interface RaceHooks {
   /** Called once joined, and again whenever the lobby roster changes.
-   *  level/diff are the creator's pick, re-dealt by the server.
+   *  level/diff/mode are the room's settings, re-dealt by the server.
    *  `watchers` is the queue; you are seated if your id is in `players`. */
-  onLobby(room: string, players: LobbyPlayer[], watchers: LobbyPlayer[], level: string, diff: string): void;
+  onLobby(
+    room: string,
+    players: LobbyPlayer[],
+    watchers: LobbyPlayer[],
+    level: string,
+    diff: string,
+    mode: MatchMode,
+  ): void;
   /** Live figures for both seats — only ever sent while you are watching. */
   onWatchStatus?(standings: Standing[]): void;
   /** Countdown has begun; boot() fires when it reaches zero. The seed rides
    *  along for display — it's the proof of fairness the mode rests on. */
   onCountdown(ms: number, seed: number): void;
-  /** Build the world with the server's seed and the room's pick. */
-  boot(seed: number, level: string, diff: string): void;
+  /** Build the world with the server's seed and the room's pick. `mode` decides
+   *  which game boots, and comes from the server rather than the URL — inside an
+   *  Activity everyone is at the same address and seat one chose. */
+  boot(seed: number, level: string, diff: string, mode: MatchMode): void;
   /** The opponent's latest status blob. UI state only — the sim never sees it. */
   onPeer?(status: RaceStatus): void;
   /**
@@ -120,7 +129,14 @@ export class MatchController {
       // authoritative level/diff arrive with the first lobby broadcast.
       this.room = joined.room;
       this.playerId = joined.playerId;
-      hooks.onLobby(joined.room, [], [], choice?.level ?? 'level01', choice?.diff ?? 'standard');
+      // Provisional, and corrected by the first real broadcast a moment later:
+      // what we *asked* for is the best guess available until the server says
+      // what the room actually is. Joining an existing versus room while asking
+      // for Race shows Race for that one frame, then settles.
+      hooks.onLobby(
+        joined.room, [], [],
+        choice?.level ?? 'level01', choice?.diff ?? 'standard', mode ?? 'race',
+      );
       if (autoReady) this.ready();
     } catch (err) {
       hooks.onError(err instanceof Error ? err.message : String(err));
@@ -189,9 +205,10 @@ export class MatchController {
     this.client.send(flag ? { t: 'ready' } : { t: 'ready', ready: false });
   }
 
-  /** Change the room's board. Ignored by the server unless we hold seat one. */
-  pick(level: string, diff: string): void {
-    this.client.send({ t: 'pick', level, diff });
+  /** Change the room's board and game. Ignored by the server unless we hold
+   *  seat one. Omitting `mode` leaves the room's game alone. */
+  pick(level: string, diff: string, mode?: MatchMode): void {
+    this.client.send({ t: 'pick', level, diff, ...(mode === undefined ? {} : { mode }) });
   }
 
   private pump: ReturnType<typeof setInterval> | null = null;
@@ -255,7 +272,7 @@ export class MatchController {
       case 'joined':
         break; // consumed by NetClient.connect; room captured in run()
       case 'lobby':
-        hooks.onLobby(this.room, msg.players, msg.watchers, msg.level, msg.diff);
+        hooks.onLobby(this.room, msg.players, msg.watchers, msg.level, msg.diff, msg.mode);
         break;
       case 'watchStatus':
         hooks.onWatchStatus?.(msg.standings);
@@ -266,7 +283,7 @@ export class MatchController {
         // machines, so "start in 3000ms" is fair under any clock skew.
         this.bootTimer = setTimeout(() => {
           this.bootTimer = null;
-          if (!this.disposed) hooks.boot(msg.seed, msg.level, msg.diff);
+          if (!this.disposed) hooks.boot(msg.seed, msg.level, msg.diff, msg.mode);
         }, msg.countdownMs);
         break;
       case 'error':
