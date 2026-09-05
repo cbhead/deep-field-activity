@@ -20,7 +20,8 @@
     "play": "zsh scripts/play.sh",
     "sweep": "zsh scripts/sweep.sh",
     "campaign": "zsh scripts/campaign.sh",
-    "shots": "zsh scripts/shots.sh"
+    "shots": "zsh scripts/shots.sh",
+    "worktree": "zsh scripts/worktree.sh"
   },
   "dependencies": {
     "pixi.js": "^8.20.1",

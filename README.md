@@ -131,7 +131,34 @@ npm run check       # headless simulation gates — the balance test suite
 npm run campaign    # explore the campaign arc headlessly
 npm run sweep       # balance sweeps
 npm run shots       # re-take the README screenshots (needs `npm run dev` running)
+npm run worktree x  # isolated checkout at .claude/worktrees/x, for a second session
 ```
+
+### Running two sessions at once
+
+Use a worktree. Two sessions in one working tree share an index, a HEAD and a
+set of files, and they will quietly wreck each other — in one afternoon a second
+session committed onto a branch it did not know it was on, switched the branch
+out from under the first mid-task, and pushed a commit the first was still
+writing. Nothing was lost, but only because the two happened to be editing
+disjoint files.
+
+```sh
+npm run worktree audio            # new branch `audio`, checked out in its own tree
+npm run worktree fix origin/main  # branch off a specific base
+npm run worktree versus           # reuse an existing branch
+```
+
+Same repository, same history, same remote; independent index and checkout, so
+branching in one moves nothing in the other. `node_modules` is symlinked rather
+than reinstalled — 170MB a copy, and one known-good install avoids re-tripping
+the stale-npm native-dependency trap below. The script warns if the branch
+changes `package.json`, which is the one case that needs its own install.
+
+Give each session its own dev port (`PORT=5174 npm run dev`), but note `PORT`
+moves only the dev server: Race mode's client dials a hardcoded default, so the
+session hosting a race should keep the default port. Clean up with
+`git worktree remove <path>` and `git branch -d <name>`.
 
 The screenshots above are scripted rather than taken by hand — see
 `tools/shots.ts`. They went stale the moment the board was rebuilt and nothing
